@@ -43,7 +43,7 @@ docs:
 
 shellcheck:
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck scripts/*.sh ci/*.sh ci/scenarios/*.sh; \
+		shellcheck -e SC1091 scripts/*.sh ci/*.sh ci/scenarios/*.sh; \
 	else \
 		echo "shellcheck not installed"; \
 	fi

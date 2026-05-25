@@ -3,6 +3,12 @@ set -euo pipefail
 
 source ./ci/assertions.sh
 
+# Export CI env vars for child scripts
+export CI_MOCK_PIHOLE="${CI_MOCK_PIHOLE:-true}"
+export CI_MOCK_CLOUDFLARE_TUNNEL="${CI_MOCK_CLOUDFLARE_TUNNEL:-true}"
+export CI_SKIP_PUBLIC_URL_VALIDATION="${CI_SKIP_PUBLIC_URL_VALIDATION:-true}"
+export SKIP_PUBLIC_URL_VALIDATION="${SKIP_PUBLIC_URL_VALIDATION:-true}"
+
 # --- Setup: deploy stacks and start services ---
 ./ci/setup-ci-env.sh
 
@@ -23,7 +29,6 @@ assert_contains /etc/admin-node/mode "normal"
 ./ci/create-sentinel-data.sh
 assert_file_exists /srv/admin/data/sentinel/value.txt
 
-export SKIP_PUBLIC_URL_VALIDATION=true
 ./scripts/backup.sh
 
 # --- Simulate branch upgrade: set new git-ref ---

@@ -2,6 +2,13 @@
 set -euo pipefail
 
 ADMIN_IP=${ADMIN_NODE_LAN_IP:-192.168.1.10}
+
+# In CI, DNS records won't exist - skip gracefully
+if [[ "${CI_MOCK_PIHOLE:-false}" == "true" ]]; then
+  echo "DNS validation: skipped (CI_MOCK_PIHOLE=true)"
+  exit 0
+fi
+
 for host in harbor.example.com bao.example.com keycloak.example.com traefik.example.com; do
   resolved="$(getent ahostsv4 "$host" 2>/dev/null | awk '{print $1; exit}')"
   if [[ -z "$resolved" ]]; then

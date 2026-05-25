@@ -3,6 +3,12 @@ set -euo pipefail
 
 source ./ci/assertions.sh
 
+# Export CI env vars for child scripts
+export CI_MOCK_PIHOLE="${CI_MOCK_PIHOLE:-true}"
+export CI_MOCK_CLOUDFLARE_TUNNEL="${CI_MOCK_CLOUDFLARE_TUNNEL:-true}"
+export CI_SKIP_PUBLIC_URL_VALIDATION="${CI_SKIP_PUBLIC_URL_VALIDATION:-true}"
+export SKIP_PUBLIC_URL_VALIDATION="${SKIP_PUBLIC_URL_VALIDATION:-true}"
+
 # --- Setup: deploy stacks and start services ---
 ./ci/setup-ci-env.sh
 
@@ -24,7 +30,6 @@ export OPENBAO_TOKEN
 assert_contains /etc/admin-node/mode "normal"
 
 # --- Validate APIs (real services) ---
-export SKIP_PUBLIC_URL_VALIDATION=true
 ./scripts/validate-apis.sh
 ./scripts/validate-dns.sh
 ./scripts/validate-cloudflare-tunnel.sh

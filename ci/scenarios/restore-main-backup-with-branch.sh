@@ -3,6 +3,12 @@ set -euo pipefail
 
 source ./ci/assertions.sh
 
+# Export CI env vars for child scripts
+export CI_MOCK_PIHOLE="${CI_MOCK_PIHOLE:-true}"
+export CI_MOCK_CLOUDFLARE_TUNNEL="${CI_MOCK_CLOUDFLARE_TUNNEL:-true}"
+export CI_SKIP_PUBLIC_URL_VALIDATION="${CI_SKIP_PUBLIC_URL_VALIDATION:-true}"
+export SKIP_PUBLIC_URL_VALIDATION="${SKIP_PUBLIC_URL_VALIDATION:-true}"
+
 # --- Setup: deploy stacks and start services ---
 ./ci/setup-ci-env.sh
 
@@ -20,7 +26,6 @@ export OPENBAO_TOKEN
 assert_file_exists /srv/admin/data/sentinel/value.txt
 
 # --- Backup ---
-export SKIP_PUBLIC_URL_VALIDATION=true
 ./scripts/backup.sh
 
 BACKUP_COUNT="$(find /srv/admin/backups/local -mindepth 1 -maxdepth 1 -type d | wc -l)"
