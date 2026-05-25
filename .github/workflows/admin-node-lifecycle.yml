@@ -115,15 +115,17 @@ jobs:
       - name: Start Arch VM
         run: |
           KVM_FLAG=""
+          CPU_TYPE="qemu64"
           if [ -e /dev/kvm ]; then
             KVM_FLAG="-enable-kvm"
+            CPU_TYPE="host"
           fi
 
           qemu-system-x86_64 \
             ${KVM_FLAG} \
             -m 4096 \
             -smp 2 \
-            -cpu max \
+            -cpu ${CPU_TYPE} \
             -nographic \
             -drive file=.ci/vm/arch.qcow2,format=qcow2,if=virtio \
             -drive file=.ci/vm/seed.img,format=raw,if=virtio \
@@ -133,9 +135,10 @@ jobs:
             &> .ci/vm/qemu.log &
 
           echo $! > .ci/vm/qemu.pid
-          echo "QEMU started with PID $(cat .ci/vm/qemu.pid)"
+          echo "QEMU started with PID $(cat .ci/vm/qemu.pid) (KVM: ${KVM_FLAG:-disabled})"
 
       - name: Wait for VM to be ready
+        timeout-minutes: 30
         run: |
           echo "Waiting for SSH on port ${SSH_PORT}..."
           for i in $(seq 1 120); do
@@ -143,14 +146,26 @@ jobs:
                    -o UserKnownHostsFile=/dev/null \
                    -i .ci/ssh/id_ed25519 \
                    -p ${SSH_PORT} admin@127.0.0.1 "echo ready" 2>/dev/null; then
-              echo "VM is ready after ${i} attempts"
-              exit 0
+              echo "VM SSH is ready after ${i} attempts"
+              break
+            fi
+            if [[ $i -eq 120 ]]; then
+              echo "ERROR: VM did not become ready within 600s"
+              cat .ci/vm/qemu.log | tail -100
+              exit 1
             fi
             sleep 5
           done
-          echo "ERROR: VM did not become ready within 600s"
-          cat .ci/vm/qemu.log | tail -100
-          exit 1
+
+          # Wait for cloud-init to complete (packages installation)
+          echo "Waiting for cloud-init to finish..."
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+              -o UserKnownHostsFile=/dev/null \
+              -o ServerAliveInterval=30 \
+              -i .ci/ssh/id_ed25519 \
+              -p ${SSH_PORT} admin@127.0.0.1 \
+              "sudo cloud-init status --wait"
+          echo "Cloud-init completed"
 
       - name: Verify Docker is running in VM
         run: |
@@ -177,6 +192,7 @@ jobs:
                sudo chmod +x /opt/homelab-admin-node/scripts/*.sh /opt/homelab-admin-node/ci/*.sh /opt/homelab-admin-node/ci/scenarios/*.sh"
 
       - name: Run lifecycle scenario in VM
+        timeout-minutes: 30
         run: |
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
