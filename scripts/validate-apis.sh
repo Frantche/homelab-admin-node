@@ -55,7 +55,15 @@ for vhost in keycloak.example.com bao.example.com harbor.example.com; do
     sleep 2
   done
   if [[ "$route_ok" != "true" ]]; then
-    echo "Traefik route not configured for $vhost" >&2
+    echo "Traefik route not configured for $vhost (got 404 after retries)" >&2
+    echo "Traefik routers:" >&2
+    curl -s http://127.0.0.1:8080/api/http/routers 2>/dev/null || true
+    echo "" >&2
+    echo "Traefik services:" >&2
+    curl -s http://127.0.0.1:8080/api/http/services 2>/dev/null || true
+    echo "" >&2
+    echo "Traefik logs (last 30):" >&2
+    docker logs traefik 2>&1 | tail -30 || true
     exit 1
   fi
 done
