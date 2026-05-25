@@ -56,10 +56,20 @@ if [[ -f "$restore_path/openbao.snap" ]]; then
     if [[ "$http_code" != "000" ]]; then break; fi
     sleep 1
   done
-  # Raft snapshot restore requires auth token
+  # Raft snapshot restore requires the vault to be unsealed first
   BAO_TOKEN="${OPENBAO_TOKEN:-}"
   if [[ -z "$BAO_TOKEN" && -f /opt/homelab-admin-node/secrets/openbao-root-token ]]; then
     BAO_TOKEN="$(cat /opt/homelab-admin-node/secrets/openbao-root-token)"
+  fi
+  # Unseal before restore (raft snapshot restore requires an unsealed vault)
+  SECRETS_FILE=/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml
+  if [[ -f "$SECRETS_FILE" ]]; then
+    threshold="$(grep 'threshold:' "$SECRETS_FILE" | head -1 | awk '{print $2}')"
+    threshold="${threshold:-3}"
+    mapfile -t pre_keys < <(grep -E '^\s+- "' "$SECRETS_FILE" | sed 's/.*"\(.*\)".*/\1/' | head -"$threshold")
+    for key in "${pre_keys[@]}"; do
+      docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null 2>&1 || true
+    done
   fi
   docker cp "$restore_path/openbao.snap" openbao:/tmp/openbao.snap
   if [[ -n "$BAO_TOKEN" ]]; then
