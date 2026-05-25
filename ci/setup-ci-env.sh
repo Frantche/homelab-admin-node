@@ -58,15 +58,18 @@ docker compose --env-file /srv/admin/env/cloudflared.env -f /srv/admin/stacks/cl
 
 echo "[ci-setup] Waiting for services to become healthy..."
 
-# Wait for OpenBao
-echo "[ci-setup] Waiting for OpenBao..."
+# Wait for OpenBao API to be reachable (it will be uninitialized at this point - that's OK)
+echo "[ci-setup] Waiting for OpenBao API..."
 for i in $(seq 1 60); do
-  if curl -fsS http://127.0.0.1:8200/v1/sys/health 2>/dev/null | grep -q '"initialized"'; then
-    echo "[ci-setup] OpenBao is responding"
+  # OpenBao returns 501 when uninitialized, 503 when sealed, 200 when ready
+  # We just need the API to be responding (any HTTP response)
+  http_code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8200/v1/sys/health 2>/dev/null || echo "000")"
+  if [[ "$http_code" != "000" ]]; then
+    echo "[ci-setup] OpenBao API is responding (HTTP $http_code)"
     break
   fi
   if [[ $i -eq 60 ]]; then
-    echo "[ci-setup] ERROR: OpenBao did not become ready" >&2
+    echo "[ci-setup] ERROR: OpenBao did not become reachable" >&2
     docker logs openbao 2>&1 | tail -20
     exit 1
   fi
@@ -76,7 +79,7 @@ done
 # Wait for Keycloak
 echo "[ci-setup] Waiting for Keycloak..."
 for i in $(seq 1 90); do
-  if curl -fsS http://127.0.0.1:8081/health/ready 2>/dev/null; then
+  if curl -fsS http://127.0.0.1:9000/health/ready 2>/dev/null; then
     echo "[ci-setup] Keycloak is ready"
     break
   fi

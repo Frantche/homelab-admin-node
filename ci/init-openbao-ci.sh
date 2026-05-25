@@ -11,14 +11,15 @@ mkdir -p "$SECRETS_DIR"
 
 echo "[init-openbao-ci] Waiting for OpenBao to be ready..."
 for _ in $(seq 1 30); do
-  if curl -fsS "$OPENBAO_ADDR/v1/sys/health" 2>/dev/null | grep -q '"initialized"'; then
+  http_code="$(curl -s -o /dev/null -w '%{http_code}' "$OPENBAO_ADDR/v1/sys/health" 2>/dev/null || echo "000")"
+  if [[ "$http_code" != "000" ]]; then
     break
   fi
   sleep 2
 done
 
 # Check if already initialized
-health="$(curl -fsS "$OPENBAO_ADDR/v1/sys/health" 2>/dev/null || true)"
+health="$(curl -s "$OPENBAO_ADDR/v1/sys/health" 2>/dev/null || true)"
 initialized="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("initialized", False))' "$health" 2>/dev/null || echo "False")"
 
 if [[ "$initialized" == "True" ]]; then

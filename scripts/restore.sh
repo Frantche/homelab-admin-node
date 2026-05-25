@@ -52,7 +52,8 @@ if [[ -f "$restore_path/openbao.snap" ]]; then
   docker compose -f /srv/admin/stacks/openbao/compose.yaml up -d
   echo "[restore] waiting for openbao..."
   for _ in $(seq 1 30); do
-    if curl -fsS http://127.0.0.1:8200/v1/sys/health &>/dev/null; then break; fi
+    http_code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8200/v1/sys/health 2>/dev/null || echo "000")"
+    if [[ "$http_code" != "000" ]]; then break; fi
     sleep 1
   done
   # Raft snapshot restore requires auth token
@@ -75,7 +76,8 @@ docker compose --env-file /srv/admin/env/cloudflared.env -f /srv/admin/stacks/cl
 
 echo "[restore] waiting for services to be ready..."
 for _ in $(seq 1 60); do
-  if curl -fsS http://127.0.0.1:8200/v1/sys/health &>/dev/null; then break; fi
+  http_code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8200/v1/sys/health 2>/dev/null || echo "000")"
+  if [[ "$http_code" != "000" ]]; then break; fi
   sleep 2
 done
 
@@ -115,7 +117,7 @@ fi
 
 # Wait for Keycloak
 for _ in $(seq 1 60); do
-  if curl -fsS http://127.0.0.1:8081/health/ready &>/dev/null; then break; fi
+  if curl -fsS http://127.0.0.1:9000/health/ready &>/dev/null; then break; fi
   sleep 2
 done
 

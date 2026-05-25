@@ -17,7 +17,7 @@ fi
 
 # --- Keycloak ---
 echo "[validate-apis] checking Keycloak..."
-curl -fsS http://127.0.0.1:8081/health/ready >/dev/null
+curl -fsS http://127.0.0.1:9000/health/ready >/dev/null
 curl -fsS http://127.0.0.1:8081/realms/master/.well-known/openid-configuration >/dev/null
 
 # --- Harbor ---
