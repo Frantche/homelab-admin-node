@@ -9,5 +9,5 @@ providers:
     filename: /etc/traefik/dynamic/config.yml
     watch: true
 log:
-  level: DEBUG
+  level: INFO
 accessLog: {}
