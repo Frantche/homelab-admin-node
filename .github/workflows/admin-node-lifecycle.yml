@@ -158,14 +158,27 @@ jobs:
           done
 
           # Wait for cloud-init to complete (packages installation)
+          # Cannot use `cloud-init status --wait` because cloud-init reinstalls Python
+          # during package installation, breaking the CLI. Poll for boot-finished file instead.
           echo "Waiting for cloud-init to finish..."
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
-              -o UserKnownHostsFile=/dev/null \
-              -o ServerAliveInterval=30 \
-              -i .ci/ssh/id_ed25519 \
-              -p ${SSH_PORT} admin@127.0.0.1 \
-              "sudo cloud-init status --wait"
-          echo "Cloud-init completed"
+          for j in $(seq 1 360); do
+            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+                   -o UserKnownHostsFile=/dev/null \
+                   -i .ci/ssh/id_ed25519 \
+                   -p ${SSH_PORT} admin@127.0.0.1 \
+                   "test -f /var/lib/cloud/instance/boot-finished" 2>/dev/null; then
+              echo "Cloud-init completed after ${j} polling attempts"
+              break
+            fi
+            if [[ $j -eq 360 ]]; then
+              echo "ERROR: cloud-init did not complete within 1800s"
+              ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                  -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
+                  "cat /var/log/cloud-init-output.log" 2>/dev/null | tail -50
+              exit 1
+            fi
+            sleep 5
+          done
 
       - name: Verify Docker is running in VM
         run: |

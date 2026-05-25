@@ -51,18 +51,19 @@ echo "[ci-setup] Environment prepared, starting services..."
 docker network create admin-net 2>/dev/null || true
 
 # Start all stacks
-docker compose --env-file /srv/admin/env/traefik.env -f /srv/admin/stacks/traefik/compose.yaml up -d
-docker compose --env-file /srv/admin/env/keycloak.env -f /srv/admin/stacks/keycloak/compose.yaml up -d
-docker compose -f /srv/admin/stacks/openbao/compose.yaml up -d
-docker compose --env-file /srv/admin/env/harbor.env -f /srv/admin/stacks/harbor/compose.yaml up -d
+docker compose --env-file /srv/admin/env/traefik.env -f /srv/admin/stacks/traefik/compose.yaml up -d --force-recreate
+docker compose --env-file /srv/admin/env/keycloak.env -f /srv/admin/stacks/keycloak/compose.yaml up -d --force-recreate
+docker compose -f /srv/admin/stacks/openbao/compose.yaml up -d --force-recreate
+docker compose --env-file /srv/admin/env/harbor.env -f /srv/admin/stacks/harbor/compose.yaml up -d --force-recreate
 
 # Only start cloudflared if not mocking
 if [[ "${CI_MOCK_CLOUDFLARE_TUNNEL:-false}" != "true" ]]; then
-  docker compose --env-file /srv/admin/env/cloudflared.env -f /srv/admin/stacks/cloudflared/compose.yaml up -d
+  docker compose --env-file /srv/admin/env/cloudflared.env -f /srv/admin/stacks/cloudflared/compose.yaml up -d --force-recreate
 else
   echo "[ci-setup] Skipping cloudflared (CI_MOCK_CLOUDFLARE_TUNNEL=true)"
   # Create a dummy container so validate-cloudflare-tunnel.sh can find it
-  docker run -d --name cloudflared --network admin-net --restart no alpine sleep 3600 2>/dev/null || true
+  docker rm -f cloudflared 2>/dev/null || true
+  docker run -d --name cloudflared --network admin-net --restart no alpine sleep 3600
 fi
 
 echo "[ci-setup] Waiting for services to become healthy..."
