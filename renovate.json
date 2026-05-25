@@ -1,0 +1,46 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "dependencyDashboard": true,
+  "labels": ["dependencies", "renovate", "admin-critical", "requires-lifecycle-ci"],
+  "semanticCommits": "enabled",
+  "semanticCommitType": "fix",
+  "enabledManagers": ["docker-compose", "dockerfile", "github-actions"],
+  "ignorePaths": [
+    "**/*.sops.yaml",
+    "**/*.sops.yaml.example",
+    "**/backups/**",
+    "**/*.dump",
+    "**/*.sql",
+    "**/*.env",
+    "**/credentials*.json",
+    "**/secrets/**"
+  ],
+  "packageRules": [
+    {
+      "matchFileNames": ["stacks/harbor/**"],
+      "groupName": "harbor stack"
+    },
+    {
+      "matchPackageNames": ["traefik", "cloudflare/cloudflared"],
+      "groupName": "edge stack"
+    },
+    {
+      "matchPackageNames": [
+        "keycloak/keycloak",
+        "openbao/openbao",
+        "goharbor/harbor-core",
+        "goharbor/harbor-jobservice",
+        "goharbor/harbor-db",
+        "postgres",
+        "traefik",
+        "cloudflare/cloudflared"
+      ],
+      "automerge": false
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
+      "automerge": false
+    }
+  ]
+}

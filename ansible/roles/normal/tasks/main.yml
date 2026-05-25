@@ -1,0 +1,5 @@
+---
+- name: Run OpenBao unseal in normal mode
+  ansible.builtin.command: /opt/homelab-admin-node/scripts/openbao-unseal.sh
+  register: unseal_result
+  changed_when: false

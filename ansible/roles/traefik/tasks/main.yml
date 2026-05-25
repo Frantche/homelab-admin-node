@@ -1,0 +1,30 @@
+---
+- name: Ensure traefik stack directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/stacks/traefik"
+    state: directory
+    mode: "0755"
+
+- name: Copy traefik stack files
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../stacks/traefik/"
+    dest: "{{ admin_node_root }}/stacks/traefik/"
+    owner: root
+    group: root
+    mode: preserve
+
+- name: Render traefik env
+  ansible.builtin.copy:
+    dest: "{{ admin_node_root }}/env/traefik.env"
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      TRAEFIK_DASHBOARD_BASIC_AUTH={{ admin.traefik_dashboard_basic_auth | default('admin:$$apr1$$placeholder') }}
+  no_log: true
+
+- name: Start traefik stack
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/traefik.env -f compose.yaml up -d
+  args:
+    chdir: "{{ admin_node_root }}/stacks/traefik"
+  changed_when: true

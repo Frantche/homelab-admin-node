@@ -1,0 +1,14 @@
+[Unit]
+Description=Admin stack %i
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+WorkingDirectory=/srv/admin/stacks/%i
+ExecStart=/usr/bin/docker compose -f compose.yaml up -d
+ExecStop=/usr/bin/docker compose -f compose.yaml down
+
+[Install]
+WantedBy=admin-stacks.target

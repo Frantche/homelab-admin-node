@@ -1,0 +1,16 @@
+services:
+  openbao:
+    image: openbao/openbao:2.1.0
+    container_name: openbao
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    environment:
+      BAO_LOCAL_CONFIG: |
+        disable_mlock = true
+    command: server -config=/etc/openbao/openbao.hcl
+    ports:
+      - "8200:8200"
+    volumes:
+      - ./openbao.hcl:/etc/openbao/openbao.hcl:ro
+      - /srv/admin/data/openbao:/openbao/file

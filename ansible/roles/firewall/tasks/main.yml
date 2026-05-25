@@ -1,0 +1,4 @@
+---
+- name: Firewall placeholder
+  ansible.builtin.debug:
+    msg: "Firewall role placeholder - integrate with nftables/ufw as needed"

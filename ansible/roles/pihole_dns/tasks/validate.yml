@@ -1,0 +1,20 @@
+---
+- name: Validate Pi-hole API reachability
+  ansible.builtin.uri:
+    url: "{{ pihole.api_url }}"
+    method: GET
+    status_code: 200
+    validate_certs: false
+
+- name: Validate DNS resolution for configured records
+  ansible.builtin.command: getent ahostsv4 {{ item.name }}
+  register: dns_results
+  changed_when: false
+  loop: "{{ pihole.dns_records }}"
+
+- name: Assert DNS records resolve to expected IP
+  ansible.builtin.assert:
+    that:
+      - item.item.ip in item.stdout
+    fail_msg: "DNS record {{ item.item.name }} does not resolve to {{ item.item.ip }}"
+  loop: "{{ dns_results.results }}"

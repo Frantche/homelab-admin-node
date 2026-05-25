@@ -1,0 +1,51 @@
+---
+- hosts: admin
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Ensure admin-node mode file exists
+      ansible.builtin.file:
+        path: "{{ admin_mode_file }}"
+        state: touch
+        mode: "0644"
+
+    - name: Read current mode
+      ansible.builtin.slurp:
+        path: "{{ admin_mode_file }}"
+      register: mode_file
+
+    - name: Set admin_mode fact
+      ansible.builtin.set_fact:
+        admin_mode: "{{ (mode_file.content | b64decode | trim) | default('locked', true) }}"
+
+  roles:
+    - base
+    - arch
+    - docker
+    - storage
+    - firewall
+    - role: locked
+      when: admin_mode == 'locked'
+    - role: init
+      when: admin_mode == 'init'
+    - role: normal
+      when: admin_mode == 'normal'
+    - role: restore
+      when: admin_mode in ['restore', 'restore_failed']
+    - role: traefik
+      when: admin_mode != 'locked'
+    - role: openbao
+      when: admin_mode != 'locked'
+    - role: keycloak
+      when: admin_mode != 'locked'
+    - role: harbor
+      when: admin_mode != 'locked'
+    - role: cloudflared
+      when: admin_mode != 'locked'
+    - role: pihole_dns
+      when: admin_mode != 'locked'
+    - role: validate_apis
+      when: admin_mode != 'locked'
+    - role: backup
+      when: admin_mode in ['init', 'normal', 'restore']

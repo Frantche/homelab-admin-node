@@ -1,0 +1,75 @@
+#cloud-config
+users:
+  - name: admin
+    groups: [wheel]
+    shell: /bin/bash
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    ssh_authorized_keys:
+      - "ssh-ed25519 AAAA_PLACEHOLDER_REPLACE_ME admin@example"
+
+package_update: true
+packages:
+  - ansible
+  - git
+  - docker
+  - docker-compose
+  - openssh
+  - sops
+  - age
+  - restic
+  - jq
+  - curl
+  - python
+
+write_files:
+  - path: /etc/admin-node/mode
+    owner: root:root
+    permissions: '0644'
+    content: |
+      locked
+  - path: /etc/admin-node/git-ref
+    owner: root:root
+    permissions: '0644'
+    content: |
+      main
+  - path: /usr/local/bin/admin-converge.sh
+    owner: root:root
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      exec /opt/homelab-admin-node/scripts/admin-converge.sh
+  - path: /etc/systemd/system/admin-converge.service
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Admin node ansible converge
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/admin-converge.sh
+  - path: /etc/systemd/system/admin-converge.timer
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Periodic admin converge
+
+      [Timer]
+      OnBootSec=5min
+      OnUnitActiveSec=30min
+      Unit=admin-converge.service
+
+      [Install]
+      WantedBy=timers.target
+
+runcmd:
+  - [ mkdir, -p, /etc/admin-node ]
+  - [ systemctl, daemon-reload ]
+  - [ systemctl, enable, --now, sshd ]
+  - [ systemctl, enable, --now, docker ]
+  - [ systemctl, enable, --now, admin-converge.timer ]
+  - [ /usr/local/bin/admin-converge.sh ]

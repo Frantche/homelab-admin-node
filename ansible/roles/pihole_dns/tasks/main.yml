@@ -1,0 +1,15 @@
+---
+- name: Skip pihole when disabled
+  ansible.builtin.meta: end_host
+  when: not pihole.enabled | bool
+
+- name: Select pihole API task file
+  ansible.builtin.include_tasks: "{{ selected_api_file }}"
+  vars:
+    selected_api_file: >-
+      {% if pihole.api_version == 'v5' %}api_v5.yml
+      {% elif pihole.api_version == 'v6' %}api_v6.yml
+      {% else %}api_v5.yml{% endif %}
+
+- name: Validate pihole dns records
+  ansible.builtin.include_tasks: validate.yml

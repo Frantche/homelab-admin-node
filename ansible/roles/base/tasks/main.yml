@@ -1,0 +1,22 @@
+---
+- name: Ensure base directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/homelab-admin-node
+    - "{{ admin_node_root }}"
+    - "{{ admin_node_root }}/stacks"
+    - "{{ admin_node_root }}/env"
+    - "{{ admin_node_root }}/data"
+    - "{{ admin_node_root }}/backups"
+
+- name: Sync repository into /opt
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../"
+    dest: /opt/homelab-admin-node/
+    rsync_opts:
+      - "--delete"

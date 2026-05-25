@@ -1,0 +1,8 @@
+[Unit]
+Description=Run admin convergence
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/homelab-admin-node/scripts/admin-converge.sh

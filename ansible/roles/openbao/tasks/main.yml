@@ -1,0 +1,31 @@
+---
+- name: Ensure openbao stack directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/stacks/openbao"
+    state: directory
+    mode: "0755"
+
+- name: Copy openbao stack files
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../stacks/openbao/"
+    dest: "{{ admin_node_root }}/stacks/openbao/"
+    mode: preserve
+
+- name: Render openbao env
+  ansible.builtin.copy:
+    dest: "{{ admin_node_root }}/env/openbao.env"
+    mode: "0600"
+    content: |
+      OPENBAO_ADDR=http://127.0.0.1:8200
+      OPENBAO_TOKEN={{ openbao.root_token | default('') }}
+  no_log: true
+
+- name: Start openbao stack
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/openbao.env -f compose.yaml up -d
+  args:
+    chdir: "{{ admin_node_root }}/stacks/openbao"
+  changed_when: true
+
+- name: Unseal openbao
+  ansible.builtin.command: /opt/homelab-admin-node/scripts/openbao-unseal.sh
+  changed_when: false

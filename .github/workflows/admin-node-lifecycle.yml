@@ -1,0 +1,24 @@
+name: admin-node-lifecycle
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        scenario: [fresh-branch, upgrade-main-to-branch, restore-main-backup-with-branch]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure scripts are executable
+        run: chmod +x scripts/*.sh ci/*.sh ci/scenarios/*.sh
+      - name: Run lifecycle scenario
+        env:
+          CI_MOCK_PIHOLE: "true"
+          CI_MOCK_CLOUDFLARE_TUNNEL: "true"
+          CI_MOCK_APIS: "true"
+          SKIP_PUBLIC_URL_VALIDATION: "true"
+        run: ./ci/run-admin-lifecycle.sh ${{ matrix.scenario }}

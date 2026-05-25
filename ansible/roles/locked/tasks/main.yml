@@ -1,0 +1,14 @@
+---
+- name: Stop sensitive stacks in locked mode
+  ansible.builtin.command: docker compose -f {{ admin_node_root }}/stacks/{{ item }}/compose.yaml down
+  args:
+    chdir: "{{ admin_node_root }}/stacks/{{ item }}"
+  loop:
+    - traefik
+    - openbao
+    - keycloak
+    - harbor
+    - cloudflared
+  register: locked_stop
+  failed_when: false
+  changed_when: false

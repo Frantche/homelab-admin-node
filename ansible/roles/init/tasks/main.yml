@@ -1,0 +1,4 @@
+---
+- name: Set init mode marker
+  ansible.builtin.debug:
+    msg: "Init mode: deploy stacks, initialize OpenBao, configure DNS/Tunnel, validate and backup"

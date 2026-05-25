@@ -1,0 +1,6 @@
+---
+- name: Execute restore script
+  ansible.builtin.command: /opt/homelab-admin-node/scripts/restore.sh
+  register: restore_result
+  changed_when: false
+  failed_when: restore_result.rc != 0 and admin_mode != 'restore_failed'

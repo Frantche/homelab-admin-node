@@ -1,0 +1,28 @@
+---
+- name: Ensure keycloak stack directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/stacks/keycloak"
+    state: directory
+    mode: "0755"
+
+- name: Copy keycloak stack files
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../stacks/keycloak/"
+    dest: "{{ admin_node_root }}/stacks/keycloak/"
+    mode: preserve
+
+- name: Render keycloak env
+  ansible.builtin.copy:
+    dest: "{{ admin_node_root }}/env/keycloak.env"
+    mode: "0600"
+    content: |
+      KEYCLOAK_DB_PASSWORD={{ keycloak.db_password | default('change-me') }}
+      KEYCLOAK_ADMIN={{ keycloak.admin_user | default('admin') }}
+      KEYCLOAK_ADMIN_PASSWORD={{ keycloak.admin_password | default('change-me') }}
+  no_log: true
+
+- name: Start keycloak stack
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/keycloak.env -f compose.yaml up -d
+  args:
+    chdir: "{{ admin_node_root }}/stacks/keycloak"
+  changed_when: true

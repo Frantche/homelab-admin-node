@@ -1,0 +1,7 @@
+[Unit]
+Description=Admin backup job
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/homelab-admin-node/scripts/backup.sh

@@ -1,0 +1,19 @@
+http:
+  routers:
+    keycloak:
+      rule: "Host(`keycloak.example.com`)"
+      entryPoints: [web]
+      service: keycloak
+    openbao:
+      rule: "Host(`bao.example.com`)"
+      entryPoints: [web]
+      service: openbao
+    harbor:
+      rule: "Host(`harbor.example.com`)"
+      entryPoints: [web]
+      service: harbor
+    dashboard:
+      rule: "Host(`traefik.example.com`)"
+      entryPoints: [web]
+      service: api@internal
+      middlewares: [dashboard-auth]
