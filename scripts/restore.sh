@@ -28,7 +28,9 @@ docker compose --env-file /srv/admin/env/traefik.env -f /srv/admin/stacks/traefi
 docker compose --env-file /srv/admin/env/keycloak.env -f /srv/admin/stacks/keycloak/compose.yaml down 2>/dev/null
 docker compose -f /srv/admin/stacks/openbao/compose.yaml down 2>/dev/null
 docker compose --env-file /srv/admin/env/harbor.env -f /srv/admin/stacks/harbor/compose.yaml down 2>/dev/null
-docker compose --env-file /srv/admin/env/cloudflared.env -f /srv/admin/stacks/cloudflared/compose.yaml down 2>/dev/null
+if [[ "${CI_MOCK_CLOUDFLARE_TUNNEL:-false}" != "true" ]]; then
+  docker compose --env-file /srv/admin/env/cloudflared.env -f /srv/admin/stacks/cloudflared/compose.yaml down 2>/dev/null
+fi
 set -e
 
 if command -v restic &>/dev/null && [[ -n "${RESTIC_REPOSITORY:-}" ]]; then
@@ -82,7 +84,9 @@ docker compose -f /srv/admin/stacks/openbao/compose.yaml up -d
 docker compose --env-file /srv/admin/env/traefik.env -f /srv/admin/stacks/traefik/compose.yaml up -d
 docker compose --env-file /srv/admin/env/keycloak.env -f /srv/admin/stacks/keycloak/compose.yaml up -d
 docker compose --env-file /srv/admin/env/harbor.env -f /srv/admin/stacks/harbor/compose.yaml up -d
-docker compose --env-file /srv/admin/env/cloudflared.env -f /srv/admin/stacks/cloudflared/compose.yaml up -d
+if [[ "${CI_MOCK_CLOUDFLARE_TUNNEL:-false}" != "true" ]]; then
+  docker compose --env-file /srv/admin/env/cloudflared.env -f /srv/admin/stacks/cloudflared/compose.yaml up -d
+fi
 
 echo "[restore] waiting for services to be ready..."
 for _ in $(seq 1 60); do
