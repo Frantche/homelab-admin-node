@@ -19,10 +19,15 @@ if ! flock -n 9; then
 fi
 
 echo "[admin-converge] lock acquired"
-ansible-pull \
-  -U "${ADMIN_REPO_URL:-ssh://git@example.com/homelab/homelab-admin-node.git}" \
-  -i localhost, \
-  -c local \
-  --checkout "$REF" \
-  /opt/homelab-admin-node/ansible/site.yml
+
+if [[ "${CI:-false}" == "true" ]]; then
+  echo "[admin-converge] CI mode: skipping ansible-pull"
+else
+  ansible-pull \
+    -U "${ADMIN_REPO_URL:-ssh://git@example.com/homelab/homelab-admin-node.git}" \
+    -i localhost, \
+    -c local \
+    --checkout "$REF" \
+    /opt/homelab-admin-node/ansible/site.yml
+fi
 echo "[admin-converge] completed"

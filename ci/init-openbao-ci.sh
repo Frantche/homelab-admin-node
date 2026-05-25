@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 set -euo pipefail
-./scripts/openbao-init.sh || true
+./scripts/openbao-init.sh

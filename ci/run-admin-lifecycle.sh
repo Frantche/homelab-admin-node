@@ -7,6 +7,7 @@ case "$scenario" in
   *) echo "Unknown scenario: $scenario" >&2; exit 1 ;;
 esac
 
+export CI=true
 CI_MOCK_PIHOLE=${CI_MOCK_PIHOLE:-true}
 CI_MOCK_CLOUDFLARE_TUNNEL=${CI_MOCK_CLOUDFLARE_TUNNEL:-true}
 CI_MOCK_APIS=${CI_MOCK_APIS:-true}

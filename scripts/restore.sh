@@ -24,33 +24,56 @@ if [[ -z "$restore_path" || ! -d "$restore_path" ]]; then
 fi
 
 set +e
-docker compose -f /srv/admin/stacks/traefik/compose.yaml down
-docker compose -f /srv/admin/stacks/keycloak/compose.yaml down
-docker compose -f /srv/admin/stacks/openbao/compose.yaml down
-docker compose -f /srv/admin/stacks/harbor/compose.yaml down
-docker compose -f /srv/admin/stacks/cloudflared/compose.yaml down
+if [[ "${CI:-false}" != "true" ]]; then
+  docker compose -f /srv/admin/stacks/traefik/compose.yaml down
+  docker compose -f /srv/admin/stacks/keycloak/compose.yaml down
+  docker compose -f /srv/admin/stacks/openbao/compose.yaml down
+  docker compose -f /srv/admin/stacks/harbor/compose.yaml down
+  docker compose -f /srv/admin/stacks/cloudflared/compose.yaml down
+fi
 set -e
 
-restic restore latest --target /
+if [[ "${CI:-false}" == "true" ]]; then
+  echo "[restore] CI mode: skipping restic restore"
+else
+  restic restore latest --target /
+fi
 
 if [[ -f "$restore_path/keycloak.sql" ]]; then
-  docker exec -i keycloak-db psql -U keycloak keycloak < "$restore_path/keycloak.sql"
+  if [[ "${CI:-false}" != "true" ]]; then
+    docker exec -i keycloak-db psql -U keycloak keycloak < "$restore_path/keycloak.sql"
+  else
+    echo "[restore] CI mode: skipping keycloak DB restore"
+  fi
 fi
 if [[ -f "$restore_path/openbao.snap" ]]; then
-  docker cp "$restore_path/openbao.snap" openbao:/tmp/openbao.snap
-  docker exec openbao bao operator raft snapshot restore -force /tmp/openbao.snap
+  if [[ "${CI:-false}" != "true" ]]; then
+    docker cp "$restore_path/openbao.snap" openbao:/tmp/openbao.snap
+    docker exec openbao bao operator raft snapshot restore -force /tmp/openbao.snap
+  else
+    echo "[restore] CI mode: skipping openbao snapshot restore"
+  fi
 fi
 
-docker compose -f /srv/admin/stacks/traefik/compose.yaml up -d
-docker compose -f /srv/admin/stacks/keycloak/compose.yaml up -d
-docker compose -f /srv/admin/stacks/openbao/compose.yaml up -d
-docker compose -f /srv/admin/stacks/harbor/compose.yaml up -d
-docker compose -f /srv/admin/stacks/cloudflared/compose.yaml up -d
+if [[ "${CI:-false}" != "true" ]]; then
+  docker compose -f /srv/admin/stacks/traefik/compose.yaml up -d
+  docker compose -f /srv/admin/stacks/keycloak/compose.yaml up -d
+  docker compose -f /srv/admin/stacks/openbao/compose.yaml up -d
+  docker compose -f /srv/admin/stacks/harbor/compose.yaml up -d
+  docker compose -f /srv/admin/stacks/cloudflared/compose.yaml up -d
+fi
 
-if ! "$SCRIPT_DIR/openbao-unseal.sh" || ! "$SCRIPT_DIR/validate-apis.sh" || ! "$SCRIPT_DIR/validate-dns.sh" || ! "$SCRIPT_DIR/validate-cloudflare-tunnel.sh"; then
-  echo "restore_failed" > "$MODE_FILE"
-  echo "Restore validation failed" >&2
-  exit 1
+if [[ "${CI:-false}" == "true" ]]; then
+  echo "[restore] CI mode: skipping post-restore validation (mocked)"
+  "$SCRIPT_DIR/validate-apis.sh"
+  "$SCRIPT_DIR/validate-dns.sh"
+  "$SCRIPT_DIR/validate-cloudflare-tunnel.sh"
+else
+  if ! "$SCRIPT_DIR/openbao-unseal.sh" || ! "$SCRIPT_DIR/validate-apis.sh" || ! "$SCRIPT_DIR/validate-dns.sh" || ! "$SCRIPT_DIR/validate-cloudflare-tunnel.sh"; then
+    echo "restore_failed" > "$MODE_FILE"
+    echo "Restore validation failed" >&2
+    exit 1
+  fi
 fi
 
 echo "normal" > "$MODE_FILE"

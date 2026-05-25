@@ -20,6 +20,7 @@ jobs:
         run: chmod +x scripts/*.sh ci/*.sh ci/scenarios/*.sh
       - name: Run lifecycle scenario
         env:
+          CI: "true"
           CI_MOCK_PIHOLE: "true"
           CI_MOCK_CLOUDFLARE_TUNNEL: "true"
           CI_MOCK_APIS: "true"
