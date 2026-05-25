@@ -24,56 +24,105 @@ if [[ -z "$restore_path" || ! -d "$restore_path" ]]; then
 fi
 
 set +e
-if [[ "${CI:-false}" != "true" ]]; then
-  docker compose -f /srv/admin/stacks/traefik/compose.yaml down
-  docker compose -f /srv/admin/stacks/keycloak/compose.yaml down
-  docker compose -f /srv/admin/stacks/openbao/compose.yaml down
-  docker compose -f /srv/admin/stacks/harbor/compose.yaml down
-  docker compose -f /srv/admin/stacks/cloudflared/compose.yaml down
-fi
+docker compose --env-file /srv/admin/env/traefik.env -f /srv/admin/stacks/traefik/compose.yaml down 2>/dev/null
+docker compose --env-file /srv/admin/env/keycloak.env -f /srv/admin/stacks/keycloak/compose.yaml down 2>/dev/null
+docker compose -f /srv/admin/stacks/openbao/compose.yaml down 2>/dev/null
+docker compose --env-file /srv/admin/env/harbor.env -f /srv/admin/stacks/harbor/compose.yaml down 2>/dev/null
+docker compose --env-file /srv/admin/env/cloudflared.env -f /srv/admin/stacks/cloudflared/compose.yaml down 2>/dev/null
 set -e
 
-if [[ "${CI:-false}" == "true" ]]; then
-  echo "[restore] CI mode: skipping restic restore"
-else
+if command -v restic &>/dev/null && [[ -n "${RESTIC_REPOSITORY:-}" ]]; then
   restic restore latest --target /
+else
+  echo "[restore] restic not configured, restoring from local backup only"
 fi
 
 if [[ -f "$restore_path/keycloak.sql" ]]; then
-  if [[ "${CI:-false}" != "true" ]]; then
-    docker exec -i keycloak-db psql -U keycloak keycloak < "$restore_path/keycloak.sql"
-  else
-    echo "[restore] CI mode: skipping keycloak DB restore"
-  fi
+  docker compose --env-file /srv/admin/env/keycloak.env -f /srv/admin/stacks/keycloak/compose.yaml up -d keycloak-db
+  echo "[restore] waiting for keycloak-db..."
+  for _ in $(seq 1 30); do
+    if docker exec keycloak-db pg_isready -U keycloak &>/dev/null; then break; fi
+    sleep 1
+  done
+  docker exec -i keycloak-db psql -U keycloak keycloak < "$restore_path/keycloak.sql"
+  docker compose --env-file /srv/admin/env/keycloak.env -f /srv/admin/stacks/keycloak/compose.yaml down 2>/dev/null
 fi
+
 if [[ -f "$restore_path/openbao.snap" ]]; then
-  if [[ "${CI:-false}" != "true" ]]; then
-    docker cp "$restore_path/openbao.snap" openbao:/tmp/openbao.snap
-    docker exec openbao bao operator raft snapshot restore -force /tmp/openbao.snap
-  else
-    echo "[restore] CI mode: skipping openbao snapshot restore"
-  fi
-fi
-
-if [[ "${CI:-false}" != "true" ]]; then
-  docker compose -f /srv/admin/stacks/traefik/compose.yaml up -d
-  docker compose -f /srv/admin/stacks/keycloak/compose.yaml up -d
   docker compose -f /srv/admin/stacks/openbao/compose.yaml up -d
-  docker compose -f /srv/admin/stacks/harbor/compose.yaml up -d
-  docker compose -f /srv/admin/stacks/cloudflared/compose.yaml up -d
+  echo "[restore] waiting for openbao..."
+  for _ in $(seq 1 30); do
+    if curl -fsS http://127.0.0.1:8200/v1/sys/health &>/dev/null; then break; fi
+    sleep 1
+  done
+  # Raft snapshot restore requires auth token
+  BAO_TOKEN="${OPENBAO_TOKEN:-}"
+  if [[ -z "$BAO_TOKEN" && -f /opt/homelab-admin-node/secrets/openbao-root-token ]]; then
+    BAO_TOKEN="$(cat /opt/homelab-admin-node/secrets/openbao-root-token)"
+  fi
+  docker cp "$restore_path/openbao.snap" openbao:/tmp/openbao.snap
+  if [[ -n "$BAO_TOKEN" ]]; then
+    docker exec -e VAULT_TOKEN="$BAO_TOKEN" openbao bao operator raft snapshot restore -force /tmp/openbao.snap
+  fi
+  docker compose -f /srv/admin/stacks/openbao/compose.yaml down 2>/dev/null
 fi
 
-if [[ "${CI:-false}" == "true" ]]; then
-  echo "[restore] CI mode: skipping post-restore validation (mocked)"
-  "$SCRIPT_DIR/validate-apis.sh"
-  "$SCRIPT_DIR/validate-dns.sh"
-  "$SCRIPT_DIR/validate-cloudflare-tunnel.sh"
-else
-  if ! "$SCRIPT_DIR/openbao-unseal.sh" || ! "$SCRIPT_DIR/validate-apis.sh" || ! "$SCRIPT_DIR/validate-dns.sh" || ! "$SCRIPT_DIR/validate-cloudflare-tunnel.sh"; then
-    echo "restore_failed" > "$MODE_FILE"
-    echo "Restore validation failed" >&2
-    exit 1
+docker compose -f /srv/admin/stacks/openbao/compose.yaml up -d
+docker compose --env-file /srv/admin/env/traefik.env -f /srv/admin/stacks/traefik/compose.yaml up -d
+docker compose --env-file /srv/admin/env/keycloak.env -f /srv/admin/stacks/keycloak/compose.yaml up -d
+docker compose --env-file /srv/admin/env/harbor.env -f /srv/admin/stacks/harbor/compose.yaml up -d
+docker compose --env-file /srv/admin/env/cloudflared.env -f /srv/admin/stacks/cloudflared/compose.yaml up -d
+
+echo "[restore] waiting for services to be ready..."
+for _ in $(seq 1 60); do
+  if curl -fsS http://127.0.0.1:8200/v1/sys/health &>/dev/null; then break; fi
+  sleep 2
+done
+
+# Unseal OpenBao: try SOPS-based unseal first, fall back to CI secrets file
+SECRETS_FILE=/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml
+unseal_ok=false
+if [[ -f /etc/sops/age/keys.txt && -f "$SECRETS_FILE" ]] && command -v sops &>/dev/null; then
+  if "$SCRIPT_DIR/openbao-unseal.sh"; then
+    unseal_ok=true
   fi
+elif [[ -f "$SECRETS_FILE" ]]; then
+  # Plain-text secrets file - extract unseal keys with grep/sed
+  threshold="$(grep 'threshold:' "$SECRETS_FILE" | head -1 | awk '{print $2}')"
+  threshold="${threshold:-3}"
+  mapfile -t keys < <(grep -E '^\s+- "' "$SECRETS_FILE" | sed 's/.*"\(.*\)".*/\1/' | head -"$threshold")
+  if [[ ${#keys[@]} -gt 0 ]]; then
+    for key in "${keys[@]}"; do
+      docker exec openbao bao operator unseal "$key" >/dev/null 2>&1
+    done
+    unseal_ok=true
+  fi
+fi
+
+if [[ "$unseal_ok" != "true" ]]; then
+  # Check if already unsealed
+  sealed="$(curl -fsS http://127.0.0.1:8200/v1/sys/health 2>/dev/null | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' 2>/dev/null || echo "True")"
+  if [[ "$sealed" == "False" ]]; then
+    unseal_ok=true
+  fi
+fi
+
+if [[ "$unseal_ok" != "true" ]]; then
+  echo "restore_failed" > "$MODE_FILE"
+  echo "OpenBao unseal failed during restore" >&2
+  exit 1
+fi
+
+# Wait for Keycloak
+for _ in $(seq 1 60); do
+  if curl -fsS http://127.0.0.1:8081/health/ready &>/dev/null; then break; fi
+  sleep 2
+done
+
+if ! "$SCRIPT_DIR/validate-apis.sh" || ! "$SCRIPT_DIR/validate-dns.sh" || ! "$SCRIPT_DIR/validate-cloudflare-tunnel.sh"; then
+  echo "restore_failed" > "$MODE_FILE"
+  echo "Restore validation failed" >&2
+  exit 1
 fi
 
 echo "normal" > "$MODE_FILE"

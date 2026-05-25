@@ -3,11 +3,8 @@ set -euo pipefail
 
 source ./ci/assertions.sh
 
-export CI=true
-
-# --- Setup ---
+# --- Setup: deploy stacks and start services ---
 ./ci/setup-ci-env.sh
-./ci/generate-fake-sops.sh
 
 # --- Init phase ---
 ./scripts/set-mode.sh locked
@@ -17,23 +14,22 @@ assert_contains /etc/admin-node/mode "locked"
 ./scripts/set-mode.sh init
 assert_contains /etc/admin-node/mode "init"
 
-# --- Converge (ansible-pull skipped in CI) ---
-./scripts/admin-converge.sh
-assert_contains /etc/admin-node/mode "init"
-
-# --- OpenBao init (skipped in CI, no service running) ---
+# --- Initialize and unseal OpenBao ---
 ./ci/init-openbao-ci.sh
+OPENBAO_TOKEN="$(cat /opt/homelab-admin-node/secrets/openbao-root-token)"
+export OPENBAO_TOKEN
 
 # --- Normal mode ---
 ./scripts/set-mode.sh normal
 assert_contains /etc/admin-node/mode "normal"
 
-# --- Validate (mocked in CI) ---
+# --- Validate APIs (real services) ---
+export SKIP_PUBLIC_URL_VALIDATION=true
 ./scripts/validate-apis.sh
 ./scripts/validate-dns.sh
 ./scripts/validate-cloudflare-tunnel.sh
 
-# --- Create sentinel + backup ---
+# --- Create sentinel data + backup ---
 ./ci/create-sentinel-data.sh
 assert_file_exists /srv/admin/data/sentinel/value.txt
 
@@ -46,9 +42,9 @@ if [[ "$BACKUP_COUNT" -lt 1 ]]; then
 fi
 
 # Run multiple backups to test retention
-./scripts/backup.sh
-./scripts/backup.sh
-./scripts/backup.sh
+sleep 1 && ./scripts/backup.sh
+sleep 1 && ./scripts/backup.sh
+sleep 1 && ./scripts/backup.sh
 
 # Verify retention keeps max 3 local backups
 BACKUP_COUNT="$(find /srv/admin/backups/local -mindepth 1 -maxdepth 1 -type d | wc -l)"

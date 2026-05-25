@@ -19,21 +19,28 @@ fi
 
 mkdir -p "$TARGET"
 
-if [[ "${CI:-false}" == "true" ]]; then
-  echo "[backup] CI mode: skipping docker/restic operations"
-  cp -a /srv/admin/stacks "$TARGET/stacks"
-  cp -a /srv/admin/env "$TARGET/env"
-  echo "-- CI mock dump" > "$TARGET/keycloak.sql"
-  echo "CI mock snapshot" > "$TARGET/openbao.snap"
-else
-  docker exec keycloak-db pg_dump -U keycloak keycloak > "$TARGET/keycloak.sql"
-  docker exec openbao bao operator raft snapshot save /tmp/openbao.snap >/dev/null
-  docker cp openbao:/tmp/openbao.snap "$TARGET/openbao.snap"
-  cp -a /srv/admin/stacks "$TARGET/stacks"
-  cp -a /srv/admin/env "$TARGET/env"
+docker exec keycloak-db pg_dump -U keycloak keycloak > "$TARGET/keycloak.sql"
 
+# OpenBao raft snapshot requires authentication
+BAO_TOKEN="${OPENBAO_TOKEN:-}"
+if [[ -z "$BAO_TOKEN" && -f /opt/homelab-admin-node/secrets/openbao-root-token ]]; then
+  BAO_TOKEN="$(cat /opt/homelab-admin-node/secrets/openbao-root-token)"
+fi
+if [[ -n "$BAO_TOKEN" ]]; then
+  docker exec -e VAULT_TOKEN="$BAO_TOKEN" openbao bao operator raft snapshot save /tmp/openbao.snap >/dev/null
+  docker cp openbao:/tmp/openbao.snap "$TARGET/openbao.snap"
+else
+  echo "[backup] WARNING: No OpenBao token available, skipping raft snapshot" >&2
+fi
+
+cp -a /srv/admin/stacks "$TARGET/stacks"
+cp -a /srv/admin/env "$TARGET/env"
+
+if command -v restic &>/dev/null && [[ -n "${RESTIC_REPOSITORY:-}" ]]; then
   restic backup /srv/admin/stacks /srv/admin/env /srv/admin/data
   restic forget --keep-last 3 --prune
+else
+  echo "[backup] restic not configured, skipping remote backup"
 fi
 
 mapfile -t old_backups < <(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr | awk 'NR>3 {print $2}')

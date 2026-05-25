@@ -14,3 +14,9 @@ services:
     volumes:
       - ./openbao.hcl:/etc/openbao/openbao.hcl:ro
       - /srv/admin/data/openbao:/openbao/file
+    networks:
+      - admin-net
+
+networks:
+  admin-net:
+    external: true

@@ -3,4 +3,4 @@ http:
     dashboard-auth:
       basicAuth:
         users:
-          - "${TRAEFIK_DASHBOARD_BASIC_AUTH}"
+          - "admin:$apr1$H6uskkkW$IgXLP6ewTrSuBkTrqE8wj/"

@@ -3,11 +3,6 @@ set -euo pipefail
 
 OPENBAO_ADDR=${OPENBAO_ADDR:-http://127.0.0.1:8200}
 
-if [[ "${CI:-false}" == "true" ]]; then
-  echo "[openbao-init] CI mode: skipping (OpenBao not running)"
-  exit 0
-fi
-
 if ! curl -fsS "$OPENBAO_ADDR/v1/sys/health" >/dev/null 2>&1; then
   echo "OpenBao API not reachable at $OPENBAO_ADDR" >&2
   exit 1

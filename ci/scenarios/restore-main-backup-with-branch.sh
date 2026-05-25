@@ -3,21 +3,24 @@ set -euo pipefail
 
 source ./ci/assertions.sh
 
-export CI=true
-
-# --- Setup ---
+# --- Setup: deploy stacks and start services ---
 ./ci/setup-ci-env.sh
-./ci/generate-fake-sops.sh
 
-# --- Init and create data ---
+# --- Init and set up OpenBao ---
 ./scripts/set-mode.sh init
 assert_contains /etc/admin-node/mode "init"
 
+./ci/init-openbao-ci.sh
+OPENBAO_TOKEN="$(cat /opt/homelab-admin-node/secrets/openbao-root-token)"
+export OPENBAO_TOKEN
+
+# --- Normal mode, create data ---
 ./scripts/set-mode.sh normal
 ./ci/create-sentinel-data.sh
 assert_file_exists /srv/admin/data/sentinel/value.txt
 
 # --- Backup ---
+export SKIP_PUBLIC_URL_VALIDATION=true
 ./scripts/backup.sh
 
 BACKUP_COUNT="$(find /srv/admin/backups/local -mindepth 1 -maxdepth 1 -type d | wc -l)"

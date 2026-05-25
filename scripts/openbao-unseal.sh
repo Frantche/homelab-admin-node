@@ -18,8 +18,8 @@ fi
 export SOPS_AGE_KEY_FILE="$AGE_KEY"
 json="$(sops --decrypt --output-type json "$SECRETS_FILE")"
 
-active_keyset="$(python -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d["openbao"]["active_keyset"])' <<< "$json")"
-threshold="$(python -c 'import json,sys; d=json.loads(sys.stdin.read()); ks=d["openbao"]["keysets"][d["openbao"]["active_keyset"]]; print(ks["threshold"])' <<< "$json")"
+active_keyset="$(python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d["openbao"]["active_keyset"])' <<< "$json")"
+threshold="$(python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); ks=d["openbao"]["keysets"][d["openbao"]["active_keyset"]]; print(ks["threshold"])' <<< "$json")"
 
 if [[ -z "$active_keyset" || -z "$threshold" ]]; then
   echo "Unable to read active keyset or threshold" >&2
@@ -27,8 +27,8 @@ if [[ -z "$active_keyset" || -z "$threshold" ]]; then
 fi
 
 health="$(curl -fsS "$OPENBAO_ADDR/v1/sys/health")"
-initialized="$(python -c 'import json,sys; print(json.loads(sys.stdin.read()).get("initialized", False))' <<< "$health")"
-sealed="$(python -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' <<< "$health")"
+initialized="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("initialized", False))' <<< "$health")"
+sealed="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' <<< "$health")"
 
 if [[ "$initialized" != "True" ]]; then
   echo "OpenBao is not initialized" >&2
@@ -40,7 +40,7 @@ if [[ "$sealed" == "False" ]]; then
   exit 0
 fi
 
-python - "$json" <<'PY' | while IFS= read -r key; do
+python3 - "$json" <<'PY' | while IFS= read -r key; do
 import json,sys
 obj=json.loads(sys.argv[1])
 active=obj["openbao"]["active_keyset"]
@@ -53,7 +53,7 @@ PY
 done
 
 health2="$(curl -fsS "$OPENBAO_ADDR/v1/sys/health")"
-sealed2="$(python -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' <<< "$health2")"
+sealed2="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' <<< "$health2")"
 
 if [[ "$sealed2" != "False" ]]; then
   echo "OpenBao unseal failed" >&2

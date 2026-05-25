@@ -11,4 +11,4 @@ http:
     harbor:
       loadBalancer:
         servers:
-          - url: "http://harbor:8080"
+          - url: "http://harbor-core:8080"

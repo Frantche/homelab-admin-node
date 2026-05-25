@@ -4,6 +4,9 @@ services:
     container_name: cloudflared
     restart: unless-stopped
     command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
-    volumes:
-      - ./config.yml:/etc/cloudflared/config.yml:ro
-      - ./credentials.json:/etc/cloudflared/credentials.json:ro
+    networks:
+      - admin-net
+
+networks:
+  admin-net:
+    external: true

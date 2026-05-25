@@ -20,9 +20,5 @@ jobs:
         run: chmod +x scripts/*.sh ci/*.sh ci/scenarios/*.sh
       - name: Run lifecycle scenario
         env:
-          CI: "true"
-          CI_MOCK_PIHOLE: "true"
-          CI_MOCK_CLOUDFLARE_TUNNEL: "true"
-          CI_MOCK_APIS: "true"
           SKIP_PUBLIC_URL_VALIDATION: "true"
         run: sudo -E ./ci/run-admin-lifecycle.sh ${{ matrix.scenario }}

@@ -12,3 +12,9 @@ services:
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
       - ./dynamic:/etc/traefik/dynamic:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - admin-net
+
+networks:
+  admin-net:
+    external: true
