@@ -28,6 +28,9 @@ cp -a /srv/admin/env "$TARGET/env"
 restic backup /srv/admin/stacks /srv/admin/env /srv/admin/data
 restic forget --keep-last 3 --prune
 
-ls -1dt "$BACKUP_ROOT"/* 2>/dev/null | tail -n +4 | xargs -r rm -rf
+mapfile -t old_backups < <(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr | awk 'NR>3 {print $2}')
+if ((${#old_backups[@]})); then
+  rm -rf "${old_backups[@]}"
+fi
 
 echo "Backup completed: $TARGET"

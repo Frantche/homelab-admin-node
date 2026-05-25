@@ -49,7 +49,7 @@ threshold=int(ks["threshold"])
 for k in ks["unseal_keys"][:threshold]:
     print(k)
 PY
-  docker exec -i openbao bao operator unseal >/dev/null
+  docker exec -i openbao bao operator unseal >/dev/null <<< "$key"
 done
 
 health2="$(curl -fsS "$OPENBAO_ADDR/v1/sys/health")"

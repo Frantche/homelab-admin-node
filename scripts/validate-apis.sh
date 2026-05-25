@@ -17,4 +17,26 @@ curl -fsS http://127.0.0.1:8081/realms/master/.well-known/openid-configuration >
 
 curl -fsS http://127.0.0.1:8082/api/v2.0/health >/dev/null
 
+if [[ -n "${HARBOR_ADMIN_USER:-}" && -n "${HARBOR_ADMIN_PASSWORD:-}" ]]; then
+  curl -fsS -u "${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASSWORD}" "http://127.0.0.1:8082/api/v2.0/projects?name=admin-ci" >/dev/null
+fi
+
+curl -fsS http://127.0.0.1:8080/api/http/routers >/dev/null
+curl -fsS -H "Host: keycloak.example.com" http://127.0.0.1 >/dev/null
+curl -fsS -H "Host: bao.example.com" http://127.0.0.1 >/dev/null
+curl -fsS -H "Host: harbor.example.com" http://127.0.0.1 >/dev/null
+dashboard_status="$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: traefik.example.com' http://127.0.0.1)"
+if [[ "$dashboard_status" != "401" && "$dashboard_status" != "403" ]]; then
+  echo "Traefik dashboard is not protected as expected (status $dashboard_status)" >&2
+  exit 1
+fi
+
+if [[ -n "${KEYCLOAK_CI_CLIENT_ID:-}" && -n "${KEYCLOAK_CI_CLIENT_SECRET:-}" ]]; then
+  curl -fsS -X POST \
+    -d "client_id=${KEYCLOAK_CI_CLIENT_ID}" \
+    -d "client_secret=${KEYCLOAK_CI_CLIENT_SECRET}" \
+    -d "grant_type=client_credentials" \
+    http://127.0.0.1:8081/realms/master/protocol/openid-connect/token >/dev/null
+fi
+
 echo "API validation passed"

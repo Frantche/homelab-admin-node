@@ -12,7 +12,7 @@ if [[ -f "$RESTORE_ID_FILE" ]]; then
 fi
 
 if [[ "$restore_id" == "latest" ]]; then
-  restore_path="$(ls -1dt "$BACKUP_ROOT"/* 2>/dev/null | head -n1 || true)"
+  restore_path="$(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr | awk 'NR==1 {print $2}')"
 else
   restore_path="$BACKUP_ROOT/$restore_id"
 fi
@@ -34,7 +34,7 @@ set -e
 restic restore latest --target /
 
 if [[ -f "$restore_path/keycloak.sql" ]]; then
-  cat "$restore_path/keycloak.sql" | docker exec -i keycloak-db psql -U keycloak keycloak
+  docker exec -i keycloak-db psql -U keycloak keycloak < "$restore_path/keycloak.sql"
 fi
 if [[ -f "$restore_path/openbao.snap" ]]; then
   docker cp "$restore_path/openbao.snap" openbao:/tmp/openbao.snap

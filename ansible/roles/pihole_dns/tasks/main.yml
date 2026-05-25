@@ -10,6 +10,7 @@
       {% if pihole.api_version == 'v5' %}api_v5.yml
       {% elif pihole.api_version == 'v6' %}api_v6.yml
       {% else %}api_v5.yml{% endif %}
+  when: not ansible_check_mode
 
 - name: Validate pihole dns records
   ansible.builtin.include_tasks: validate.yml
