@@ -54,14 +54,15 @@ export OPENBAO_TOKEN="$root_token"
 
 # Unseal OpenBao
 echo "[init-openbao-ci] Unsealing OpenBao..."
-echo "$unseal_keys" | head -3 | while IFS= read -r key; do
+mapfile -t unseal_keys_arr <<< "$unseal_keys"
+for key in "${unseal_keys_arr[@]:0:3}"; do
   docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null
 done
 
 # Verify unsealed
 sleep 2
-health2="$(curl -fsS "$OPENBAO_ADDR/v1/sys/health")"
-sealed="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("sealed", True))' "$health2")"
+health2="$(curl -s "$OPENBAO_ADDR/v1/sys/health" || true)"
+sealed="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("sealed", True))' "$health2" 2>/dev/null || echo "True")"
 if [[ "$sealed" != "False" ]]; then
   echo "[init-openbao-ci] ERROR: OpenBao is still sealed after unseal attempt" >&2
   exit 1
