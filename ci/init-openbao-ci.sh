@@ -28,7 +28,7 @@ if [[ "$initialized" == "True" ]]; then
 fi
 
 echo "[init-openbao-ci] Initializing OpenBao..."
-init_output="$(docker exec openbao bao operator init -key-shares=5 -key-threshold=3 -format=json)"
+init_output="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator init -key-shares=5 -key-threshold=3 -format=json)"
 
 # Extract keys and root token
 root_token="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(d["root_token"])' "$init_output")"
@@ -55,7 +55,7 @@ export OPENBAO_TOKEN="$root_token"
 # Unseal OpenBao
 echo "[init-openbao-ci] Unsealing OpenBao..."
 echo "$unseal_keys" | head -3 | while IFS= read -r key; do
-  docker exec openbao bao operator unseal "$key" >/dev/null
+  docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null
 done
 
 # Verify unsealed
@@ -68,7 +68,7 @@ if [[ "$sealed" != "False" ]]; then
 fi
 
 # Enable kv-v2 secrets engine
-docker exec -e VAULT_TOKEN="$root_token" openbao bao secrets enable -path=secret kv-v2 >/dev/null 2>&1 || true
+docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN="$root_token" openbao bao secrets enable -path=secret kv-v2 >/dev/null 2>&1 || true
 
 echo "[init-openbao-ci] OpenBao initialized and unsealed successfully"
 echo "[init-openbao-ci] Root token saved to $SECRETS_DIR/openbao-root-token"

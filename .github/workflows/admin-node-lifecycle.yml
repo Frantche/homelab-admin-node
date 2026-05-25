@@ -12,6 +12,7 @@ jobs:
   lifecycle:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         scenario: [fresh-branch, upgrade-main-to-branch, restore-main-backup-with-branch]
     steps:

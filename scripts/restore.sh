@@ -63,7 +63,7 @@ if [[ -f "$restore_path/openbao.snap" ]]; then
   fi
   docker cp "$restore_path/openbao.snap" openbao:/tmp/openbao.snap
   if [[ -n "$BAO_TOKEN" ]]; then
-    docker exec -e VAULT_TOKEN="$BAO_TOKEN" openbao bao operator raft snapshot restore -force /tmp/openbao.snap
+    docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN="$BAO_TOKEN" openbao bao operator raft snapshot restore -force /tmp/openbao.snap
   fi
   docker compose -f /srv/admin/stacks/openbao/compose.yaml down 2>/dev/null
 fi
@@ -95,7 +95,7 @@ elif [[ -f "$SECRETS_FILE" ]]; then
   mapfile -t keys < <(grep -E '^\s+- "' "$SECRETS_FILE" | sed 's/.*"\(.*\)".*/\1/' | head -"$threshold")
   if [[ ${#keys[@]} -gt 0 ]]; then
     for key in "${keys[@]}"; do
-      docker exec openbao bao operator unseal "$key" >/dev/null 2>&1
+      docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null 2>&1
     done
     unseal_ok=true
   fi

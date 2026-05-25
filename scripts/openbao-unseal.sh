@@ -26,7 +26,7 @@ if [[ -z "$active_keyset" || -z "$threshold" ]]; then
   exit 1
 fi
 
-health="$(curl -fsS "$OPENBAO_ADDR/v1/sys/health")"
+health="$(curl -s "$OPENBAO_ADDR/v1/sys/health" || true)"
 initialized="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("initialized", False))' <<< "$health")"
 sealed="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' <<< "$health")"
 
@@ -49,10 +49,10 @@ threshold=int(ks["threshold"])
 for k in ks["unseal_keys"][:threshold]:
     print(k)
 PY
-  docker exec -i openbao bao operator unseal >/dev/null <<< "$key"
+  docker exec -i -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal >/dev/null <<< "$key"
 done
 
-health2="$(curl -fsS "$OPENBAO_ADDR/v1/sys/health")"
+health2="$(curl -s "$OPENBAO_ADDR/v1/sys/health" || true)"
 sealed2="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' <<< "$health2")"
 
 if [[ "$sealed2" != "False" ]]; then

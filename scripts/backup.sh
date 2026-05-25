@@ -27,7 +27,7 @@ if [[ -z "$BAO_TOKEN" && -f /opt/homelab-admin-node/secrets/openbao-root-token ]
   BAO_TOKEN="$(cat /opt/homelab-admin-node/secrets/openbao-root-token)"
 fi
 if [[ -n "$BAO_TOKEN" ]]; then
-  docker exec -e VAULT_TOKEN="$BAO_TOKEN" openbao bao operator raft snapshot save /tmp/openbao.snap >/dev/null
+  docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN="$BAO_TOKEN" openbao bao operator raft snapshot save /tmp/openbao.snap >/dev/null
   docker cp openbao:/tmp/openbao.snap "$TARGET/openbao.snap"
 else
   echo "[backup] WARNING: No OpenBao token available, skipping raft snapshot" >&2
