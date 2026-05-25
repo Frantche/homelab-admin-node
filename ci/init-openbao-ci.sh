@@ -31,8 +31,24 @@ echo "[init-openbao-ci] Initializing OpenBao..."
 init_output="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator init -key-shares=5 -key-threshold=3 -format=json)"
 
 # Extract keys and root token
-root_token="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(d["root_token"])' "$init_output")"
-unseal_keys="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print("\n".join(d["unseal_keys"]))' "$init_output")"
+# OpenBao returns keys as unseal_keys_b64/unseal_keys_hex or keys/keys_base64 depending on version
+root_token="$(python3 -c '
+import json, sys
+d = json.loads(sys.argv[1])
+print(d["root_token"])
+' "$init_output")" || { echo "[init-openbao-ci] ERROR: Failed to parse init output: $init_output" >&2; exit 1; }
+
+unseal_keys="$(python3 -c '
+import json, sys
+d = json.loads(sys.argv[1])
+# Try different key names that OpenBao may use
+for key in ("unseal_keys_b64", "unseal_keys_hex", "unseal_keys", "keys_base64", "keys"):
+    if key in d:
+        print("\n".join(d[key]))
+        sys.exit(0)
+print("ERROR: no unseal keys found in: " + str(list(d.keys())), file=sys.stderr)
+sys.exit(1)
+' "$init_output")" || { echo "[init-openbao-ci] ERROR: Failed to extract unseal keys from init output" >&2; exit 1; }
 
 # Save root token for later use
 echo "$root_token" > "$SECRETS_DIR/openbao-root-token"
