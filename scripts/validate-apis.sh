@@ -43,9 +43,18 @@ echo "[validate-apis] checking Traefik..."
 curl -fsS http://127.0.0.1:8080/api/http/routers >/dev/null
 
 # Verify routing is configured (accept any response except 404 = route exists)
+# Retry to allow Traefik time to resolve Docker DNS for backends
 for vhost in keycloak.example.com bao.example.com harbor.example.com; do
-  status="$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $vhost" http://127.0.0.1)"
-  if [[ "$status" == "404" ]]; then
+  route_ok=false
+  for attempt in $(seq 1 10); do
+    status="$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $vhost" http://127.0.0.1)"
+    if [[ "$status" != "404" ]]; then
+      route_ok=true
+      break
+    fi
+    sleep 2
+  done
+  if [[ "$route_ok" != "true" ]]; then
     echo "Traefik route not configured for $vhost" >&2
     exit 1
   fi

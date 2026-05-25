@@ -94,13 +94,17 @@ done
 # Wait for Traefik
 echo "[ci-setup] Waiting for Traefik..."
 for i in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1:8080/api/http/routers 2>/dev/null | grep -q "keycloak"; then
+  routers="$(curl -s http://127.0.0.1:8080/api/http/routers 2>/dev/null || echo "")"
+  if echo "$routers" | grep -q "keycloak" && echo "$routers" | grep -q "harbor" && echo "$routers" | grep -q "openbao"; then
     echo "[ci-setup] Traefik is ready"
     break
   fi
   if [[ $i -eq 30 ]]; then
-    echo "[ci-setup] ERROR: Traefik did not become ready" >&2
-    docker logs traefik 2>&1 | tail -20
+    echo "[ci-setup] ERROR: Traefik did not load all routes" >&2
+    echo "[ci-setup] Current routers:" >&2
+    curl -s http://127.0.0.1:8080/api/http/routers 2>/dev/null | python3 -m json.tool 2>/dev/null || true
+    echo "[ci-setup] Traefik logs:" >&2
+    docker logs traefik 2>&1 | tail -30
     exit 1
   fi
   sleep 2
