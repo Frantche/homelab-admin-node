@@ -13,20 +13,6 @@
     group: root
     mode: preserve
 
-- name: Render cloudflared config
-  ansible.builtin.template:
-    src: "{{ playbook_dir }}/../stacks/cloudflared/config.yml.tpl"
-    dest: "{{ admin_node_root }}/stacks/cloudflared/config.yml"
-    mode: "0600"
-  no_log: true
-
-- name: Render cloudflared credentials
-  ansible.builtin.copy:
-    dest: "{{ admin_node_root }}/stacks/cloudflared/credentials.json"
-    mode: "0600"
-    content: "{{ cloudflare.credentials_json | default('{}') }}"
-  no_log: true
-
 - name: Render cloudflared env
   ansible.builtin.copy:
     dest: "{{ admin_node_root }}/env/cloudflared.env"

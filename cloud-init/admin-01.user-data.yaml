@@ -14,6 +14,7 @@ packages:
   - docker
   - docker-compose
   - openssh
+  - rsync
   - sops
   - age
   - restic
@@ -38,7 +39,24 @@ write_files:
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
-      exec /opt/homelab-admin-node/scripts/admin-converge.sh
+      REF_FILE=/etc/admin-node/git-ref
+      REF="main"
+      if [[ -f "$REF_FILE" ]]; then
+        REF="$(tr -d '[:space:]' < "$REF_FILE")"
+      fi
+      # Use ansible-pull to clone/update the repo and run the playbook.
+      # --directory ensures the repo is checked out to /opt/homelab-admin-node
+      # so subsequent runs can delegate to scripts/admin-converge.sh.
+      if [[ -x /opt/homelab-admin-node/scripts/admin-converge.sh ]]; then
+        exec /opt/homelab-admin-node/scripts/admin-converge.sh
+      fi
+      exec ansible-pull \
+        -U "${ADMIN_REPO_URL:-ssh://git@example.com/homelab/homelab-admin-node.git}" \
+        --directory /opt/homelab-admin-node \
+        -i localhost, \
+        -c local \
+        --checkout "$REF" \
+        ansible/site.yml
   - path: /etc/systemd/system/admin-converge.service
     owner: root:root
     permissions: '0644'

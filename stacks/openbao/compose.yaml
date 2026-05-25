@@ -9,8 +9,6 @@ services:
       BAO_LOCAL_CONFIG: |
         disable_mlock = true
     command: server -config=/etc/openbao/openbao.hcl
-    ports:
-      - "8200:8200"
     volumes:
       - ./openbao.hcl:/etc/openbao/openbao.hcl:ro
       - /srv/admin/data/openbao:/openbao/file

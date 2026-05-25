@@ -13,6 +13,17 @@
     group: root
     mode: preserve
 
+- name: Render traefik dynamic config
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../stacks/traefik/dynamic/config.yml"
+    dest: "{{ admin_node_root }}/stacks/traefik/dynamic/config.yml"
+    owner: root
+    group: root
+    mode: "0600"
+  vars:
+    TRAEFIK_DASHBOARD_BASIC_AUTH: "{{ admin.traefik_dashboard_basic_auth | default('admin:$apr1$placeholder$') }}"
+  no_log: true
+
 - name: Render traefik env
   ansible.builtin.copy:
     dest: "{{ admin_node_root }}/env/traefik.env"
@@ -20,7 +31,7 @@
     group: root
     mode: "0600"
     content: |
-      TRAEFIK_DASHBOARD_BASIC_AUTH={{ admin.traefik_dashboard_basic_auth | default('admin:$$apr1$$placeholder') }}
+      TRAEFIK_DASHBOARD_BASIC_AUTH={{ admin.traefik_dashboard_basic_auth | default('admin:$$apr1$$placeholder$$') }}
   no_log: true
 
 - name: Start traefik stack

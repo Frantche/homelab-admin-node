@@ -26,6 +26,12 @@ BAO_TOKEN="${OPENBAO_TOKEN:-}"
 if [[ -z "$BAO_TOKEN" && -f /opt/homelab-admin-node/secrets/openbao-root-token ]]; then
   BAO_TOKEN="$(cat /opt/homelab-admin-node/secrets/openbao-root-token)"
 fi
+# Try loading backup token from SOPS secrets file
+SECRETS_FILE=/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml
+if [[ -z "$BAO_TOKEN" && -f /etc/sops/age/keys.txt && -f "$SECRETS_FILE" ]] && command -v sops &>/dev/null; then
+  BAO_TOKEN="$(SOPS_AGE_KEY_FILE=/etc/sops/age/keys.txt sops --decrypt --output-type json "$SECRETS_FILE" \
+    | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["openbao"]["backup_token"])' 2>/dev/null || true)"
+fi
 if [[ -n "$BAO_TOKEN" ]]; then
   docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN="$BAO_TOKEN" openbao bao operator raft snapshot save /tmp/openbao.snap >/dev/null
   docker cp openbao:/tmp/openbao.snap "$TARGET/openbao.snap"

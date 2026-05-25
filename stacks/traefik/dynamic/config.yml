@@ -41,4 +41,4 @@ http:
     dashboard-auth:
       basicAuth:
         users:
-          - "admin:$apr1$H6uskkkW$IgXLP6ewTrSuBkTrqE8wj/"
+          - "{{ TRAEFIK_DASHBOARD_BASIC_AUTH }}"

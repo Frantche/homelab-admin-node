@@ -21,8 +21,9 @@ fi
 echo "[admin-converge] lock acquired"
 ansible-pull \
   -U "${ADMIN_REPO_URL:-ssh://git@example.com/homelab/homelab-admin-node.git}" \
+  --directory /opt/homelab-admin-node \
   -i localhost, \
   -c local \
   --checkout "$REF" \
-  /opt/homelab-admin-node/ansible/site.yml
+  ansible/site.yml
 echo "[admin-converge] completed"
