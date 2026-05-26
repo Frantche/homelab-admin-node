@@ -29,8 +29,11 @@ fi
 # Try loading backup token from SOPS secrets file
 SECRETS_FILE=/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml
 if [[ -z "$BAO_TOKEN" && -f /etc/sops/age/keys.txt && -f "$SECRETS_FILE" ]] && command -v sops &>/dev/null; then
-  BAO_TOKEN="$(SOPS_AGE_KEY_FILE=/etc/sops/age/keys.txt sops --decrypt --output-type json "$SECRETS_FILE" \
-    | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["openbao"]["backup_token"])' 2>/dev/null || true)"
+  sops_json="$(SOPS_AGE_KEY_FILE=/etc/sops/age/keys.txt sops --decrypt --output-type json "$SECRETS_FILE")"
+  BAO_TOKEN="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["openbao"]["backup_token"])' <<< "$sops_json" 2>/dev/null)" || {
+    echo "[backup] WARNING: backup_token not found in SOPS secrets, skipping raft snapshot" >&2
+    BAO_TOKEN=""
+  }
 fi
 if [[ -n "$BAO_TOKEN" ]]; then
   docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN="$BAO_TOKEN" openbao bao operator raft snapshot save /tmp/openbao.snap >/dev/null

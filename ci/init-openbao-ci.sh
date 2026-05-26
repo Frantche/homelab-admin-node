@@ -10,8 +10,8 @@ mkdir -p "$SECRETS_DIR"
 
 echo "[init-openbao-ci] Waiting for OpenBao to be ready..."
 for i in $(seq 1 30); do
-  # Capture output with || true so that pipefail does not abort when bao exits 2 (sealed)
-  bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 || true)
+  # bao status exits non-zero when sealed/starting, capture output regardless
+  bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1) || true
   if echo "$bao_out" | grep -q "Initialized"; then
     break
   fi
@@ -25,7 +25,7 @@ done
 
 # Check if already initialized (exit code 0 means unsealed = initialized)
 initialized="False"
-bao_status="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null || true)"
+bao_status="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null)" || true
 if [[ -n "$bao_status" ]]; then
   initialized="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("initialized", False))' "$bao_status" 2>/dev/null || echo "False")"
 fi
@@ -79,20 +79,34 @@ export OPENBAO_TOKEN="$root_token"
 echo "[init-openbao-ci] Unsealing OpenBao..."
 mapfile -t unseal_keys_arr <<< "$unseal_keys"
 for key in "${unseal_keys_arr[@]:0:3}"; do
-  docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null 2>&1 || true
+  # bao operator unseal returns exit 2 while vault is still sealed (progress); 0 or 2 are acceptable
+  unseal_rc=0
+  docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null 2>&1 || unseal_rc=$?
+  if [[ $unseal_rc -ne 0 && $unseal_rc -ne 2 ]]; then
+    echo "[init-openbao-ci] ERROR: unseal command failed with exit code $unseal_rc" >&2
+    exit 1
+  fi
 done
 
 # Verify unsealed
 sleep 2
-bao_status2="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null || true)"
+bao_status2="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null)" || true
 sealed="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("sealed", True))' "$bao_status2" 2>/dev/null || echo "True")"
 if [[ "$sealed" != "False" ]]; then
   echo "[init-openbao-ci] ERROR: OpenBao is still sealed after unseal attempt" >&2
   exit 1
 fi
 
-# Enable kv-v2 secrets engine
-docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN="$root_token" openbao bao secrets enable -path=secret kv-v2 >/dev/null 2>&1 || true
+# Enable kv-v2 secrets engine (may already be enabled, which is acceptable)
+enable_rc=0
+docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN="$root_token" openbao bao secrets enable -path=secret kv-v2 >/dev/null 2>&1 || enable_rc=$?
+if [[ $enable_rc -ne 0 ]]; then
+  # Check if it's already enabled (list and verify)
+  if ! docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN="$root_token" openbao bao secrets list -format=json 2>/dev/null | grep -q '"secret/"'; then
+    echo "[init-openbao-ci] ERROR: Failed to enable kv-v2 secrets engine" >&2
+    exit 1
+  fi
+fi
 
 echo "[init-openbao-ci] OpenBao initialized and unsealed successfully"
 echo "[init-openbao-ci] Root token saved to $SECRETS_DIR/openbao-root-token"

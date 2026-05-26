@@ -54,7 +54,8 @@ if [[ -f "$restore_path/openbao.snap" ]]; then
   docker compose -f /srv/admin/stacks/openbao/compose.yaml up -d
   echo "[restore] waiting for openbao..."
   for _ in $(seq 1 30); do
-    bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 || true)
+    # bao status exits non-zero when sealed or starting up; capture output regardless
+    bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1) || true
     if echo "$bao_out" | grep -q "Initialized"; then break; fi
     sleep 1
   done
@@ -66,7 +67,9 @@ if [[ -f "$restore_path/openbao.snap" ]]; then
   # Unseal before restore using openbao-unseal.sh (handles SOPS decryption)
   SECRETS_FILE=/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml
   if [[ -f /etc/sops/age/keys.txt && -f "$SECRETS_FILE" ]] && command -v sops &>/dev/null; then
-    "$SCRIPT_DIR/openbao-unseal.sh" || true
+    "$SCRIPT_DIR/openbao-unseal.sh" || {
+      echo "[restore] WARNING: openbao-unseal.sh failed during pre-restore unseal, continuing..." >&2
+    }
   elif [[ -f "$SECRETS_FILE" ]]; then
     # Plain-text secrets file (CI) - extract unseal keys with grep/sed
     pre_threshold="$(grep 'threshold:' "$SECRETS_FILE" | head -1 | awk '{print $2}')"
@@ -74,7 +77,11 @@ if [[ -f "$restore_path/openbao.snap" ]]; then
     mapfile -t pre_keys < <(grep -E '^\s+- "' "$SECRETS_FILE" | sed 's/.*"\(.*\)".*/\1/' | head -"$pre_threshold")
     if [[ ${#pre_keys[@]} -gt 0 ]]; then
       for key in "${pre_keys[@]}"; do
-        docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null 2>&1 || true
+        unseal_rc=0
+        docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null 2>&1 || unseal_rc=$?
+        if [[ $unseal_rc -ne 0 && $unseal_rc -ne 2 ]]; then
+          echo "[restore] WARNING: unseal key application failed (exit $unseal_rc)" >&2
+        fi
       done
     fi
   fi
@@ -95,7 +102,8 @@ fi
 
 echo "[restore] waiting for services to be ready..."
 for _ in $(seq 1 60); do
-  bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 || true)
+  # bao status exits non-zero when sealed or starting up; capture output regardless
+  bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1) || true
   if echo "$bao_out" | grep -q "Initialized"; then break; fi
   sleep 2
 done
@@ -114,7 +122,11 @@ elif [[ -f "$SECRETS_FILE" ]]; then
   mapfile -t keys < <(grep -E '^\s+- "' "$SECRETS_FILE" | sed 's/.*"\(.*\)".*/\1/' | head -"$threshold")
   if [[ ${#keys[@]} -gt 0 ]]; then
     for key in "${keys[@]}"; do
-      docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null 2>&1 || true
+      unseal_rc=0
+      docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null 2>&1 || unseal_rc=$?
+      if [[ $unseal_rc -ne 0 && $unseal_rc -ne 2 ]]; then
+        echo "[restore] unseal key application failed (exit $unseal_rc)" >&2
+      fi
     done
     unseal_ok=true
   fi
@@ -122,9 +134,13 @@ fi
 
 if [[ "$unseal_ok" != "true" ]]; then
   # Check if already unsealed
-  sealed="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' 2>/dev/null || echo "True")"
-  if [[ "$sealed" == "False" ]]; then
-    unseal_ok=true
+  sealed_rc=0
+  sealed_json="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null)" || sealed_rc=$?
+  if [[ $sealed_rc -eq 0 ]]; then
+    sealed="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("sealed", True))' "$sealed_json" 2>/dev/null)"
+    if [[ "$sealed" == "False" ]]; then
+      unseal_ok=true
+    fi
   fi
 fi
 

@@ -3,9 +3,20 @@ set -euo pipefail
 
 OPENBAO_TOKEN=${OPENBAO_TOKEN:-}
 
+# Load Traefik dashboard credentials if available
+if [[ -f /etc/admin-node/traefik-dashboard-creds ]]; then
+  source /etc/admin-node/traefik-dashboard-creds
+fi
+
 # --- OpenBao ---
 echo "[validate-apis] checking OpenBao..."
-bao_health="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null || true)"
+# bao status exits 2 when sealed (expected), capture and check explicitly
+bao_rc=0
+bao_health="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null)" || bao_rc=$?
+if [[ $bao_rc -ne 0 && $bao_rc -ne 2 ]]; then
+  echo "[validate-apis] ERROR: OpenBao unreachable (exit code $bao_rc)" >&2
+  exit 1
+fi
 python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d.get("initialized") is True, f"not initialized: {d}"; assert d.get("sealed") is False, f"still sealed: {d}"' "$bao_health"
 
 if [[ -n "$OPENBAO_TOKEN" ]]; then
@@ -25,8 +36,8 @@ echo "[validate-apis] checking Harbor..."
 harbor_ok=false
 for _ in $(seq 1 10); do
   # Accept partial health (core+db healthy is sufficient)
-  health="$(curl -fsS https://harbor.example.com/api/v2.0/health 2>/dev/null || echo "")"
-  core_ok="$(echo "$health" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(any(c["name"]=="core" and c["status"]=="healthy" for c in d.get("components",[])))' 2>/dev/null || echo "False")"
+  health="$(curl -fsS https://harbor.example.com/api/v2.0/health 2>/dev/null)" || { sleep 3; continue; }
+  core_ok="$(echo "$health" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(any(c["name"]=="core" and c["status"]=="healthy" for c in d.get("components",[])))' 2>/dev/null)" || { sleep 3; continue; }
   if [[ "$core_ok" == "True" ]]; then
     harbor_ok=true
     break
@@ -34,7 +45,8 @@ for _ in $(seq 1 10); do
   sleep 3
 done
 if [[ "$harbor_ok" != "true" ]]; then
-  echo "[validate-apis] WARNING: Harbor health check failed (non-fatal)" >&2
+  echo "[validate-apis] ERROR: Harbor health check failed" >&2
+  exit 1
 fi
 
 if [[ -n "${HARBOR_ADMIN_USER:-}" && -n "${HARBOR_ADMIN_PASSWORD:-}" ]]; then
@@ -43,12 +55,24 @@ fi
 
 # --- Traefik ---
 echo "[validate-apis] checking Traefik..."
-traefik_routers="$(docker exec traefik wget -qO- http://localhost:8080/api/http/routers 2>/dev/null || echo "[]")"
-for vhost in keycloak.example.com bao.example.com harbor.example.com; do
-  if ! echo "$traefik_routers" | grep -q "$vhost"; then
-    echo "Traefik route not configured for $vhost" >&2
+# Ping endpoint does not require authentication
+if ! curl -fsS https://traefik.example.com/ping 2>/dev/null | grep -q "OK"; then
+  echo "Traefik ping endpoint not responding" >&2
+  exit 1
+fi
+# If dashboard credentials are available, verify routers
+if [[ -n "${TRAEFIK_DASHBOARD_USER:-}" && -n "${TRAEFIK_DASHBOARD_PASS:-}" ]]; then
+  traefik_routers="$(curl -fsS -u "${TRAEFIK_DASHBOARD_USER}:${TRAEFIK_DASHBOARD_PASS}" https://traefik.example.com/api/http/routers 2>/dev/null)"
+  if [[ -z "$traefik_routers" ]]; then
+    echo "Traefik API not reachable via HTTPS" >&2
     exit 1
   fi
-done
+  for vhost in keycloak.example.com bao.example.com harbor.example.com; do
+    if ! echo "$traefik_routers" | grep -q "$vhost"; then
+      echo "Traefik route not configured for $vhost" >&2
+      exit 1
+    fi
+  done
+fi
 
 echo "API validation passed"

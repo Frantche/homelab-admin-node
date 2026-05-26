@@ -25,7 +25,13 @@ if [[ -z "$active_keyset" || -z "$threshold" ]]; then
   exit 1
 fi
 
-bao_status="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null || true)"
+# bao status exits 2 when sealed (expected); only truly unreachable is a problem
+bao_rc=0
+bao_status="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null)" || bao_rc=$?
+if [[ $bao_rc -ne 0 && $bao_rc -ne 2 ]]; then
+  echo "OpenBao unreachable (exit code $bao_rc)" >&2
+  exit 1
+fi
 initialized="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("initialized", False))' <<< "$bao_status")"
 sealed="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' <<< "$bao_status")"
 
@@ -48,10 +54,21 @@ threshold=int(ks["threshold"])
 for k in ks["unseal_keys"][:threshold]:
     print(k)
 PY
-  docker exec -i -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal >/dev/null 2>&1 <<< "$key" || true
+  # bao operator unseal returns exit 2 while still sealed (progress); only 0 or 2 are acceptable
+  unseal_rc=0
+  docker exec -i -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal >/dev/null 2>&1 <<< "$key" || unseal_rc=$?
+  if [[ $unseal_rc -ne 0 && $unseal_rc -ne 2 ]]; then
+    echo "OpenBao unseal command failed with exit code $unseal_rc" >&2
+    exit 1
+  fi
 done
 
-bao_status2="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null || true)"
+bao_rc2=0
+bao_status2="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null)" || bao_rc2=$?
+if [[ $bao_rc2 -ne 0 && $bao_rc2 -ne 2 ]]; then
+  echo "OpenBao unreachable after unseal attempt (exit code $bao_rc2)" >&2
+  exit 1
+fi
 sealed2="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' <<< "$bao_status2")"
 
 if [[ "$sealed2" != "False" ]]; then

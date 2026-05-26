@@ -42,6 +42,7 @@ openssl x509 -req -days 3650 \
 
 cp "$_cert_dir/server.crt" /srv/admin/certs/cert.pem
 cp "$_cert_dir/server.key" /srv/admin/certs/key.pem
+cp "$_cert_dir/ca.crt" /srv/admin/certs/ca.pem
 chmod 0600 /srv/admin/certs/key.pem
 
 # Add CA to the system trust store (Arch Linux)
@@ -107,6 +108,13 @@ CF_DNS_API_TOKEN=ci-not-used
 EOF
 chmod 0600 /srv/admin/env/*.env
 
+# Persist dashboard credentials for validation scripts
+cat > /etc/admin-node/traefik-dashboard-creds <<EOF
+TRAEFIK_DASHBOARD_USER=admin
+TRAEFIK_DASHBOARD_PASS=${_dash_pass}
+EOF
+chmod 0600 /etc/admin-node/traefik-dashboard-creds
+
 # Render the Traefik dynamic config template (substitute TRAEFIK_DASHBOARD_BASIC_AUTH)
 python3 -c "
 import sys
@@ -120,8 +128,10 @@ mkdir -p /etc/admin-node
 
 echo "[ci-setup] Environment prepared, starting services..."
 
-# Create shared Docker network
-docker network create admin-net 2>/dev/null || true
+# Create shared Docker network (ignore if already exists)
+if ! docker network inspect admin-net &>/dev/null; then
+  docker network create admin-net
+fi
 
 # Start all stacks
 docker compose --env-file /srv/admin/env/traefik.env -f /srv/admin/stacks/traefik/compose.yaml up -d --force-recreate
@@ -135,7 +145,7 @@ if [[ "${CI_MOCK_CLOUDFLARE_TUNNEL:-false}" != "true" ]]; then
 else
   echo "[ci-setup] Skipping cloudflared (CI_MOCK_CLOUDFLARE_TUNNEL=true)"
   # Create a dummy container so validate-cloudflare-tunnel.sh can find it
-  docker rm -f cloudflared 2>/dev/null || true
+  docker rm -f cloudflared 2>/dev/null || :
   docker run -d --name cloudflared --network admin-net --restart no alpine sleep 3600
 fi
 
@@ -144,8 +154,8 @@ echo "[ci-setup] Waiting for services to become healthy..."
 # Wait for OpenBao API (check via docker exec – no host port exposed)
 echo "[ci-setup] Waiting for OpenBao API..."
 for i in $(seq 1 60); do
-  # Capture output with || true so that pipefail does not abort when bao exits 2 (sealed)
-  bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 || true)
+  # bao status exits non-zero when sealed/starting, capture output regardless
+  bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1) || true
   if echo "$bao_out" | grep -q "Initialized"; then
     echo "[ci-setup] OpenBao API is responding"
     break
@@ -173,13 +183,19 @@ for i in $(seq 1 120); do
   sleep 3
 done
 
-# Wait for Traefik (check internal ping endpoint and route loading via docker exec)
+# Wait for Traefik (ping via HTTPS, then verify routes via Traefik API over TLS with auth)
 echo "[ci-setup] Waiting for Traefik..."
+# Read the dashboard credentials we generated earlier
+_dash_user="admin"
 for i in $(seq 1 30); do
-  routers="$(docker exec traefik wget -qO- http://localhost:8080/api/http/routers 2>/dev/null || echo "")"
-  if echo "$routers" | grep -q "keycloak" && echo "$routers" | grep -q "harbor" && echo "$routers" | grep -q "openbao"; then
-    echo "[ci-setup] Traefik is ready"
-    break
+  # First check ping (no auth required) - CA is in system trust store
+  if curl -fsS https://traefik.example.com/ping 2>/dev/null | grep -q "OK"; then
+    # Then check routers via API (requires basic auth)
+    routers="$(curl -fsS -u "${_dash_user}:${_dash_pass}" https://traefik.example.com/api/http/routers 2>/dev/null)"
+    if echo "$routers" | grep -q "keycloak"; then
+      echo "[ci-setup] Traefik is ready"
+      break
+    fi
   fi
   if [[ $i -eq 30 ]]; then
     echo "[ci-setup] ERROR: Traefik did not load all routes" >&2
@@ -193,16 +209,17 @@ done
 # Wait for Harbor core (check via HTTPS through Traefik – validates the full TLS stack)
 echo "[ci-setup] Waiting for Harbor..."
 for i in $(seq 1 120); do
-  health="$(curl -fsS https://harbor.example.com/api/v2.0/health 2>/dev/null || echo "")"
-  core_ok="$(echo "$health" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(any(c["name"]=="core" and c["status"]=="healthy" for c in d.get("components",[])))' 2>/dev/null || echo "False")"
-  db_ok="$(echo "$health" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(any(c["name"]=="database" and c["status"]=="healthy" for c in d.get("components",[])))' 2>/dev/null || echo "False")"
+  health="$(curl -fsS https://harbor.example.com/api/v2.0/health 2>/dev/null)" || { sleep 3; continue; }
+  core_ok="$(echo "$health" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(any(c["name"]=="core" and c["status"]=="healthy" for c in d.get("components",[])))' 2>/dev/null)" || { sleep 3; continue; }
+  db_ok="$(echo "$health" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(any(c["name"]=="database" and c["status"]=="healthy" for c in d.get("components",[])))' 2>/dev/null)" || { sleep 3; continue; }
   if [[ "$core_ok" == "True" && "$db_ok" == "True" ]]; then
     echo "[ci-setup] Harbor core is ready"
     break
   fi
   if [[ $i -eq 120 ]]; then
-    echo "[ci-setup] WARNING: Harbor did not become fully ready (non-fatal)" >&2
+    echo "[ci-setup] ERROR: Harbor did not become fully ready" >&2
     docker compose --env-file /srv/admin/env/harbor.env -f /srv/admin/stacks/harbor/compose.yaml logs 2>&1 | tail -30
+    exit 1
   fi
   sleep 3
 done
