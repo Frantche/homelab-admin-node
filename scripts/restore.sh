@@ -67,6 +67,16 @@ if [[ -f "$restore_path/openbao.snap" ]]; then
   SECRETS_FILE=/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml
   if [[ -f /etc/sops/age/keys.txt && -f "$SECRETS_FILE" ]] && command -v sops &>/dev/null; then
     "$SCRIPT_DIR/openbao-unseal.sh" || true
+  elif [[ -f "$SECRETS_FILE" ]]; then
+    # Plain-text secrets file (CI) - extract unseal keys with grep/sed
+    pre_threshold="$(grep 'threshold:' "$SECRETS_FILE" | head -1 | awk '{print $2}')"
+    pre_threshold="${pre_threshold:-3}"
+    mapfile -t pre_keys < <(grep -E '^\s+- "' "$SECRETS_FILE" | sed 's/.*"\(.*\)".*/\1/' | head -"$pre_threshold")
+    if [[ ${#pre_keys[@]} -gt 0 ]]; then
+      for key in "${pre_keys[@]}"; do
+        docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null 2>&1 || true
+      done
+    fi
   fi
   docker cp "$restore_path/openbao.snap" openbao:/tmp/openbao.snap
   if [[ -n "$BAO_TOKEN" ]]; then
