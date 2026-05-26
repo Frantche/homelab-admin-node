@@ -3,6 +3,16 @@ services:
     image: postgres:16
     container_name: harbor-db
     restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - max_wal_size=2GB
+      - -c
+      - min_wal_size=256MB
+      - -c
+      - wal_keep_size=128MB
+      - -c
+      - max_slot_wal_keep_size=512MB
     environment:
       POSTGRES_DB: registry
       POSTGRES_USER: postgres
