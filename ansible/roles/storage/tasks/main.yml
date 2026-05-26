@@ -12,3 +12,19 @@
     - "{{ admin_node_root }}/data/harbor"
     - "{{ admin_node_root }}/data/traefik"
     - "{{ admin_node_root }}/data/cloudflared"
+
+- name: Ensure letsencrypt storage directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/data/traefik/letsencrypt"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Ensure TLS certificate directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/certs"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"

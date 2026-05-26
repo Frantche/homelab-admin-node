@@ -3,6 +3,7 @@ admin_node_root: "/srv/admin"
 admin_mode_file: "/etc/admin-node/mode"
 admin_git_ref_file: "/etc/admin-node/git-ref"
 admin_node_lan_ip: "192.168.1.10"
+acme_email: "admin@example.com"
 
 traefik:
   dashboard_enabled: true

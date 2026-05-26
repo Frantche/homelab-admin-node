@@ -18,7 +18,7 @@
     dest: "{{ admin_node_root }}/env/cloudflared.env"
     mode: "0600"
     content: |
-      CLOUDFLARE_TUNNEL_TOKEN={{ cloudflare.tunnel_token | default('') }}
+      CLOUDFLARE_TUNNEL_TOKEN={{ cloudflare.tunnel_token | mandatory('cloudflare.tunnel_token is required') }}
   no_log: true
 
 - name: Start cloudflared stack

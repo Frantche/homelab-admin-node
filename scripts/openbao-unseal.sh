@@ -3,7 +3,6 @@ set -euo pipefail
 
 AGE_KEY=/etc/sops/age/keys.txt
 SECRETS_FILE=/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml
-OPENBAO_ADDR=${OPENBAO_ADDR:-http://127.0.0.1:8200}
 
 if [[ ! -f "$AGE_KEY" ]]; then
   echo "Missing age private key at $AGE_KEY. Node remains locked." >&2
@@ -26,9 +25,9 @@ if [[ -z "$active_keyset" || -z "$threshold" ]]; then
   exit 1
 fi
 
-health="$(curl -s "$OPENBAO_ADDR/v1/sys/health" || true)"
-initialized="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("initialized", False))' <<< "$health")"
-sealed="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' <<< "$health")"
+bao_status="$(docker exec openbao bao status -format=json 2>/dev/null || true)"
+initialized="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("initialized", False))' <<< "$bao_status")"
+sealed="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' <<< "$bao_status")"
 
 if [[ "$initialized" != "True" ]]; then
   echo "OpenBao is not initialized" >&2
@@ -52,8 +51,8 @@ PY
   docker exec -i -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal >/dev/null <<< "$key"
 done
 
-health2="$(curl -s "$OPENBAO_ADDR/v1/sys/health" || true)"
-sealed2="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' <<< "$health2")"
+bao_status2="$(docker exec openbao bao status -format=json 2>/dev/null || true)"
+sealed2="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' <<< "$bao_status2")"
 
 if [[ "$sealed2" != "False" ]]; then
   echo "OpenBao unseal failed" >&2

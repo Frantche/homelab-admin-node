@@ -26,7 +26,6 @@ services:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
     ports:
-      - "8081:8080"
       - "9000:9000"
     depends_on:
       - keycloak-db

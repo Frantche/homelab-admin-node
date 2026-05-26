@@ -16,7 +16,7 @@
     dest: "{{ admin_node_root }}/env/harbor.env"
     mode: "0600"
     content: |
-      HARBOR_ADMIN_PASSWORD={{ harbor.admin_password | default('Harbor12345') }}
+      HARBOR_ADMIN_PASSWORD={{ harbor.admin_password | mandatory('harbor.admin_password is required') }}
   no_log: true
 
 - name: Start harbor stack

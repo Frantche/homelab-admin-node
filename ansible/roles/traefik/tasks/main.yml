@@ -5,6 +5,14 @@
     state: directory
     mode: "0755"
 
+- name: Ensure letsencrypt data directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/data/traefik/letsencrypt"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
 - name: Copy traefik stack files
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../stacks/traefik/"
@@ -12,6 +20,14 @@
     owner: root
     group: root
     mode: preserve
+
+- name: Render traefik static config
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../stacks/traefik/traefik.yml"
+    dest: "{{ admin_node_root }}/stacks/traefik/traefik.yml"
+    owner: root
+    group: root
+    mode: "0644"
 
 - name: Render traefik dynamic config
   ansible.builtin.template:
@@ -21,7 +37,7 @@
     group: root
     mode: "0600"
   vars:
-    TRAEFIK_DASHBOARD_BASIC_AUTH: "{{ admin.traefik_dashboard_basic_auth | default('admin:$apr1$placeholder$') }}"
+    TRAEFIK_DASHBOARD_BASIC_AUTH: "{{ admin.traefik_dashboard_basic_auth | mandatory('admin.traefik_dashboard_basic_auth is required') }}"
   no_log: true
 
 - name: Render traefik env
@@ -31,7 +47,8 @@
     group: root
     mode: "0600"
     content: |
-      TRAEFIK_DASHBOARD_BASIC_AUTH={{ admin.traefik_dashboard_basic_auth | default('admin:$$apr1$$placeholder$$') }}
+      TRAEFIK_DASHBOARD_BASIC_AUTH={{ admin.traefik_dashboard_basic_auth | mandatory('admin.traefik_dashboard_basic_auth is required') }}
+      CF_DNS_API_TOKEN={{ cloudflare.dns_api_token | mandatory('cloudflare.dns_api_token is required for ACME DNS challenge') }}
   no_log: true
 
 - name: Start traefik stack

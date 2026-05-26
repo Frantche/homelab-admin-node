@@ -1,0 +1,16 @@
+entryPoints:
+  websecure:
+    address: ":443"
+  traefik-internal:
+    address: ":8080"
+api:
+  dashboard: true
+ping:
+  entryPoint: "traefik-internal"
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+log:
+  level: INFO
+accessLog: {}

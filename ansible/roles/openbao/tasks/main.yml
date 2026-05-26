@@ -16,7 +16,7 @@
     dest: "{{ admin_node_root }}/env/openbao.env"
     mode: "0600"
     content: |
-      OPENBAO_ADDR=http://127.0.0.1:8200
+      OPENBAO_ADDR=https://bao.example.com
       OPENBAO_TOKEN={{ openbao.root_token | default('') }}
   no_log: true
 

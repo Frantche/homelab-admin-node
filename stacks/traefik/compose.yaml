@@ -6,10 +6,13 @@ services:
     command:
       - --configFile=/etc/traefik/traefik.yml
     ports:
-      - "80:80"
+      - "443:443"
     volumes:
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
       - ./dynamic:/etc/traefik/dynamic:ro
+      - /srv/admin/data/traefik/letsencrypt:/letsencrypt
+      - /srv/admin/certs:/certs:ro
+    env_file: /srv/admin/env/traefik.env
     networks:
       - admin-net
 

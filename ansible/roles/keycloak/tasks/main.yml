@@ -16,9 +16,9 @@
     dest: "{{ admin_node_root }}/env/keycloak.env"
     mode: "0600"
     content: |
-      KEYCLOAK_DB_PASSWORD={{ keycloak.db_password | default('change-me') }}
+      KEYCLOAK_DB_PASSWORD={{ keycloak.db_password | mandatory('keycloak.db_password is required') }}
       KEYCLOAK_ADMIN={{ keycloak.admin_user | default('admin') }}
-      KEYCLOAK_ADMIN_PASSWORD={{ keycloak.admin_password | default('change-me') }}
+      KEYCLOAK_ADMIN_PASSWORD={{ keycloak.admin_password | mandatory('keycloak.admin_password is required') }}
   no_log: true
 
 - name: Start keycloak stack

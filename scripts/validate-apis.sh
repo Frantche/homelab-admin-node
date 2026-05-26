@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OPENBAO_ADDR=${OPENBAO_ADDR:-http://127.0.0.1:8200}
 OPENBAO_TOKEN=${OPENBAO_TOKEN:-}
 
 # --- OpenBao ---
-bao_health="$(curl -s "$OPENBAO_ADDR/v1/sys/health")"
+echo "[validate-apis] checking OpenBao..."
+bao_health="$(docker exec openbao bao status -format=json 2>/dev/null || true)"
 python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d.get("initialized") is True, f"not initialized: {d}"; assert d.get("sealed") is False, f"still sealed: {d}"' "$bao_health"
 
 if [[ -n "$OPENBAO_TOKEN" ]]; then
@@ -18,14 +18,14 @@ fi
 # --- Keycloak ---
 echo "[validate-apis] checking Keycloak..."
 curl -fsS http://127.0.0.1:9000/health/ready >/dev/null
-curl -fsS http://127.0.0.1:8081/realms/master/.well-known/openid-configuration >/dev/null
+curl -fsS https://keycloak.example.com/realms/master/.well-known/openid-configuration >/dev/null
 
 # --- Harbor ---
 echo "[validate-apis] checking Harbor..."
 harbor_ok=false
 for _ in $(seq 1 10); do
   # Accept partial health (core+db healthy is sufficient)
-  health="$(curl -s http://127.0.0.1:8082/api/v2.0/health 2>/dev/null || echo "")"
+  health="$(curl -fsS https://harbor.example.com/api/v2.0/health 2>/dev/null || echo "")"
   core_ok="$(echo "$health" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(any(c["name"]=="core" and c["status"]=="healthy" for c in d.get("components",[])))' 2>/dev/null || echo "False")"
   if [[ "$core_ok" == "True" ]]; then
     harbor_ok=true
@@ -38,15 +38,12 @@ if [[ "$harbor_ok" != "true" ]]; then
 fi
 
 if [[ -n "${HARBOR_ADMIN_USER:-}" && -n "${HARBOR_ADMIN_PASSWORD:-}" ]]; then
-  curl -fsS -u "${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASSWORD}" "http://127.0.0.1:8082/api/v2.0/projects?name=admin-ci" >/dev/null
+  curl -fsS -u "${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASSWORD}" "https://harbor.example.com/api/v2.0/projects?name=admin-ci" >/dev/null
 fi
 
 # --- Traefik ---
 echo "[validate-apis] checking Traefik..."
-curl -fsS http://127.0.0.1:8080/api/http/routers >/dev/null
-
-# Verify routing is configured via Traefik API (checking actual route definitions)
-traefik_routers="$(curl -s http://127.0.0.1:8080/api/http/routers 2>/dev/null || echo "[]")"
+traefik_routers="$(docker exec traefik wget -qO- http://localhost:8080/api/http/routers 2>/dev/null || echo "[]")"
 for vhost in keycloak.example.com bao.example.com harbor.example.com; do
   if ! echo "$traefik_routers" | grep -q "$vhost"; then
     echo "Traefik route not configured for $vhost" >&2

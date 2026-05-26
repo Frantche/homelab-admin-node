@@ -60,7 +60,7 @@ services:
       POSTGRESQL_DATABASE: registry
       POSTGRESQL_SSLMODE: disable
       CONFIG_PATH: /etc/core/app.conf
-      EXT_ENDPOINT: http://harbor.example.com
+      EXT_ENDPOINT: https://harbor.example.com
       CORE_URL: http://harbor-core:8080
       REGISTRY_URL: http://harbor-registry:5000
       TOKEN_SERVICE_URL: http://harbor-core:8080/service/token
@@ -70,8 +70,6 @@ services:
     volumes:
       - ./config/core-app.conf:/etc/core/app.conf:ro
       - /srv/admin/data/harbor/core:/data
-    ports:
-      - "8082:8080"
     depends_on:
       harbor-db:
         condition: service_healthy
