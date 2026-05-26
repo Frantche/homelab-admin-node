@@ -48,7 +48,7 @@ threshold=int(ks["threshold"])
 for k in ks["unseal_keys"][:threshold]:
     print(k)
 PY
-  docker exec -i -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal >/dev/null <<< "$key"
+  docker exec -i -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal >/dev/null 2>&1 <<< "$key" || true
 done
 
 bao_status2="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null || true)"

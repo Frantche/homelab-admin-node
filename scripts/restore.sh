@@ -54,7 +54,8 @@ if [[ -f "$restore_path/openbao.snap" ]]; then
   docker compose -f /srv/admin/stacks/openbao/compose.yaml up -d
   echo "[restore] waiting for openbao..."
   for _ in $(seq 1 30); do
-    if docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 | grep -q "Initialized"; then break; fi
+    bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 || true)
+    if echo "$bao_out" | grep -q "Initialized"; then break; fi
     sleep 1
   done
   # Raft snapshot restore requires the vault to be unsealed first
@@ -84,7 +85,8 @@ fi
 
 echo "[restore] waiting for services to be ready..."
 for _ in $(seq 1 60); do
-  if docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 | grep -q "Initialized"; then break; fi
+  bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 || true)
+  if echo "$bao_out" | grep -q "Initialized"; then break; fi
   sleep 2
 done
 
@@ -102,7 +104,7 @@ elif [[ -f "$SECRETS_FILE" ]]; then
   mapfile -t keys < <(grep -E '^\s+- "' "$SECRETS_FILE" | sed 's/.*"\(.*\)".*/\1/' | head -"$threshold")
   if [[ ${#keys[@]} -gt 0 ]]; then
     for key in "${keys[@]}"; do
-      docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null 2>&1
+      docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null 2>&1 || true
     done
     unseal_ok=true
   fi

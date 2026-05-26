@@ -10,7 +10,9 @@ mkdir -p "$SECRETS_DIR"
 
 echo "[init-openbao-ci] Waiting for OpenBao to be ready..."
 for i in $(seq 1 30); do
-  if docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 | grep -q "Initialized"; then
+  # Capture output with || true so that pipefail does not abort when bao exits 2 (sealed)
+  bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 || true)
+  if echo "$bao_out" | grep -q "Initialized"; then
     break
   fi
   if [[ $i -eq 30 ]]; then
@@ -77,7 +79,7 @@ export OPENBAO_TOKEN="$root_token"
 echo "[init-openbao-ci] Unsealing OpenBao..."
 mapfile -t unseal_keys_arr <<< "$unseal_keys"
 for key in "${unseal_keys_arr[@]:0:3}"; do
-  docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null
+  docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null 2>&1 || true
 done
 
 # Verify unsealed

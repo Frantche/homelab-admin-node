@@ -144,7 +144,9 @@ echo "[ci-setup] Waiting for services to become healthy..."
 # Wait for OpenBao API (check via docker exec – no host port exposed)
 echo "[ci-setup] Waiting for OpenBao API..."
 for i in $(seq 1 60); do
-  if docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 | grep -q "Initialized"; then
+  # Capture output with || true so that pipefail does not abort when bao exits 2 (sealed)
+  bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 || true)
+  if echo "$bao_out" | grep -q "Initialized"; then
     echo "[ci-setup] OpenBao API is responding"
     break
   fi
