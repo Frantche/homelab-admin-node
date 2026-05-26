@@ -1,0 +1,26 @@
+---
+- name: Ensure harbor stack directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/stacks/harbor"
+    state: directory
+    mode: "0755"
+
+- name: Copy harbor stack files
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../stacks/harbor/"
+    dest: "{{ admin_node_root }}/stacks/harbor/"
+    mode: preserve
+
+- name: Render harbor env
+  ansible.builtin.copy:
+    dest: "{{ admin_node_root }}/env/harbor.env"
+    mode: "0600"
+    content: |
+      HARBOR_ADMIN_PASSWORD={{ harbor.admin_password | mandatory('harbor.admin_password is required') }}
+  no_log: true
+
+- name: Start harbor stack
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up -d
+  args:
+    chdir: "{{ admin_node_root }}/stacks/harbor"
+  changed_when: true

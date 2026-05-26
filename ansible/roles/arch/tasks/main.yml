@@ -1,0 +1,14 @@
+---
+- name: Install Arch packages
+  ansible.builtin.package:
+    name:
+      - docker
+      - docker-compose
+      - jq
+      - curl
+      - restic
+      - rsync
+      - sops
+      - age
+      - python
+    state: present

@@ -1,0 +1,27 @@
+entryPoints:
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+api:
+  dashboard: true
+ping:
+  entryPoint: "websecure"
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "{{ acme_email | mandatory('acme_email is required for Let\\'s Encrypt') }}"
+      storage: /letsencrypt/acme.json
+      dnsChallenge:
+        provider: cloudflare
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"
+log:
+  level: INFO
+accessLog: {}

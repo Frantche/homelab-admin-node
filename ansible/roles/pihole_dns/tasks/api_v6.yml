@@ -1,0 +1,15 @@
+---
+- name: Configure Pi-hole local DNS records via v6 API
+  ansible.builtin.uri:
+    url: "{{ pihole.api_url }}/api/config/dns/hosts"
+    method: POST
+    status_code: [200, 201, 204]
+    headers:
+      X-API-Key: '{{ pihole.api_token }}'
+    body_format: json
+    body:
+      domain: "{{ item.name }}"
+      ip: "{{ item.ip }}"
+    validate_certs: false
+  loop: "{{ pihole.dns_records }}"
+  no_log: true

@@ -1,0 +1,39 @@
+admin_repo_url: "ssh://git@example.com/homelab/homelab-admin-node.git"
+admin_node_root: "/srv/admin"
+admin_mode_file: "/etc/admin-node/mode"
+admin_git_ref_file: "/etc/admin-node/git-ref"
+admin_node_lan_ip: "192.168.1.10"
+acme_email: "admin@example.com"
+
+traefik:
+  dashboard_enabled: true
+  dashboard_hostname: "traefik.example.com"
+  log_level: "INFO"
+  access_logs: true
+  local_tls_enabled: false
+
+service_domains:
+  harbor: "harbor.example.com"
+  openbao: "bao.example.com"
+  keycloak: "keycloak.example.com"
+  traefik: "traefik.example.com"
+
+pihole:
+  enabled: true
+  api_version: "auto"
+  url: "http://pihole.local/admin"
+  api_url: "http://pihole.local"
+  dns_records:
+    - name: "harbor.example.com"
+      ip: "{{ admin_node_lan_ip }}"
+    - name: "bao.example.com"
+      ip: "{{ admin_node_lan_ip }}"
+    - name: "keycloak.example.com"
+      ip: "{{ admin_node_lan_ip }}"
+    - name: "traefik.example.com"
+      ip: "{{ admin_node_lan_ip }}"
+
+ci:
+  mock_pihole: true
+  mock_cloudflare_tunnel: true
+  skip_public_url_validation: true

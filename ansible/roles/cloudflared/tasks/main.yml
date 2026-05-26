@@ -1,0 +1,32 @@
+---
+- name: Ensure cloudflared stack directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/stacks/cloudflared"
+    state: directory
+    mode: "0755"
+
+- name: Copy cloudflared stack files
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../stacks/cloudflared/"
+    dest: "{{ admin_node_root }}/stacks/cloudflared/"
+    owner: root
+    group: root
+    mode: preserve
+
+- name: Render cloudflared env
+  ansible.builtin.copy:
+    dest: "{{ admin_node_root }}/env/cloudflared.env"
+    mode: "0600"
+    content: |
+      CLOUDFLARE_TUNNEL_TOKEN={{ cloudflare.tunnel_token | mandatory('cloudflare.tunnel_token is required') }}
+  no_log: true
+
+- name: Start cloudflared stack
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/cloudflared.env -f compose.yaml up -d
+  args:
+    chdir: "{{ admin_node_root }}/stacks/cloudflared"
+  changed_when: true
+
+- name: Validate tunnel script
+  ansible.builtin.command: /opt/homelab-admin-node/scripts/validate-cloudflare-tunnel.sh
+  changed_when: false

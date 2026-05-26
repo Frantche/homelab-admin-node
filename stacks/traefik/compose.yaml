@@ -1,0 +1,21 @@
+services:
+  traefik:
+    image: traefik:v3.1
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - --configFile=/etc/traefik/traefik.yml
+    ports:
+      - "443:443"
+    volumes:
+      - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./dynamic:/etc/traefik/dynamic:ro
+      - /srv/admin/data/traefik/letsencrypt:/letsencrypt
+      - /srv/admin/certs:/certs:ro
+    env_file: /srv/admin/env/traefik.env
+    networks:
+      - admin-net
+
+networks:
+  admin-net:
+    external: true

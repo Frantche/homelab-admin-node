@@ -1,0 +1,12 @@
+---
+- name: Validate local APIs
+  ansible.builtin.command: /opt/homelab-admin-node/scripts/validate-apis.sh
+  changed_when: false
+
+- name: Validate local DNS
+  ansible.builtin.command: /opt/homelab-admin-node/scripts/validate-dns.sh
+  changed_when: false
+
+- name: Validate cloudflare tunnel
+  ansible.builtin.command: /opt/homelab-admin-node/scripts/validate-cloudflare-tunnel.sh
+  changed_when: false

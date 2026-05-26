@@ -1,0 +1,33 @@
+# Environment / secrets
+*.env
+*.env.*
+.env
+.env.*
+secrets/*.sops.yaml
+!secrets/*.sops.yaml.example
+ansible/group_vars/secrets.sops.yaml
+*.age
+keys.txt
+credentials.json
+*.token
+
+# Backups / dumps
+backups/
+*.sql
+*.sql.gz
+*.dump
+*.snap
+*.raft
+
+# CI temporary files
+ci/tmp/
+ci/.tmp/
+.ci/
+
+# Logs
+*.log
+logs/
+
+# OS/editor
+.DS_Store
+*.swp

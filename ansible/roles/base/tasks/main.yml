@@ -1,0 +1,65 @@
+---
+- name: Ensure base directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/homelab-admin-node
+    - "{{ admin_node_root }}"
+    - "{{ admin_node_root }}/stacks"
+    - "{{ admin_node_root }}/env"
+    - "{{ admin_node_root }}/data"
+    - "{{ admin_node_root }}/backups"
+
+- name: Sync repository into /opt
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../"
+    dest: /opt/homelab-admin-node/
+    rsync_opts:
+      - "--delete"
+      - "--exclude=secrets/*.sops.yaml"
+      - "--exclude=ansible/group_vars/secrets.sops.yaml"
+
+- name: Deploy systemd unit files
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../systemd/{{ item }}"
+    dest: /etc/systemd/system/{{ item }}
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - admin-stack@.service
+    - admin-stacks.target
+    - admin-backup.service
+    - admin-backup.timer
+    - admin-converge.service
+    - admin-converge.timer
+    - admin-unlock.path
+  notify: systemd daemon-reload
+
+- name: Enable and start admin-stacks.target
+  ansible.builtin.systemd:
+    name: admin-stacks.target
+    enabled: true
+    daemon_reload: true
+
+- name: Enable admin-backup.timer
+  ansible.builtin.systemd:
+    name: admin-backup.timer
+    enabled: true
+    state: started
+
+- name: Enable admin-converge.timer
+  ansible.builtin.systemd:
+    name: admin-converge.timer
+    enabled: true
+    state: started
+
+- name: Enable admin-unlock.path
+  ansible.builtin.systemd:
+    name: admin-unlock.path
+    enabled: true
+    state: started

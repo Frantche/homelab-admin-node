@@ -1,0 +1,4 @@
+---
+- name: Trigger backup script
+  ansible.builtin.command: /opt/homelab-admin-node/scripts/backup.sh
+  changed_when: false

@@ -1,0 +1,6 @@
+[Unit]
+Description=All admin stacks
+Wants=admin-stack@traefik.service admin-stack@openbao.service admin-stack@keycloak.service admin-stack@harbor.service admin-stack@cloudflared.service
+
+[Install]
+WantedBy=multi-user.target

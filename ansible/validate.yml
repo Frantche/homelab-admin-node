@@ -1,0 +1,16 @@
+---
+- hosts: admin
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Validate APIs script
+      ansible.builtin.command: /opt/homelab-admin-node/scripts/validate-apis.sh
+      changed_when: false
+
+    - name: Validate DNS script
+      ansible.builtin.command: /opt/homelab-admin-node/scripts/validate-dns.sh
+      changed_when: false
+
+    - name: Validate Cloudflare tunnel script
+      ansible.builtin.command: /opt/homelab-admin-node/scripts/validate-cloudflare-tunnel.sh
+      changed_when: false

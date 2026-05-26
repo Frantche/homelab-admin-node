@@ -1,0 +1,18 @@
+version: 0.1
+log:
+  level: info
+  fields:
+    service: registry
+storage:
+  filesystem:
+    rootdirectory: /storage
+  delete:
+    enabled: true
+  cache:
+    blobdescriptor: redis
+http:
+  addr: :5000
+  secret: registry-secret
+redis:
+  addr: harbor-redis:6379
+  db: 1

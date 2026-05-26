@@ -1,0 +1,85 @@
+services:
+  harbor-db:
+    image: postgres:16
+    container_name: harbor-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: registry
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${HARBOR_DB_PASSWORD:-harbor-ci-db}
+    volumes:
+      - /srv/admin/data/harbor/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - admin-net
+
+  harbor-redis:
+    image: redis:7
+    container_name: harbor-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - admin-net
+
+  harbor-registry:
+    image: goharbor/registry-photon:v2.12.0
+    container_name: harbor-registry
+    restart: unless-stopped
+    volumes:
+      - /srv/admin/data/harbor/registry:/storage
+      - ./config/registry.yml:/etc/registry/config.yml:ro
+    depends_on:
+      harbor-redis:
+        condition: service_healthy
+    networks:
+      - admin-net
+
+  harbor-core:
+    image: goharbor/harbor-core:v2.12.0
+    container_name: harbor-core
+    restart: unless-stopped
+    environment:
+      CORE_SECRET: ${HARBOR_CORE_SECRET:-harbor-ci-core-secret}
+      JOBSERVICE_SECRET: ${HARBOR_JOBSERVICE_SECRET:-harbor-ci-job-secret}
+      REGISTRY_CREDENTIAL_USERNAME: harbor_registry_user
+      REGISTRY_CREDENTIAL_PASSWORD: ${HARBOR_REGISTRY_PASSWORD:-harbor-ci-registry}
+      _REDIS_URL_CORE: redis://harbor-redis:6379/0
+      DATABASE_TYPE: postgresql
+      POSTGRESQL_HOST: harbor-db
+      POSTGRESQL_PORT: 5432
+      POSTGRESQL_USERNAME: postgres
+      POSTGRESQL_PASSWORD: ${HARBOR_DB_PASSWORD:-harbor-ci-db}
+      POSTGRESQL_DATABASE: registry
+      POSTGRESQL_SSLMODE: disable
+      CONFIG_PATH: /etc/core/app.conf
+      EXT_ENDPOINT: https://harbor.example.com
+      CORE_URL: http://harbor-core:8080
+      REGISTRY_URL: http://harbor-registry:5000
+      TOKEN_SERVICE_URL: http://harbor-core:8080/service/token
+      HARBOR_ADMIN_PASSWORD: ${HARBOR_ADMIN_PASSWORD:-Harbor12345}
+      WITH_TRIVY: "false"
+      LOG_LEVEL: info
+    volumes:
+      - ./config/core-app.conf:/etc/core/app.conf:ro
+      - /srv/admin/data/harbor/core:/data
+    depends_on:
+      harbor-db:
+        condition: service_healthy
+      harbor-redis:
+        condition: service_healthy
+      harbor-registry:
+        condition: service_started
+    networks:
+      - admin-net
+
+networks:
+  admin-net:
+    external: true
