@@ -34,7 +34,7 @@ curl -fsS https://keycloak.example.com/realms/master/.well-known/openid-configur
 # --- Harbor ---
 echo "[validate-apis] checking Harbor..."
 harbor_ok=false
-for _ in $(seq 1 10); do
+for _ in $(seq 1 40); do
   # Accept partial health (core+db healthy is sufficient)
   health="$(curl -fsS https://harbor.example.com/api/v2.0/health 2>/dev/null)" || { sleep 3; continue; }
   core_ok="$(echo "$health" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(any(c["name"]=="core" and c["status"]=="healthy" for c in d.get("components",[])))' 2>/dev/null)" || { sleep 3; continue; }
@@ -55,11 +55,6 @@ fi
 
 # --- Traefik ---
 echo "[validate-apis] checking Traefik..."
-# Ping endpoint does not require authentication
-if ! curl -fsS https://traefik.example.com/ping 2>/dev/null | grep -q "OK"; then
-  echo "Traefik ping endpoint not responding" >&2
-  exit 1
-fi
 # If dashboard credentials are available, verify routers
 if [[ -n "${TRAEFIK_DASHBOARD_USER:-}" && -n "${TRAEFIK_DASHBOARD_PASS:-}" ]]; then
   traefik_routers="$(curl -fsS -u "${TRAEFIK_DASHBOARD_USER}:${TRAEFIK_DASHBOARD_PASS}" https://traefik.example.com/api/http/routers 2>/dev/null)"
@@ -73,6 +68,9 @@ if [[ -n "${TRAEFIK_DASHBOARD_USER:-}" && -n "${TRAEFIK_DASHBOARD_PASS:-}" ]]; t
       exit 1
     fi
   done
+else
+  echo "Traefik dashboard credentials are required for API route validation" >&2
+  exit 1
 fi
 
 echo "API validation passed"

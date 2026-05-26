@@ -48,7 +48,9 @@ jobs:
           if [ -e /dev/kvm ]; then
             echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
             sudo udevadm control --reload-rules
-            sudo udevadm trigger --name-match=kvm || true
+            if ! sudo udevadm trigger --name-match=kvm; then
+              echo "Warning: udev trigger for /dev/kvm failed; continuing"
+            fi
             ls -l /dev/kvm
           else
             echo "KVM not available, QEMU will run without hardware acceleration"
@@ -219,21 +221,31 @@ jobs:
         if: failure()
         run: |
           echo "=== QEMU log (last 50 lines) ==="
-          tail -50 .ci/vm/qemu.log || true
+          if [ -f .ci/vm/qemu.log ]; then
+            tail -50 .ci/vm/qemu.log
+          else
+            echo "QEMU log not found"
+          fi
           echo ""
           echo "=== Docker containers in VM ==="
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          if ! ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
-              "sudo docker ps -a" 2>/dev/null || true
+              "sudo docker ps -a" 2>/dev/null; then
+            echo "Unable to fetch container list from VM"
+          fi
           echo ""
           echo "=== Docker logs ==="
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          if ! ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
-              "for c in traefik keycloak keycloak-db openbao harbor-core; do echo \"--- \$c ---\"; sudo docker logs \$c 2>&1 | tail -20; done" 2>/dev/null || true
+              "for c in traefik keycloak keycloak-db openbao harbor-core; do echo \"--- \$c ---\"; sudo docker logs \$c 2>&1 | tail -20; done" 2>/dev/null; then
+            echo "Unable to fetch container logs from VM"
+          fi
 
       - name: Stop VM
         if: always()
         run: |
           if [ -f .ci/vm/qemu.pid ]; then
-            kill "$(cat .ci/vm/qemu.pid)" 2>/dev/null || true
+            if ! kill "$(cat .ci/vm/qemu.pid)" 2>/dev/null; then
+              echo "QEMU process already stopped"
+            fi
           fi

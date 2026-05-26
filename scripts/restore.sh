@@ -55,7 +55,10 @@ if [[ -f "$restore_path/openbao.snap" ]]; then
   echo "[restore] waiting for openbao..."
   for _ in $(seq 1 30); do
     # bao status exits non-zero when sealed or starting up; capture output regardless
-    bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1) || true
+    bao_out=""
+    if ! bao_out="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1)"; then
+      :
+    fi
     if echo "$bao_out" | grep -q "Initialized"; then break; fi
     sleep 1
   done
@@ -103,7 +106,10 @@ fi
 echo "[restore] waiting for services to be ready..."
 for _ in $(seq 1 60); do
   # bao status exits non-zero when sealed or starting up; capture output regardless
-  bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1) || true
+  bao_out=""
+  if ! bao_out="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1)"; then
+    :
+  fi
   if echo "$bao_out" | grep -q "Initialized"; then break; fi
   sleep 2
 done

@@ -64,6 +64,7 @@ for domain in keycloak.example.com bao.example.com harbor.example.com traefik.ex
 done
 
 # Deploy compose stacks to the expected runtime location
+rm -rf /srv/admin/stacks/traefik /srv/admin/stacks/keycloak /srv/admin/stacks/openbao /srv/admin/stacks/harbor /srv/admin/stacks/cloudflared
 cp -a "$REPO_ROOT/stacks/traefik" /srv/admin/stacks/traefik
 cp -a "$REPO_ROOT/stacks/keycloak" /srv/admin/stacks/keycloak
 cp -a "$REPO_ROOT/stacks/openbao" /srv/admin/stacks/openbao
@@ -102,13 +103,15 @@ EOF
 # Generate a random htpasswd entry for the Traefik dashboard in CI
 _dash_pass="$(openssl rand -hex 16)"
 _dash_hash="$(openssl passwd -apr1 "$_dash_pass")"
+_dash_hash_escaped="${_dash_hash//\$/\$\$}"
 cat > /srv/admin/env/traefik.env <<EOF
-TRAEFIK_DASHBOARD_BASIC_AUTH=admin:${_dash_hash}
+TRAEFIK_DASHBOARD_BASIC_AUTH=admin:${_dash_hash_escaped}
 CF_DNS_API_TOKEN=ci-not-used
 EOF
 chmod 0600 /srv/admin/env/*.env
 
 # Persist dashboard credentials for validation scripts
+mkdir -p /etc/admin-node
 cat > /etc/admin-node/traefik-dashboard-creds <<EOF
 TRAEFIK_DASHBOARD_USER=admin
 TRAEFIK_DASHBOARD_PASS=${_dash_pass}
@@ -122,9 +125,6 @@ content = open(sys.argv[1]).read()
 content = content.replace('{{ TRAEFIK_DASHBOARD_BASIC_AUTH }}', 'admin:' + sys.argv[2])
 open(sys.argv[1], 'w').write(content)
 " /srv/admin/stacks/traefik/dynamic/config.yml "$_dash_hash"
-
-# Create /etc/admin-node directory
-mkdir -p /etc/admin-node
 
 echo "[ci-setup] Environment prepared, starting services..."
 
@@ -155,7 +155,10 @@ echo "[ci-setup] Waiting for services to become healthy..."
 echo "[ci-setup] Waiting for OpenBao API..."
 for i in $(seq 1 60); do
   # bao status exits non-zero when sealed/starting, capture output regardless
-  bao_out=$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1) || true
+  bao_out=""
+  if ! bao_out="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1)"; then
+    :
+  fi
   if echo "$bao_out" | grep -q "Initialized"; then
     echo "[ci-setup] OpenBao API is responding"
     break
@@ -188,14 +191,14 @@ echo "[ci-setup] Waiting for Traefik..."
 # Read the dashboard credentials we generated earlier
 _dash_user="admin"
 for i in $(seq 1 30); do
-  # First check ping (no auth required) - CA is in system trust store
-  if curl -fsS https://traefik.example.com/ping 2>/dev/null | grep -q "OK"; then
-    # Then check routers via API (requires basic auth)
-    routers="$(curl -fsS -u "${_dash_user}:${_dash_pass}" https://traefik.example.com/api/http/routers 2>/dev/null)"
-    if echo "$routers" | grep -q "keycloak"; then
-      echo "[ci-setup] Traefik is ready"
-      break
-    fi
+  # Check Traefik API over TLS with dashboard basic auth
+  routers=""
+  if ! routers="$(curl -fsS -u "${_dash_user}:${_dash_pass}" https://traefik.example.com/api/http/routers 2>/dev/null)"; then
+    routers=""
+  fi
+  if echo "$routers" | grep -q "keycloak"; then
+    echo "[ci-setup] Traefik is ready"
+    break
   fi
   if [[ $i -eq 30 ]]; then
     echo "[ci-setup] ERROR: Traefik did not load all routes" >&2
