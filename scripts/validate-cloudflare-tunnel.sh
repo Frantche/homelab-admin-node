@@ -30,7 +30,8 @@ if docker ps --format '{{.Names}}' | grep -qx cloudflared; then
     curl -fsS https://traefik.example.com >/dev/null
   fi
 else
-  echo "[validate-cloudflare-tunnel] container not running (expected if no valid token)"
+  echo "[validate-cloudflare-tunnel] ERROR: container exists but is not running" >&2
+  exit 1
 fi
 
 echo "Cloudflare tunnel validation passed"
