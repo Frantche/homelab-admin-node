@@ -25,7 +25,7 @@ if [[ -z "$active_keyset" || -z "$threshold" ]]; then
   exit 1
 fi
 
-bao_status="$(docker exec openbao bao status -format=json 2>/dev/null || true)"
+bao_status="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null || true)"
 initialized="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("initialized", False))' <<< "$bao_status")"
 sealed="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' <<< "$bao_status")"
 
@@ -51,7 +51,7 @@ PY
   docker exec -i -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal >/dev/null <<< "$key"
 done
 
-bao_status2="$(docker exec openbao bao status -format=json 2>/dev/null || true)"
+bao_status2="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null || true)"
 sealed2="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' <<< "$bao_status2")"
 
 if [[ "$sealed2" != "False" ]]; then

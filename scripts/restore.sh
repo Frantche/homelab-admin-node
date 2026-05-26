@@ -54,8 +54,7 @@ if [[ -f "$restore_path/openbao.snap" ]]; then
   docker compose -f /srv/admin/stacks/openbao/compose.yaml up -d
   echo "[restore] waiting for openbao..."
   for _ in $(seq 1 30); do
-    http_code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8200/v1/sys/health 2>/dev/null || echo "000")"
-    if [[ "$http_code" != "000" ]]; then break; fi
+    if docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 | grep -q "Initialized"; then break; fi
     sleep 1
   done
   # Raft snapshot restore requires the vault to be unsealed first
@@ -85,8 +84,7 @@ fi
 
 echo "[restore] waiting for services to be ready..."
 for _ in $(seq 1 60); do
-  http_code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8200/v1/sys/health 2>/dev/null || echo "000")"
-  if [[ "$http_code" != "000" ]]; then break; fi
+  if docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 | grep -q "Initialized"; then break; fi
   sleep 2
 done
 
@@ -112,7 +110,7 @@ fi
 
 if [[ "$unseal_ok" != "true" ]]; then
   # Check if already unsealed
-  sealed="$(curl -fsS http://127.0.0.1:8200/v1/sys/health 2>/dev/null | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' 2>/dev/null || echo "True")"
+  sealed="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("sealed", True))' 2>/dev/null || echo "True")"
   if [[ "$sealed" == "False" ]]; then
     unseal_ok=true
   fi

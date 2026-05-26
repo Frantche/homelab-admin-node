@@ -5,7 +5,7 @@ OPENBAO_TOKEN=${OPENBAO_TOKEN:-}
 
 # --- OpenBao ---
 echo "[validate-apis] checking OpenBao..."
-bao_health="$(docker exec openbao bao status -format=json 2>/dev/null || true)"
+bao_health="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null || true)"
 python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d.get("initialized") is True, f"not initialized: {d}"; assert d.get("sealed") is False, f"still sealed: {d}"' "$bao_health"
 
 if [[ -n "$OPENBAO_TOKEN" ]]; then

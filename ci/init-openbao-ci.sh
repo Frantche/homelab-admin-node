@@ -10,7 +10,7 @@ mkdir -p "$SECRETS_DIR"
 
 echo "[init-openbao-ci] Waiting for OpenBao to be ready..."
 for i in $(seq 1 30); do
-  if docker exec openbao bao status 2>&1 | grep -q "Initialized"; then
+  if docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status 2>&1 | grep -q "Initialized"; then
     break
   fi
   if [[ $i -eq 30 ]]; then
@@ -23,7 +23,7 @@ done
 
 # Check if already initialized (exit code 0 means unsealed = initialized)
 initialized="False"
-bao_status="$(docker exec openbao bao status -format=json 2>/dev/null || true)"
+bao_status="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null || true)"
 if [[ -n "$bao_status" ]]; then
   initialized="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("initialized", False))' "$bao_status" 2>/dev/null || echo "False")"
 fi
@@ -82,7 +82,7 @@ done
 
 # Verify unsealed
 sleep 2
-bao_status2="$(docker exec openbao bao status -format=json 2>/dev/null || true)"
+bao_status2="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null || true)"
 sealed="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("sealed", True))' "$bao_status2" 2>/dev/null || echo "True")"
 if [[ "$sealed" != "False" ]]; then
   echo "[init-openbao-ci] ERROR: OpenBao is still sealed after unseal attempt" >&2
