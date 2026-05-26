@@ -1,0 +1,252 @@
+---
+- name: Wait for Keycloak readiness
+  ansible.builtin.uri:
+    url: http://127.0.0.1:9000/health/ready
+    method: GET
+    status_code: 200
+  register: keycloak_ready
+  until: keycloak_ready.status == 200
+  retries: 30
+  delay: 5
+
+- name: Request Keycloak admin token
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9000/realms/master/protocol/openid-connect/token"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      grant_type: password
+      client_id: admin-cli
+      username: "{{ keycloak.admin_user | default('admin') }}"
+      password: "{{ keycloak.admin_password | mandatory('keycloak.admin_password is required') }}"
+    return_content: true
+    status_code: 200
+  register: keycloak_token_response
+  no_log: true
+
+- name: Set Keycloak admin token fact
+  ansible.builtin.set_fact:
+    keycloak_admin_token: "{{ keycloak_token_response.json.access_token }}"
+    keycloak_realm_cfg: "{{ keycloak_config.realm }}"
+
+- name: Check if configured realm exists
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ keycloak_admin_token }}"
+    status_code: [200, 404]
+  register: keycloak_realm_state
+
+- name: Create configured realm
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9000/admin/realms"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ keycloak_admin_token }}"
+    body_format: json
+    body:
+      realm: "{{ keycloak_realm_cfg.name }}"
+      displayName: "{{ keycloak_realm_cfg.display_name | default(keycloak_realm_cfg.name) }}"
+      enabled: true
+      sslRequired: "{{ keycloak_realm_cfg.ssl_required | default('external') }}"
+    status_code: 201
+  when: keycloak_realm_state.status == 404
+
+- name: Update configured realm
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ keycloak_admin_token }}"
+    body_format: json
+    body:
+      realm: "{{ keycloak_realm_cfg.name }}"
+      displayName: "{{ keycloak_realm_cfg.display_name | default(keycloak_realm_cfg.name) }}"
+      enabled: true
+      sslRequired: "{{ keycloak_realm_cfg.ssl_required | default('external') }}"
+    status_code: 204
+  when: keycloak_realm_state.status == 200
+
+- name: Check existing realm roles
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/roles/{{ item }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ keycloak_admin_token }}"
+    status_code: [200, 404]
+  loop: "{{ keycloak_config.realm_roles | default([]) }}"
+  register: keycloak_realm_roles_state
+
+- name: Create missing realm roles
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/roles"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ keycloak_admin_token }}"
+    body_format: json
+    body:
+      name: "{{ item.item }}"
+    status_code: 201
+  loop: "{{ keycloak_realm_roles_state.results | default([]) }}"
+  when: item.status == 404
+
+- name: Ensure configured clients exist
+  loop: "{{ keycloak_config.clients | default([]) }}"
+  loop_control:
+    label: "{{ item.client_id }}"
+  vars:
+    keycloak_client_spec:
+      clientId: "{{ item.client_id }}"
+      name: "{{ item.name | default(item.client_id) }}"
+      enabled: "{{ item.enabled | default(true) }}"
+      publicClient: "{{ item.public | default(false) }}"
+      standardFlowEnabled: "{{ item.standard_flow_enabled | default(true) }}"
+      directAccessGrantsEnabled: "{{ item.direct_access_grants_enabled | default(false) }}"
+      serviceAccountsEnabled: "{{ item.service_accounts_enabled | default(false) }}"
+      redirectUris: "{{ item.redirect_uris | default([]) }}"
+      webOrigins: "{{ item.web_origins | default([]) }}"
+      rootUrl: "{{ item.root_url | default(omit) }}"
+      baseUrl: "{{ item.base_url | default(omit) }}"
+      secret: "{{ item.secret | default(omit) }}"
+  block:
+    - name: Find client
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/clients?clientId={{ item.client_id | urlencode }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ keycloak_admin_token }}"
+        status_code: 200
+      register: keycloak_client_lookup
+
+    - name: Create client when missing
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/clients"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ keycloak_admin_token }}"
+        body_format: json
+        body: "{{ keycloak_client_spec }}"
+        status_code: 201
+      when: (keycloak_client_lookup.json | length) == 0
+
+    - name: Update client when present
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/clients/{{ (keycloak_client_lookup.json | first).id }}"
+        method: PUT
+        headers:
+          Authorization: "Bearer {{ keycloak_admin_token }}"
+        body_format: json
+        body: "{{ keycloak_client_spec }}"
+        status_code: 204
+      when: (keycloak_client_lookup.json | length) > 0
+
+- name: Ensure configured users exist and are updated
+  loop: "{{ keycloak_config.users | default([]) }}"
+  loop_control:
+    label: "{{ item.username }}"
+  vars:
+    keycloak_user_spec:
+      username: "{{ item.username }}"
+      enabled: "{{ item.enabled | default(true) }}"
+      email: "{{ item.email | default(omit) }}"
+      firstName: "{{ item.first_name | default(omit) }}"
+      lastName: "{{ item.last_name | default(omit) }}"
+      emailVerified: "{{ item.email_verified | default(false) }}"
+  block:
+    - name: Find user
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users?username={{ item.username | urlencode }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ keycloak_admin_token }}"
+        status_code: 200
+      register: keycloak_user_lookup
+
+    - name: Create user when missing
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ keycloak_admin_token }}"
+        body_format: json
+        body:
+          username: "{{ item.username }}"
+          enabled: "{{ item.enabled | default(true) }}"
+          email: "{{ item.email | default(omit) }}"
+          firstName: "{{ item.first_name | default(omit) }}"
+          lastName: "{{ item.last_name | default(omit) }}"
+          emailVerified: "{{ item.email_verified | default(false) }}"
+          credentials: "{{ ([{'type': 'password', 'value': item.password, 'temporary': item.temporary_password | default(false)}] if (item.password is defined and item.password | length > 0) else omit) }}"
+        status_code: 201
+      no_log: true
+      when: (keycloak_user_lookup.json | length) == 0
+
+    - name: Reload user after create/update lookup
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users?username={{ item.username | urlencode }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ keycloak_admin_token }}"
+        status_code: 200
+      register: keycloak_user_lookup_final
+
+    - name: Update user profile
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ (keycloak_user_lookup_final.json | first).id }}"
+        method: PUT
+        headers:
+          Authorization: "Bearer {{ keycloak_admin_token }}"
+        body_format: json
+        body: "{{ keycloak_user_spec }}"
+        status_code: 204
+
+    - name: Update user password when provided
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ (keycloak_user_lookup_final.json | first).id }}/reset-password"
+        method: PUT
+        headers:
+          Authorization: "Bearer {{ keycloak_admin_token }}"
+        body_format: json
+        body:
+          type: password
+          value: "{{ item.password }}"
+          temporary: "{{ item.temporary_password | default(false) }}"
+        status_code: 204
+      no_log: true
+      when: item.password is defined and item.password | length > 0
+
+    - name: Read assigned realm roles
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ (keycloak_user_lookup_final.json | first).id }}/role-mappings/realm"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ keycloak_admin_token }}"
+        status_code: 200
+      register: keycloak_user_roles_current
+
+    - name: Compute missing realm roles for user
+      ansible.builtin.set_fact:
+        keycloak_user_missing_realm_roles: "{{ (item.realm_roles | default([])) | difference(keycloak_user_roles_current.json | map(attribute='name') | list) }}"
+
+    - name: Fetch missing realm role representations
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/roles/{{ item }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ keycloak_admin_token }}"
+        status_code: 200
+      loop: "{{ keycloak_user_missing_realm_roles }}"
+      register: keycloak_user_roles_to_assign
+      when: keycloak_user_missing_realm_roles | length > 0
+
+    - name: Assign missing realm roles to user
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ (keycloak_user_lookup_final.json | first).id }}/role-mappings/realm"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ keycloak_admin_token }}"
+        body_format: json
+        body: "{{ keycloak_user_roles_to_assign.results | map(attribute='json') | list }}"
+        status_code: 204
+      when: keycloak_user_missing_realm_roles | length > 0

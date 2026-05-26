@@ -37,3 +37,46 @@ ci:
   mock_pihole: true
   mock_cloudflare_tunnel: true
   skip_public_url_validation: true
+
+keycloak_config:
+  enabled: false
+  realm:
+    name: "homelab"
+    display_name: "Homelab"
+    ssl_required: "external"
+  realm_roles: []
+  clients: []
+  users: []
+
+openbao_config:
+  enabled: false
+  root_token: ""
+  secret_engines: []
+  oidc:
+    enabled: false
+    discovery_url: ""
+    client_id: ""
+    client_secret: ""
+    default_role: "default"
+    role:
+      name: "default"
+      user_claim: "sub"
+      groups_claim: "groups"
+      allowed_redirect_uris: []
+      bound_audiences: []
+      policies: ["default"]
+
+harbor_config:
+  enabled: false
+  oidc:
+    enabled: false
+    endpoint: ""
+    client_id: ""
+    client_secret: ""
+    verify_cert: true
+    auto_onboard: true
+    scope: "openid,profile,email"
+    user_claim: "preferred_username"
+    groups_claim: "groups"
+    admin_group: ""
+  registry_mirrors: []
