@@ -1,0 +1,123 @@
+---
+- name: Build user specification
+  ansible.builtin.set_fact:
+    keycloak_user_spec:
+      username: "{{ keycloak_user_item.username }}"
+      enabled: "{{ keycloak_user_item.enabled | default(true) }}"
+      email: "{{ keycloak_user_item.email | default(omit) }}"
+      firstName: "{{ keycloak_user_item.first_name | default(omit) }}"
+      lastName: "{{ keycloak_user_item.last_name | default(omit) }}"
+      emailVerified: "{{ keycloak_user_item.email_verified | default(false) }}"
+
+- name: Find user
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users?username={{ keycloak_user_item.username | urlencode }}"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_auth_header }}"
+    status_code: 200
+  register: keycloak_user_lookup
+
+- name: Create user when missing
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users"
+    method: POST
+    headers:
+      Authorization: "{{ keycloak_auth_header }}"
+    body_format: json
+    body:
+      username: "{{ keycloak_user_item.username }}"
+      enabled: "{{ keycloak_user_item.enabled | default(true) }}"
+      email: "{{ keycloak_user_item.email | default(omit) }}"
+      firstName: "{{ keycloak_user_item.first_name | default(omit) }}"
+      lastName: "{{ keycloak_user_item.last_name | default(omit) }}"
+      emailVerified: "{{ keycloak_user_item.email_verified | default(false) }}"
+      credentials: "{{ ([{'type': 'password', 'value': keycloak_user_item.password, 'temporary': keycloak_user_item.temporary_password | default(false)}] if (keycloak_user_item.password is defined and keycloak_user_item.password | length > 0) else omit) }}"
+    status_code: 201
+  no_log: true
+  when: (keycloak_user_lookup.json | length) == 0
+
+- name: Reload user lookup
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users?username={{ keycloak_user_item.username | urlencode }}"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_auth_header }}"
+    status_code: 200
+  register: keycloak_user_lookup_final
+
+- name: Set user id fact
+  ansible.builtin.set_fact:
+    keycloak_user_id: "{{ (keycloak_user_lookup_final.json | first).id if (keycloak_user_lookup_final.json | length) > 0 else '' }}"
+
+- name: Update user profile
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}"
+    method: PUT
+    headers:
+      Authorization: "{{ keycloak_auth_header }}"
+    body_format: json
+    body: "{{ keycloak_user_spec }}"
+    status_code: 204
+  when: keycloak_user_id | length > 0
+
+- name: Update user password when provided
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/reset-password"
+    method: PUT
+    headers:
+      Authorization: "{{ keycloak_auth_header }}"
+    body_format: json
+    body:
+      type: password
+      value: "{{ keycloak_user_item.password }}"
+      temporary: "{{ keycloak_user_item.temporary_password | default(false) }}"
+    status_code: 204
+  no_log: true
+  when:
+    - keycloak_user_id | length > 0
+    - keycloak_user_item.password is defined
+    - keycloak_user_item.password | length > 0
+
+- name: Read assigned realm roles
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/role-mappings/realm"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_auth_header }}"
+    status_code: 200
+  register: keycloak_user_roles_current
+  when: keycloak_user_id | length > 0
+
+- name: Compute missing realm roles for user
+  ansible.builtin.set_fact:
+    keycloak_user_missing_realm_roles: "{{ (keycloak_user_item.realm_roles | default([])) | difference(keycloak_user_roles_current.json | map(attribute='name') | list) }}"
+  when: keycloak_user_id | length > 0
+
+- name: Fetch missing realm role representations
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/roles/{{ role_name }}"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_auth_header }}"
+    status_code: 200
+  loop: "{{ keycloak_user_missing_realm_roles }}"
+  loop_control:
+    loop_var: role_name
+  register: keycloak_user_roles_to_assign
+  when:
+    - keycloak_user_id | length > 0
+    - keycloak_user_missing_realm_roles | length > 0
+
+- name: Assign missing realm roles to user
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/role-mappings/realm"
+    method: POST
+    headers:
+      Authorization: "{{ keycloak_auth_header }}"
+    body_format: json
+    body: "{{ keycloak_user_roles_to_assign.results | map(attribute='json') | list }}"
+    status_code: 204
+  when:
+    - keycloak_user_id | length > 0
+    - keycloak_user_missing_realm_roles | length > 0

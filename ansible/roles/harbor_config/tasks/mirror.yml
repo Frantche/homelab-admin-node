@@ -1,0 +1,79 @@
+---
+- name: Lookup registry mirror
+  ansible.builtin.uri:
+    url: "https://{{ service_domains.harbor }}/api/v2.0/registries?name={{ harbor_mirror_item.name | urlencode }}"
+    method: GET
+    user: admin
+    password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations') }}"
+    force_basic_auth: true
+    validate_certs: false
+    status_code: 200
+  register: harbor_registry_lookup
+  no_log: true
+
+- name: Create registry mirror when missing
+  ansible.builtin.uri:
+    url: "https://{{ service_domains.harbor }}/api/v2.0/registries"
+    method: POST
+    user: admin
+    password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations') }}"
+    force_basic_auth: true
+    validate_certs: false
+    body_format: json
+    body:
+      name: "{{ harbor_mirror_item.name }}"
+      description: "{{ harbor_mirror_item.description | default('Managed by Ansible') }}"
+      type: "{{ harbor_mirror_item.type | default('docker-hub') }}"
+      url: "{{ harbor_mirror_item.url }}"
+      insecure: "{{ harbor_mirror_item.insecure | default(false) }}"
+      credential:
+        type: basic
+        access_key: "{{ harbor_mirror_item.username | default('') }}"
+        access_secret: "{{ harbor_mirror_item.password | default('') }}"
+    status_code: 201
+  when: (harbor_registry_lookup.json | length) == 0
+  no_log: true
+
+- name: Refresh registry mirror lookup
+  ansible.builtin.uri:
+    url: "https://{{ service_domains.harbor }}/api/v2.0/registries?name={{ harbor_mirror_item.name | urlencode }}"
+    method: GET
+    user: admin
+    password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations') }}"
+    force_basic_auth: true
+    validate_certs: false
+    status_code: 200
+  register: harbor_registry_lookup_final
+  no_log: true
+
+- name: Lookup proxy cache project
+  ansible.builtin.uri:
+    url: "https://{{ service_domains.harbor }}/api/v2.0/projects?name={{ (harbor_mirror_item.project_name | default(harbor_mirror_item.name)) | urlencode }}"
+    method: GET
+    user: admin
+    password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations') }}"
+    force_basic_auth: true
+    validate_certs: false
+    status_code: 200
+  register: harbor_project_lookup
+  no_log: true
+
+- name: Create proxy cache project when missing
+  ansible.builtin.uri:
+    url: "https://{{ service_domains.harbor }}/api/v2.0/projects"
+    method: POST
+    user: admin
+    password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations') }}"
+    force_basic_auth: true
+    validate_certs: false
+    body_format: json
+    body:
+      project_name: "{{ harbor_mirror_item.project_name | default(harbor_mirror_item.name) }}"
+      registry_id: "{{ (harbor_registry_lookup_final.json | first).id }}"
+      metadata:
+        public: "{{ (harbor_mirror_item.public | default(false)) | ternary('true', 'false') }}"
+    status_code: [201, 409]
+  when:
+    - (harbor_registry_lookup_final.json | length) > 0
+    - (harbor_project_lookup.json | length) == 0
+  no_log: true

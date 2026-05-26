@@ -103,9 +103,9 @@
       - bao
       - write
       - auth/oidc/config
-      - "oidc_discovery_url={{ openbao_config.oidc.discovery_url | mandatory('openbao_config.oidc.discovery_url is required') }}"
-      - "oidc_client_id={{ openbao_config.oidc.client_id | mandatory('openbao_config.oidc.client_id is required') }}"
-      - "oidc_client_secret={{ openbao_config.oidc.client_secret | mandatory('openbao_config.oidc.client_secret is required') }}"
+      - "oidc_discovery_url={{ openbao_config.oidc.discovery_url | mandatory('openbao_config.oidc.discovery_url is required when openbao_config.oidc.enabled=true') }}"
+      - "oidc_client_id={{ openbao_config.oidc.client_id | mandatory('openbao_config.oidc.client_id is required when openbao_config.oidc.enabled=true') }}"
+      - "oidc_client_secret={{ openbao_config.oidc.client_secret | mandatory('openbao_config.oidc.client_secret is required when openbao_config.oidc.enabled=true') }}"
       - "default_role={{ openbao_config.oidc.default_role | default(openbao_config.oidc.role.name | default('default')) }}"
   when: openbao_config.oidc.enabled | default(false)
   no_log: true

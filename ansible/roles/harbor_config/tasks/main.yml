@@ -26,9 +26,9 @@
     body:
       auth_mode: "oidc_auth"
       oidc_name: "keycloak"
-      oidc_endpoint: "{{ harbor_config.oidc.endpoint | mandatory('harbor_config.oidc.endpoint is required') }}"
-      oidc_client_id: "{{ harbor_config.oidc.client_id | mandatory('harbor_config.oidc.client_id is required') }}"
-      oidc_client_secret: "{{ harbor_config.oidc.client_secret | mandatory('harbor_config.oidc.client_secret is required') }}"
+      oidc_endpoint: "{{ harbor_config.oidc.endpoint | mandatory('harbor_config.oidc.endpoint is required when harbor_config.oidc.enabled=true') }}"
+      oidc_client_id: "{{ harbor_config.oidc.client_id | mandatory('harbor_config.oidc.client_id is required when harbor_config.oidc.enabled=true') }}"
+      oidc_client_secret: "{{ harbor_config.oidc.client_secret | mandatory('harbor_config.oidc.client_secret is required when harbor_config.oidc.enabled=true') }}"
       oidc_scope: "{{ harbor_config.oidc.scope | default('openid,profile,email') }}"
       oidc_verify_cert: "{{ harbor_config.oidc.verify_cert | default(true) }}"
       oidc_auto_onboard: "{{ harbor_config.oidc.auto_onboard | default(true) }}"
@@ -40,85 +40,8 @@
   no_log: true
 
 - name: Ensure Harbor registry mirrors are declared
+  ansible.builtin.include_tasks: mirror.yml
   loop: "{{ harbor_config.registry_mirrors | default([]) }}"
   loop_control:
-    label: "{{ item.name }}"
-  block:
-    - name: Lookup registry mirror
-      ansible.builtin.uri:
-        url: "https://{{ service_domains.harbor }}/api/v2.0/registries?name={{ item.name | urlencode }}"
-        method: GET
-        user: admin
-        password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required') }}"
-        force_basic_auth: true
-        validate_certs: false
-        status_code: 200
-      register: harbor_registry_lookup
-      no_log: true
-
-    - name: Create registry mirror when missing
-      ansible.builtin.uri:
-        url: "https://{{ service_domains.harbor }}/api/v2.0/registries"
-        method: POST
-        user: admin
-        password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required') }}"
-        force_basic_auth: true
-        validate_certs: false
-        body_format: json
-        body:
-          name: "{{ item.name }}"
-          description: "{{ item.description | default('Managed by Ansible') }}"
-          type: "{{ item.type | default('docker-hub') }}"
-          url: "{{ item.url }}"
-          insecure: "{{ item.insecure | default(false) }}"
-          credential:
-            type: basic
-            access_key: "{{ item.username | default('') }}"
-            access_secret: "{{ item.password | default('') }}"
-        status_code: 201
-      when: (harbor_registry_lookup.json | length) == 0
-      no_log: true
-
-    - name: Refresh registry mirror lookup
-      ansible.builtin.uri:
-        url: "https://{{ service_domains.harbor }}/api/v2.0/registries?name={{ item.name | urlencode }}"
-        method: GET
-        user: admin
-        password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required') }}"
-        force_basic_auth: true
-        validate_certs: false
-        status_code: 200
-      register: harbor_registry_lookup_final
-      no_log: true
-
-    - name: Lookup proxy cache project
-      ansible.builtin.uri:
-        url: "https://{{ service_domains.harbor }}/api/v2.0/projects?name={{ (item.project_name | default(item.name)) | urlencode }}"
-        method: GET
-        user: admin
-        password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required') }}"
-        force_basic_auth: true
-        validate_certs: false
-        status_code: 200
-      register: harbor_project_lookup
-      no_log: true
-
-    - name: Create proxy cache project when missing
-      ansible.builtin.uri:
-        url: "https://{{ service_domains.harbor }}/api/v2.0/projects"
-        method: POST
-        user: admin
-        password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required') }}"
-        force_basic_auth: true
-        validate_certs: false
-        body_format: json
-        body:
-          project_name: "{{ item.project_name | default(item.name) }}"
-          registry_id: "{{ (harbor_registry_lookup_final.json | first).id }}"
-          metadata:
-            public: "{{ (item.public | default(false)) | ternary('true', 'false') }}"
-        status_code: [201, 409]
-      when:
-        - (harbor_registry_lookup_final.json | length) > 0
-        - (harbor_project_lookup.json | length) == 0
-      no_log: true
+    loop_var: harbor_mirror_item
+    label: "{{ harbor_mirror_item.name }}"
