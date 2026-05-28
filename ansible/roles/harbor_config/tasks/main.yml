@@ -1,0 +1,47 @@
+---
+- name: Wait for Harbor API health
+  ansible.builtin.uri:
+    url: "https://{{ service_domains.harbor }}/api/v2.0/health"
+    method: GET
+    user: admin
+    password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required') }}"
+    force_basic_auth: true
+    validate_certs: false
+    status_code: 200
+  register: harbor_health
+  until: harbor_health.status == 200
+  retries: 30
+  delay: 5
+  no_log: true
+
+- name: Configure Harbor OIDC SSO
+  ansible.builtin.uri:
+    url: "https://{{ service_domains.harbor }}/api/v2.0/configurations"
+    method: PUT
+    user: admin
+    password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required') }}"
+    force_basic_auth: true
+    validate_certs: false
+    body_format: json
+    body:
+      auth_mode: "oidc_auth"
+      oidc_name: "keycloak"
+      oidc_endpoint: "{{ harbor_config.oidc.endpoint | mandatory('harbor_config.oidc.endpoint is required when harbor_config.oidc.enabled=true') }}"
+      oidc_client_id: "{{ harbor_config.oidc.client_id | mandatory('harbor_config.oidc.client_id is required when harbor_config.oidc.enabled=true') }}"
+      oidc_client_secret: "{{ harbor_config.oidc.client_secret | mandatory('harbor_config.oidc.client_secret is required when harbor_config.oidc.enabled=true') }}"
+      oidc_scope: "{{ harbor_config.oidc.scope | default('openid,profile,email') }}"
+      oidc_verify_cert: "{{ harbor_config.oidc.verify_cert | default(true) }}"
+      oidc_auto_onboard: "{{ harbor_config.oidc.auto_onboard | default(true) }}"
+      oidc_user_claim: "{{ harbor_config.oidc.user_claim | default('preferred_username') }}"
+      oidc_groups_claim: "{{ harbor_config.oidc.groups_claim | default('groups') }}"
+      oidc_admin_group: "{{ harbor_config.oidc.admin_group | default('') }}"
+    status_code: 200
+  when: harbor_config.oidc.enabled | default(false)
+  no_log: true
+
+- name: Ensure Harbor registry mirrors are declared
+  ansible.builtin.include_tasks: mirror.yml
+  loop: "{{ harbor_config.registry_mirrors | default([]) }}"
+  loop_control:
+    loop_var: harbor_mirror_item
+    label: "{{ harbor_mirror_item.name }}"

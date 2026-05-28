@@ -22,6 +22,9 @@
     enabled: true
     state: started
 
+- name: Flush handlers to restart docker before starting containers
+  ansible.builtin.meta: flush_handlers
+
 - name: Ensure admin-net Docker network exists
   community.docker.docker_network:
     name: admin-net

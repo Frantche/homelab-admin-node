@@ -98,6 +98,8 @@ jobs:
             - curl
             - python
             - python-jmespath
+            - python-lxml
+            - python-docker
             - rsync
 
           runcmd:

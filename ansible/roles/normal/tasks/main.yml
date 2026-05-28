@@ -3,3 +3,4 @@
   ansible.builtin.command: /opt/homelab-admin-node/scripts/openbao-unseal.sh
   register: unseal_result
   changed_when: false
+  when: not (ci_mode | default(false))

@@ -1,0 +1,3 @@
+---
+openbao_config_url: "https://{{ service_domains.openbao }}"
+openbao_config_validate_certs: false

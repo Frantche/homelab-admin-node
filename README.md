@@ -46,6 +46,11 @@ Voir `docs/cloudflare-tunnel.md` et `stacks/cloudflared/config.yml.tpl`.
 ## 13. Configuration Pi-hole DNS local
 Voir `docs/pihole-dns.md` et rôle `ansible/roles/pihole_dns`.
 
+## 13bis. Configuration SSO et rôles applicatifs
+- Keycloak (realm/roles/users/clients): rôle `ansible/roles/keycloak_config` via `keycloak_config.*`.
+- OpenBao (secret engines + auth OIDC): rôle `ansible/roles/openbao_config` via `openbao_config.*`.
+- Harbor (OIDC + registry mirrors proxy-cache): rôle `ansible/roles/harbor_config` via `harbor_config.*`.
+
 ## 14. Backup
 `scripts/backup.sh` vérifie santé APIs/DNS/tunnel puis applique rétention locale + `restic forget --keep-last 3 --prune`.
 

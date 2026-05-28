@@ -37,15 +37,21 @@
       when: admin_mode != 'locked'
     - role: openbao
       when: admin_mode != 'locked'
+    - role: openbao_config
+      when: admin_mode != 'locked' and (openbao_config.enabled | default(false))
     - role: keycloak
       when: admin_mode != 'locked'
+    - role: keycloak_config
+      when: admin_mode != 'locked' and (keycloak_config.enabled | default(false))
     - role: harbor
       when: admin_mode != 'locked'
+    - role: harbor_config
+      when: admin_mode != 'locked' and (harbor_config.enabled | default(false))
     - role: cloudflared
       when: admin_mode != 'locked'
     - role: pihole_dns
-      when: admin_mode != 'locked'
+      when: admin_mode != 'locked' and not (ci_mode | default(false))
     - role: validate_apis
-      when: admin_mode != 'locked'
+      when: admin_mode == 'normal'
     - role: backup
-      when: admin_mode in ['init', 'normal', 'restore']
+      when: admin_mode == 'normal'

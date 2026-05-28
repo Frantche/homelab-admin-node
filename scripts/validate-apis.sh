@@ -29,7 +29,18 @@ fi
 
 # --- Keycloak ---
 echo "[validate-apis] checking Keycloak..."
-curl -fsS http://127.0.0.1:9000/health/ready >/dev/null
+keycloak_ok=false
+for _ in $(seq 1 20); do
+  if curl -fsS http://127.0.0.1:9000/health/ready >/dev/null 2>&1; then
+    keycloak_ok=true
+    break
+  fi
+  sleep 3
+done
+if [[ "$keycloak_ok" != "true" ]]; then
+  echo "[validate-apis] ERROR: Keycloak health check failed" >&2
+  exit 1
+fi
 curl -fsS https://keycloak.example.com/realms/master/.well-known/openid-configuration >/dev/null
 
 # --- Harbor ---

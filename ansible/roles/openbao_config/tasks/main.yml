@@ -1,0 +1,118 @@
+---
+- name: Fail when OpenBao config is enabled without root token
+  ansible.builtin.fail:
+    msg: "openbao_config.root_token is required when openbao_config.enabled=true"
+  when: (openbao_config.root_token | default('') | length) == 0
+
+- name: Wait for OpenBao API readiness
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/health"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_config.root_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    status_code: [200, 429, 472, 473, 501, 503]
+  register: openbao_health
+  until: openbao_health.status in [200, 429]
+  retries: 30
+  delay: 5
+
+- name: Read enabled OpenBao secret engines
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/mounts"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_config.root_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    status_code: 200
+  register: openbao_secret_engines_response
+  no_log: true
+
+- name: Set OpenBao secret engine map fact
+  ansible.builtin.set_fact:
+    openbao_secret_engine_map: "{{ openbao_secret_engines_response.json.data | default(openbao_secret_engines_response.json) }}"
+
+- name: Enable configured OpenBao secret engines
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/mounts/{{ item.path }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_config.root_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      type: "{{ item.type }}"
+    status_code: [200, 204]
+  loop: "{{ openbao_config.secret_engines | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: (item.path ~ '/') not in openbao_secret_engine_map
+  no_log: true
+
+- name: Read enabled OpenBao auth methods
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/auth"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_config.root_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    status_code: 200
+  register: openbao_auth_methods_response
+  no_log: true
+  when: openbao_config.oidc.enabled | default(false)
+
+- name: Set OpenBao auth method map fact
+  ansible.builtin.set_fact:
+    openbao_auth_method_map: "{{ openbao_auth_methods_response.json.data | default(openbao_auth_methods_response.json) }}"
+  when: openbao_config.oidc.enabled | default(false)
+
+- name: Enable OpenBao OIDC auth method
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/auth/oidc"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_config.root_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      type: oidc
+    status_code: [200, 204]
+  when:
+    - openbao_config.oidc.enabled | default(false)
+    - "'oidc/' not in openbao_auth_method_map"
+  no_log: true
+
+- name: Configure OpenBao OIDC auth backend
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/auth/oidc/config"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_config.root_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      oidc_discovery_url: "{{ openbao_config.oidc.discovery_url | mandatory('openbao_config.oidc.discovery_url is required') }}"
+      oidc_client_id: "{{ openbao_config.oidc.client_id | mandatory('openbao_config.oidc.client_id is required') }}"
+      oidc_client_secret: "{{ openbao_config.oidc.client_secret | mandatory('openbao_config.oidc.client_secret is required') }}"
+      default_role: "{{ openbao_config.oidc.default_role | default(openbao_config.oidc.role.name | default('default')) }}"
+    status_code: [200, 204]
+  when: openbao_config.oidc.enabled | default(false)
+  no_log: true
+
+- name: Configure OpenBao OIDC role
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/auth/oidc/role/{{ openbao_config.oidc.role.name | default('default') }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_config.root_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      user_claim: "{{ openbao_config.oidc.role.user_claim | default('sub') }}"
+      groups_claim: "{{ openbao_config.oidc.role.groups_claim | default('groups') }}"
+      allowed_redirect_uris: "{{ openbao_config.oidc.role.allowed_redirect_uris | default([]) }}"
+      bound_audiences: "{{ openbao_config.oidc.role.bound_audiences | default([]) }}"
+      policies: "{{ openbao_config.oidc.role.policies | default(['default']) }}"
+    status_code: [200, 204]
+  when: openbao_config.oidc.enabled | default(false)
+  no_log: true

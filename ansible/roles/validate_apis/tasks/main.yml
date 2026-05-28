@@ -1,12 +1,21 @@
 ---
 - name: Validate local APIs
   ansible.builtin.command: /opt/homelab-admin-node/scripts/validate-apis.sh
+  environment:
+    OPENBAO_TOKEN: "{{ openbao.root_token | default('') }}"
+    CI_MOCK_PIHOLE: "{{ 'true' if (ci_mode | default(false)) else 'false' }}"
+    CI_MOCK_CLOUDFLARE_TUNNEL: "{{ 'true' if (ci_mode | default(false)) else 'false' }}"
   changed_when: false
 
 - name: Validate local DNS
   ansible.builtin.command: /opt/homelab-admin-node/scripts/validate-dns.sh
+  environment:
+    CI_MOCK_PIHOLE: "{{ 'true' if (ci_mode | default(false)) else 'false' }}"
   changed_when: false
 
 - name: Validate cloudflare tunnel
   ansible.builtin.command: /opt/homelab-admin-node/scripts/validate-cloudflare-tunnel.sh
+  environment:
+    CI_MOCK_CLOUDFLARE_TUNNEL: "{{ 'true' if (ci_mode | default(false)) else 'false' }}"
+    SKIP_PUBLIC_URL_VALIDATION: "{{ 'true' if (ci_mode | default(false)) else 'false' }}"
   changed_when: false

@@ -21,13 +21,23 @@
     group: root
     mode: preserve
 
-- name: Render traefik static config
+- name: Render traefik static config (production)
   ansible.builtin.template:
     src: "{{ playbook_dir }}/../stacks/traefik/traefik.yml"
     dest: "{{ admin_node_root }}/stacks/traefik/traefik.yml"
     owner: root
     group: root
     mode: "0644"
+  when: not (ci_mode | default(false))
+
+- name: Render traefik static config (CI - no ACME)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../stacks/traefik/traefik-ci.yml"
+    dest: "{{ admin_node_root }}/stacks/traefik/traefik.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  when: ci_mode | default(false)
 
 - name: Render traefik dynamic config
   ansible.builtin.template:
@@ -40,6 +50,21 @@
     TRAEFIK_DASHBOARD_BASIC_AUTH: "{{ admin.traefik_dashboard_basic_auth | mandatory('admin.traefik_dashboard_basic_auth is required') }}"
   no_log: true
 
+- name: Deploy CI TLS dynamic config
+  ansible.builtin.copy:
+    dest: "{{ admin_node_root }}/stacks/traefik/dynamic/tls-ci.yml"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      tls:
+        stores:
+          default:
+            defaultCertificate:
+              certFile: /certs/cert.pem
+              keyFile: /certs/key.pem
+  when: ci_mode | default(false)
+
 - name: Render traefik env
   ansible.builtin.copy:
     dest: "{{ admin_node_root }}/env/traefik.env"
@@ -48,7 +73,7 @@
     mode: "0600"
     content: |
       TRAEFIK_DASHBOARD_BASIC_AUTH={{ admin.traefik_dashboard_basic_auth | mandatory('admin.traefik_dashboard_basic_auth is required') }}
-      CF_DNS_API_TOKEN={{ cloudflare.dns_api_token | mandatory('cloudflare.dns_api_token is required for ACME DNS challenge') }}
+      CF_DNS_API_TOKEN={{ cloudflare.dns_api_token | default('ci-not-used') }}
   no_log: true
 
 - name: Start traefik stack

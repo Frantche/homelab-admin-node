@@ -15,7 +15,7 @@ providers:
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: "{{ acme_email | mandatory('acme_email is required for Let\\'s Encrypt') }}"
+      email: "{{ acme_email | mandatory('acme_email is required for LetsEncrypt') }}"
       storage: /letsencrypt/acme.json
       dnsChallenge:
         provider: cloudflare

@@ -17,6 +17,10 @@
     mode: "0600"
     content: |
       HARBOR_ADMIN_PASSWORD={{ harbor.admin_password | mandatory('harbor.admin_password is required') }}
+      HARBOR_DB_PASSWORD={{ harbor.db_password | default('harbor-ci-db') }}
+      HARBOR_CORE_SECRET={{ harbor.core_secret | default('harbor-ci-core-secret') }}
+      HARBOR_JOBSERVICE_SECRET={{ harbor.jobservice_secret | default('harbor-ci-job-secret') }}
+      HARBOR_REGISTRY_PASSWORD={{ harbor.registry_password | default('harbor-ci-registry') }}
   no_log: true
 
 - name: Start harbor stack
