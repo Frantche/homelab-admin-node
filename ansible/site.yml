@@ -50,7 +50,7 @@
     - role: cloudflared
       when: admin_mode != 'locked'
     - role: pihole_dns
-      when: admin_mode != 'locked'
+      when: admin_mode != 'locked' and not (ci_mode | default(false))
     - role: validate_apis
       when: admin_mode != 'locked' and not (ci_mode | default(false))
     - role: backup
