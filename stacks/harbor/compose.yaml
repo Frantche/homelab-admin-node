@@ -40,7 +40,7 @@ services:
       - admin-net
 
   harbor-registry:
-    image: goharbor/registry-photon:v2.12.0
+    image: goharbor/registry-photon:v2.15.1
     container_name: harbor-registry
     restart: unless-stopped
     volumes:
@@ -53,7 +53,7 @@ services:
       - admin-net
 
   harbor-core:
-    image: goharbor/harbor-core:v2.12.0
+    image: goharbor/harbor-core:v2.15.1
     container_name: harbor-core
     restart: unless-stopped
     environment:
