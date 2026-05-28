@@ -29,6 +29,10 @@ export OPENBAO_TOKEN
 ./scripts/set-mode.sh normal
 assert_contains /etc/admin-node/mode "normal"
 
+# --- Run Ansible playbook to converge the node ---
+echo "=== Running Ansible playbook deployment ==="
+./ci/run-ansible-playbook.sh
+
 # --- Validate APIs (real services) ---
 ./scripts/validate-apis.sh
 ./scripts/validate-dns.sh

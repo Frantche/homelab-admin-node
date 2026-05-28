@@ -1,7 +1,7 @@
 ---
 - name: Wait for Keycloak readiness
   ansible.builtin.uri:
-    url: http://127.0.0.1:9000/health/ready
+    url: "{{ keycloak_config_url }}/health/ready"
     method: GET
     status_code: 200
   register: keycloak_ready
@@ -9,95 +9,61 @@
   retries: 30
   delay: 5
 
-- name: Request Keycloak admin token
-  ansible.builtin.uri:
-    url: "http://127.0.0.1:9000/realms/master/protocol/openid-connect/token"
-    method: POST
-    body_format: form-urlencoded
-    body:
-      grant_type: password
-      client_id: admin-cli
-      username: "{{ keycloak.admin_user | default('admin') }}"
-      password: "{{ keycloak.admin_password | mandatory('keycloak.admin_password is required for keycloak_config role') }}"
-    return_content: true
-    status_code: 200
-  register: keycloak_token_response
-  no_log: true
-
-- name: Set Keycloak facts
+- name: Set Keycloak connection facts
   ansible.builtin.set_fact:
-    keycloak_admin_token: "{{ keycloak_token_response.json.access_token }}"
-    keycloak_auth_header: "{{ 'Bearer ' ~ keycloak_token_response.json.access_token }}"
     keycloak_realm_cfg: "{{ keycloak_config.realm }}"
 
-- name: Check if configured realm exists
-  ansible.builtin.uri:
-    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}"
-    method: GET
-    headers:
-      Authorization: "{{ keycloak_auth_header }}"
-    status_code: [200, 404]
-  register: keycloak_realm_state
+- name: Ensure realm exists
+  community.general.keycloak_realm:
+    auth_keycloak_url: "{{ keycloak_config_url }}"
+    auth_realm: master
+    auth_username: "{{ keycloak.admin_user | default('admin') }}"
+    auth_password: "{{ keycloak.admin_password | mandatory('keycloak.admin_password is required for keycloak_config role') }}"
+    id: "{{ keycloak_realm_cfg.name }}"
+    realm: "{{ keycloak_realm_cfg.name }}"
+    display_name: "{{ keycloak_realm_cfg.display_name | default(keycloak_realm_cfg.name) }}"
+    enabled: true
+    ssl_required: "{{ keycloak_realm_cfg.ssl_required | default('external') }}"
+    state: present
+  no_log: true
 
-- name: Create configured realm
-  ansible.builtin.uri:
-    url: "http://127.0.0.1:9000/admin/realms"
-    method: POST
-    headers:
-      Authorization: "{{ keycloak_auth_header }}"
-    body_format: json
-    body:
-      realm: "{{ keycloak_realm_cfg.name }}"
-      displayName: "{{ keycloak_realm_cfg.display_name | default(keycloak_realm_cfg.name) }}"
-      enabled: true
-      sslRequired: "{{ keycloak_realm_cfg.ssl_required | default('external') }}"
-    status_code: 201
-  when: keycloak_realm_state.status == 404
-
-- name: Update configured realm
-  ansible.builtin.uri:
-    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}"
-    method: PUT
-    headers:
-      Authorization: "{{ keycloak_auth_header }}"
-    body_format: json
-    body:
-      realm: "{{ keycloak_realm_cfg.name }}"
-      displayName: "{{ keycloak_realm_cfg.display_name | default(keycloak_realm_cfg.name) }}"
-      enabled: true
-      sslRequired: "{{ keycloak_realm_cfg.ssl_required | default('external') }}"
-    status_code: 204
-  when: keycloak_realm_state.status == 200
-
-- name: Check existing realm roles
-  ansible.builtin.uri:
-    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/roles/{{ item }}"
-    method: GET
-    headers:
-      Authorization: "{{ keycloak_auth_header }}"
-    status_code: [200, 404]
+- name: Ensure realm roles exist
+  community.general.keycloak_role:
+    auth_keycloak_url: "{{ keycloak_config_url }}"
+    auth_realm: master
+    auth_username: "{{ keycloak.admin_user | default('admin') }}"
+    auth_password: "{{ keycloak.admin_password | mandatory('keycloak.admin_password is required for keycloak_config role') }}"
+    realm: "{{ keycloak_realm_cfg.name }}"
+    name: "{{ item }}"
+    state: present
   loop: "{{ keycloak_config.realm_roles | default([]) }}"
-  register: keycloak_realm_roles_state
-
-- name: Create missing realm roles
-  ansible.builtin.uri:
-    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/roles"
-    method: POST
-    headers:
-      Authorization: "{{ keycloak_auth_header }}"
-    body_format: json
-    body:
-      name: "{{ item.item }}"
-    status_code: 201
-  loop: "{{ keycloak_realm_roles_state.results | default([]) }}"
-  when: item.status == 404
+  no_log: true
 
 - name: Ensure configured clients exist
-  ansible.builtin.include_tasks: client.yml
+  community.general.keycloak_client:
+    auth_keycloak_url: "{{ keycloak_config_url }}"
+    auth_realm: master
+    auth_username: "{{ keycloak.admin_user | default('admin') }}"
+    auth_password: "{{ keycloak.admin_password | mandatory('keycloak.admin_password is required for keycloak_config role') }}"
+    realm: "{{ keycloak_realm_cfg.name }}"
+    client_id: "{{ keycloak_client_item.client_id }}"
+    name: "{{ keycloak_client_item.name | default(keycloak_client_item.client_id) }}"
+    enabled: "{{ keycloak_client_item.enabled | default(true) }}"
+    public_client: "{{ keycloak_client_item.public | default(false) }}"
+    standard_flow_enabled: "{{ keycloak_client_item.standard_flow_enabled | default(true) }}"
+    direct_access_grants_enabled: "{{ keycloak_client_item.direct_access_grants_enabled | default(false) }}"
+    service_accounts_enabled: "{{ keycloak_client_item.service_accounts_enabled | default(false) }}"
+    redirect_uris: "{{ keycloak_client_item.redirect_uris | default([]) }}"
+    web_origins: "{{ keycloak_client_item.web_origins | default([]) }}"
+    root_url: "{{ keycloak_client_item.root_url | default(omit) }}"
+    base_url: "{{ keycloak_client_item.base_url | default(omit) }}"
+    secret: "{{ keycloak_client_item.secret | default(omit) }}"
+    state: present
   loop: "{{ keycloak_config.clients | default([]) }}"
   loop_control:
     loop_var: keycloak_client_item
     label: "{{ keycloak_client_item.client_id }}"
+  no_log: true
 
 - name: Ensure configured users exist and are updated
   ansible.builtin.include_tasks: user.yml

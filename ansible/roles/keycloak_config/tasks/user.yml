@@ -9,9 +9,28 @@
       lastName: "{{ keycloak_user_item.last_name | default(omit) }}"
       emailVerified: "{{ keycloak_user_item.email_verified | default(false) }}"
 
+- name: Request Keycloak admin token for user management
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/realms/master/protocol/openid-connect/token"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      grant_type: password
+      client_id: admin-cli
+      username: "{{ keycloak.admin_user | default('admin') }}"
+      password: "{{ keycloak.admin_password }}"
+    return_content: true
+    status_code: 200
+  register: keycloak_user_token_response
+  no_log: true
+
+- name: Set auth header for user operations
+  ansible.builtin.set_fact:
+    keycloak_auth_header: "{{ 'Bearer ' ~ keycloak_user_token_response.json.access_token }}"
+
 - name: Find user
   ansible.builtin.uri:
-    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users?username={{ keycloak_user_item.username | urlencode }}"
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users?username={{ keycloak_user_item.username | urlencode }}&exact=true"
     method: GET
     headers:
       Authorization: "{{ keycloak_auth_header }}"
@@ -20,7 +39,7 @@
 
 - name: Create user when missing
   ansible.builtin.uri:
-    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users"
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users"
     method: POST
     headers:
       Authorization: "{{ keycloak_auth_header }}"
@@ -39,7 +58,7 @@
 
 - name: Reload user lookup
   ansible.builtin.uri:
-    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users?username={{ keycloak_user_item.username | urlencode }}"
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users?username={{ keycloak_user_item.username | urlencode }}&exact=true"
     method: GET
     headers:
       Authorization: "{{ keycloak_auth_header }}"
@@ -52,7 +71,7 @@
 
 - name: Update user profile
   ansible.builtin.uri:
-    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}"
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}"
     method: PUT
     headers:
       Authorization: "{{ keycloak_auth_header }}"
@@ -63,7 +82,7 @@
 
 - name: Update user password when provided
   ansible.builtin.uri:
-    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/reset-password"
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/reset-password"
     method: PUT
     headers:
       Authorization: "{{ keycloak_auth_header }}"
@@ -81,7 +100,7 @@
 
 - name: Read assigned realm roles
   ansible.builtin.uri:
-    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/role-mappings/realm"
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/role-mappings/realm"
     method: GET
     headers:
       Authorization: "{{ keycloak_auth_header }}"
@@ -96,7 +115,7 @@
 
 - name: Fetch missing realm role representations
   ansible.builtin.uri:
-    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/roles/{{ role_name }}"
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/roles/{{ role_name }}"
     method: GET
     headers:
       Authorization: "{{ keycloak_auth_header }}"
@@ -111,7 +130,7 @@
 
 - name: Assign missing realm roles to user
   ansible.builtin.uri:
-    url: "http://127.0.0.1:9000/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/role-mappings/realm"
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/role-mappings/realm"
     method: POST
     headers:
       Authorization: "{{ keycloak_auth_header }}"

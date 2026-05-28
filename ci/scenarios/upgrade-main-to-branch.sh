@@ -25,6 +25,10 @@ export OPENBAO_TOKEN
 ./scripts/set-mode.sh normal
 assert_contains /etc/admin-node/mode "normal"
 
+# --- Run Ansible playbook to converge the node ---
+echo "=== Running Ansible playbook deployment ==="
+./ci/run-ansible-playbook.sh
+
 # --- Create data and backup ---
 ./ci/create-sentinel-data.sh
 assert_file_exists /srv/admin/data/sentinel/value.txt
@@ -34,6 +38,10 @@ assert_file_exists /srv/admin/data/sentinel/value.txt
 # --- Simulate branch upgrade: set new git-ref ---
 echo "${GITHUB_HEAD_REF:-test-branch}" > /etc/admin-node/git-ref
 assert_file_exists /etc/admin-node/git-ref
+
+# --- Re-run Ansible playbook after upgrade ---
+echo "=== Running Ansible playbook after branch upgrade ==="
+./ci/run-ansible-playbook.sh
 
 # --- Validate after upgrade (services still running) ---
 ./scripts/validate-apis.sh

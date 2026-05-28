@@ -25,6 +25,10 @@ export OPENBAO_TOKEN
 ./ci/create-sentinel-data.sh
 assert_file_exists /srv/admin/data/sentinel/value.txt
 
+# --- Run Ansible playbook to converge the node ---
+echo "=== Running Ansible playbook deployment ==="
+./ci/run-ansible-playbook.sh
+
 # --- Backup ---
 ./scripts/backup.sh
 
