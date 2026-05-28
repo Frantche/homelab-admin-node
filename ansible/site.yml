@@ -52,6 +52,6 @@
     - role: pihole_dns
       when: admin_mode != 'locked' and not (ci_mode | default(false))
     - role: validate_apis
-      when: admin_mode != 'locked' and not (ci_mode | default(false))
+      when: admin_mode == 'normal'
     - role: backup
-      when: admin_mode in ['init', 'normal', 'restore'] and not (ci_mode | default(false))
+      when: admin_mode == 'normal'

@@ -3,18 +3,28 @@ set -euo pipefail
 
 source ./ci/assertions.sh
 
-# Export CI env vars for child scripts
+# Export CI env vars
 export CI_MOCK_PIHOLE="${CI_MOCK_PIHOLE:-true}"
 export CI_MOCK_CLOUDFLARE_TUNNEL="${CI_MOCK_CLOUDFLARE_TUNNEL:-true}"
 export CI_SKIP_PUBLIC_URL_VALIDATION="${CI_SKIP_PUBLIC_URL_VALIDATION:-true}"
 export SKIP_PUBLIC_URL_VALIDATION="${SKIP_PUBLIC_URL_VALIDATION:-true}"
 
-# --- Setup: deploy stacks and start services ---
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CI_VARS="$REPO_ROOT/ci/ci-extra-vars.json"
+
+# --- CI prerequisites (TLS certs, /etc/hosts, ansible collections) ---
 ./ci/setup-ci-env.sh
 
 # --- Start in init mode ---
 ./scripts/set-mode.sh init
 assert_contains /etc/admin-node/mode "init"
+
+# --- Deploy via Ansible playbook (init mode) ---
+echo "=== Running Ansible playbook (init mode) ==="
+ansible-playbook \
+  -i "$REPO_ROOT/ansible/inventory.ini" \
+  "$REPO_ROOT/ansible/site.yml" \
+  --extra-vars "@$CI_VARS"
 
 # --- Initialize and unseal OpenBao ---
 ./ci/init-openbao-ci.sh
@@ -24,10 +34,6 @@ export OPENBAO_TOKEN
 # --- Normal mode ---
 ./scripts/set-mode.sh normal
 assert_contains /etc/admin-node/mode "normal"
-
-# --- Run Ansible playbook to converge the node ---
-echo "=== Running Ansible playbook deployment ==="
-./ci/run-ansible-playbook.sh
 
 # --- Create data and backup ---
 ./ci/create-sentinel-data.sh
@@ -41,12 +47,11 @@ assert_file_exists /etc/admin-node/git-ref
 
 # --- Re-run Ansible playbook after upgrade ---
 echo "=== Running Ansible playbook after branch upgrade ==="
-./ci/run-ansible-playbook.sh
-
-# --- Validate after upgrade (services still running) ---
-./scripts/validate-apis.sh
-./scripts/validate-dns.sh
-./scripts/validate-cloudflare-tunnel.sh
+ansible-playbook \
+  -i "$REPO_ROOT/ansible/inventory.ini" \
+  "$REPO_ROOT/ansible/site.yml" \
+  --extra-vars "@$CI_VARS" \
+  --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}}"
 
 # --- Backup after upgrade ---
 ./scripts/backup.sh
