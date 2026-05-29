@@ -1,6 +1,6 @@
 services:
   harbor-db:
-    image: postgres:18
+    image: postgres:16
     container_name: harbor-db
     restart: unless-stopped
     command:
@@ -28,7 +28,7 @@ services:
       - admin-net
 
   harbor-redis:
-    image: redis:8
+    image: redis:7
     container_name: harbor-redis
     restart: unless-stopped
     healthcheck:
