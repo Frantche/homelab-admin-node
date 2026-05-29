@@ -1,6 +1,6 @@
 services:
   keycloak-db:
-    image: postgres:16
+    image: pgautoupgrade/pgautoupgrade:18-trixie
     restart: unless-stopped
     container_name: keycloak-db
     command:
@@ -18,7 +18,7 @@ services:
       POSTGRES_USER: keycloak
       POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
     volumes:
-      - /srv/admin/data/keycloak/postgres:/var/lib/postgresql/data
+      - /srv/admin/data/keycloak/postgres:/var/lib/postgresql
     networks:
       - admin-net
 
