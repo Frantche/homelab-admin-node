@@ -84,7 +84,7 @@ Voir `docs/config-repo.md` pour la structure, la mise en place et l'utilisation 
 
 ```bash
 export ADMIN_REPO_URL="ssh://git@github.com/Frantche/homelab-admin-node.git"
-export CONFIG_REPO_URL="ssh://git@github.com/VOUS/homelab-admin-node-config.git"
+export CONFIG_REPO_URL="ssh://git@github.com/<username>/homelab-admin-node-config.git"
 sudo -E ./scripts/admin-converge.sh
 ```
 

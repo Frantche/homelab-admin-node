@@ -34,6 +34,7 @@ if [[ -n "$CONFIG_REPO_URL" ]]; then
     echo "[admin-converge] updating config repo in $CONFIG_REPO_DIR"
     git -C "$CONFIG_REPO_DIR" fetch --prune origin
     git -C "$CONFIG_REPO_DIR" checkout "$CONFIG_REPO_BRANCH"
+    echo "[admin-converge] resetting $CONFIG_REPO_DIR to origin/$CONFIG_REPO_BRANCH (local changes will be discarded)"
     git -C "$CONFIG_REPO_DIR" reset --hard "origin/$CONFIG_REPO_BRANCH"
   else
     echo "[admin-converge] cloning config repo to $CONFIG_REPO_DIR"
@@ -45,6 +46,7 @@ if [[ -n "$CONFIG_REPO_URL" ]]; then
     echo "[admin-converge] updating main repo in $REPO_DIR"
     git -C "$REPO_DIR" fetch --prune origin
     git -C "$REPO_DIR" checkout "$REF"
+    echo "[admin-converge] resetting $REPO_DIR to origin/$REF (local changes will be discarded)"
     git -C "$REPO_DIR" reset --hard "origin/$REF"
   else
     echo "[admin-converge] cloning main repo to $REPO_DIR"

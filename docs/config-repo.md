@@ -112,7 +112,7 @@ group_vars/secrets.yaml
 mkdir homelab-admin-node-config
 cd homelab-admin-node-config
 git init
-git remote add origin git@github.com:VOUS/homelab-admin-node-config.git
+git remote add origin git@github.com:<username>/homelab-admin-node-config.git
 ```
 
 ### 2. Générer la clé age (secret zéro)
@@ -168,7 +168,7 @@ Définissez les variables d'environnement avant de lancer la convergence :
 
 ```bash
 export ADMIN_REPO_URL="ssh://git@github.com/Frantche/homelab-admin-node.git"
-export CONFIG_REPO_URL="ssh://git@github.com/VOUS/homelab-admin-node-config.git"
+export CONFIG_REPO_URL="ssh://git@github.com/<username>/homelab-admin-node-config.git"
 # optionnel :
 export CONFIG_REPO_BRANCH="main"   # défaut : main
 export CONFIG_REPO_DIR="/etc/admin-config"  # défaut : /etc/admin-config
