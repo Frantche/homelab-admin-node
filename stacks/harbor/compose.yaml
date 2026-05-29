@@ -1,6 +1,6 @@
 services:
   harbor-db:
-    image: postgres:16
+    image: pgautoupgrade/pgautoupgrade:18-trixie
     container_name: harbor-db
     restart: unless-stopped
     command:
