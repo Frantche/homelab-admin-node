@@ -1,6 +1,6 @@
 services:
   harbor-db:
-    image: postgres:16
+    image: pgautoupgrade/pgautoupgrade:18-trixie
     container_name: harbor-db
     restart: unless-stopped
     command:
@@ -18,12 +18,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${HARBOR_DB_PASSWORD:-harbor-ci-db}
     volumes:
-      - /srv/admin/data/harbor/postgres:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
+      - /srv/admin/data/harbor/postgres:/var/lib/postgresql
     networks:
       - admin-net
 
