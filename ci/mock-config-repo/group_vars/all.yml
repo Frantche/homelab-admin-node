@@ -1,0 +1,34 @@
+# CI mock configuration — plain text (no SOPS encryption)
+# This file mirrors the structure of a real config repo's group_vars/all.yml
+# combined with group_vars/secrets.sops.yaml for CI purposes.
+
+ci_mode: true
+
+admin:
+  traefik_dashboard_basic_auth: "admin:$$apr1$$ci$$fakehash"
+
+cloudflare:
+  tunnel_id: "fake-tunnel-id"
+  tunnel_token: "eyJhIjoiZmFrZSIsInQiOiJmYWtlIiwicyI6ImZha2UifQ=="
+  account_id: "fake-account-id"
+  dns_api_token: "fake-dns-token"
+  credentials_json: "{}"
+
+keycloak:
+  db_password: "ci-keycloak-db-pass"
+  admin_user: "admin"
+  admin_password: "ci-keycloak-admin-pass"
+
+harbor:
+  admin_password: "ci-Harbor-admin-p4ss"
+  db_password: "ci-harbor-db-pass"
+  core_secret: "ci-harbor-core-secret"
+  jobservice_secret: "ci-harbor-job-secret"
+  registry_password: "ci-harbor-registry"
+
+openbao:
+  root_token: ""
+
+backup:
+  restic_repository: "/srv/admin/backups/restic"
+  restic_password: "ci-restic-pass"

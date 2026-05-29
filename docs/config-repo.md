@@ -1,0 +1,210 @@
+# Dépôt de configuration séparé (config repo)
+
+## Principe
+
+`homelab-admin-node` est le dépôt **code** : il contient la logique Ansible, les scripts, les templates.  
+Un second dépôt **privé**, le *config repo*, contient les valeurs propres à votre déploiement :
+
+- variables non-secrètes (`group_vars/all.yml`) : domaines, IPs, options de services…
+- secrets chiffrés SOPS (`group_vars/secrets.sops.yaml`) : mots de passe, tokens, credentials…
+
+Cette séparation permet de partager `homelab-admin-node` publiquement tout en gardant votre configuration et vos secrets dans un dépôt privé versionné.
+
+## Structure du config repo
+
+```
+homelab-admin-node-config/          # nom libre
+├── .gitignore
+├── .sops.yaml                      # clé age publique pour ce déploiement
+├── README.md
+├── hosts                           # inventaire Ansible minimal
+└── group_vars/
+    ├── all.yml                     # overrides de configuration (non-secrets)
+    └── secrets.sops.yaml           # secrets chiffrés avec SOPS + age
+```
+
+### `hosts`
+
+```ini
+[admin]
+localhost ansible_connection=local
+```
+
+### `.sops.yaml`
+
+```yaml
+creation_rules:
+  - path_regex: group_vars/secrets\.sops\.yaml$
+    age: ["age1xxxx...votre-clé-publique-age..."]
+```
+
+### `group_vars/all.yml` — exemple
+
+```yaml
+admin_node_lan_ip: "192.168.1.10"
+acme_email: "admin@mondomaine.fr"
+
+service_domains:
+  harbor: "harbor.mondomaine.fr"
+  openbao: "bao.mondomaine.fr"
+  keycloak: "keycloak.mondomaine.fr"
+  traefik: "traefik.mondomaine.fr"
+
+traefik:
+  dashboard_enabled: true
+  dashboard_hostname: "traefik.mondomaine.fr"
+
+pihole:
+  enabled: true
+  url: "http://pihole.local/admin"
+  api_url: "http://pihole.local"
+  dns_records:
+    - name: "harbor.mondomaine.fr"
+      ip: "{{ admin_node_lan_ip }}"
+    - name: "bao.mondomaine.fr"
+      ip: "{{ admin_node_lan_ip }}"
+    - name: "keycloak.mondomaine.fr"
+      ip: "{{ admin_node_lan_ip }}"
+    - name: "traefik.mondomaine.fr"
+      ip: "{{ admin_node_lan_ip }}"
+```
+
+### `group_vars/secrets.sops.yaml` — exemple (avant chiffrement)
+
+```yaml
+admin:
+  traefik_dashboard_basic_auth: "admin:$$apr1$$hash"
+pihole:
+  api_token: "votre-token-pihole"
+cloudflare:
+  tunnel_id: "uuid-du-tunnel"
+  tunnel_token: "eyJ..."
+  account_id: "votre-account-id"
+  dns_api_token: "votre-dns-token"
+  credentials_json: |
+    {"AccountTag":"...","TunnelID":"...","TunnelSecret":"..."}
+keycloak:
+  db_password: "mot-de-passe-db"
+  admin_user: "admin"
+  admin_password: "mot-de-passe-admin"
+harbor:
+  admin_password: "mot-de-passe-harbor"
+backup:
+  restic_repository: "/srv/admin/backups/restic"
+  restic_password: "mot-de-passe-restic"
+```
+
+### `.gitignore`
+
+```gitignore
+# Ne jamais committer de secrets non chiffrés
+group_vars/secrets.yml
+group_vars/secrets.yaml
+*.age
+*.key
+```
+
+## Mise en place — pas à pas
+
+### 1. Créer le dépôt Git privé
+
+```bash
+mkdir homelab-admin-node-config
+cd homelab-admin-node-config
+git init
+git remote add origin git@github.com:<username>/homelab-admin-node-config.git
+```
+
+### 2. Générer la clé age (secret zéro)
+
+```bash
+# Générer la paire de clés
+age-keygen -o age-key.txt
+# Affiche : Public key: age1xxxx...
+
+# Installer la clé privée sur l'admin-node (secret zéro)
+sudo install -D -m 0400 -o root -g root age-key.txt /etc/sops/age/keys.txt
+
+# Supprimer la copie locale non protégée
+rm age-key.txt
+```
+
+Conservez une copie sécurisée de la clé privée (gestionnaire de mots de passe, coffre HSM…).
+
+### 3. Configurer SOPS
+
+Créez `.sops.yaml` avec la clé **publique** :
+
+```yaml
+creation_rules:
+  - path_regex: group_vars/secrets\.sops\.yaml$
+    age: ["age1xxxx...votre-clé-publique..."]
+```
+
+### 4. Créer et chiffrer les secrets
+
+```bash
+# Créer le fichier en clair, puis chiffrer
+sops group_vars/secrets.sops.yaml
+# ou depuis un fichier existant :
+sops --encrypt group_vars/secrets.yaml > group_vars/secrets.sops.yaml
+```
+
+### 5. Structurer la configuration
+
+Remplissez `group_vars/all.yml` avec vos variables non-secrètes et `hosts` avec l'inventaire minimal.
+
+### 6. Committer et pousser
+
+```bash
+git add .
+git commit -m "initial config"
+git push -u origin main
+```
+
+## Utilisation avec admin-converge.sh
+
+Définissez les variables d'environnement avant de lancer la convergence :
+
+```bash
+export ADMIN_REPO_URL="ssh://git@github.com/Frantche/homelab-admin-node.git"
+export CONFIG_REPO_URL="ssh://git@github.com/<username>/homelab-admin-node-config.git"
+# optionnel :
+export CONFIG_REPO_BRANCH="main"   # défaut : main
+export CONFIG_REPO_DIR="/etc/admin-config"  # défaut : /etc/admin-config
+
+sudo -E ./scripts/admin-converge.sh
+```
+
+Quand `CONFIG_REPO_URL` est défini, `admin-converge.sh` :
+
+1. Clone / met à jour le config repo dans `CONFIG_REPO_DIR`
+2. Clone / met à jour `homelab-admin-node` dans `/opt/homelab-admin-node`
+3. Lance `ansible-playbook` avec les deux sources d'inventaire :
+   - `/opt/homelab-admin-node/ansible/inventory.ini` (infrastructure)
+   - `CONFIG_REPO_DIR/` (variables & secrets de votre déploiement)
+
+Sans `CONFIG_REPO_URL`, le comportement original `ansible-pull` est conservé.
+
+## Modifier les secrets
+
+```bash
+# Éditer directement (SOPS ouvre l'éditeur configuré)
+sops group_vars/secrets.sops.yaml
+
+# Puis committer le fichier chiffré modifié
+git add group_vars/secrets.sops.yaml
+git commit -m "update secrets"
+git push
+```
+
+## Exemple CI — mock config repo
+
+Le répertoire `ci/mock-config-repo/` de ce dépôt constitue un exemple minimal de config repo (sans chiffrement SOPS, pour les tests CI). Voir `ci/setup-ci-config-repo.sh` pour la procédure d'installation en CI.
+
+## Sécurité
+
+- Le config repo doit être **privé**.
+- Le fichier `secrets.sops.yaml` doit toujours être chiffré avant d'être commité (le `.gitignore` protège contre un commit accidentel en clair).
+- La clé age privée (secret zéro) ne doit jamais être commitée.
+- Consultez `docs/secret-zero.md` pour la gestion du secret zéro.
