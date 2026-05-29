@@ -10,10 +10,12 @@ export CI_SKIP_PUBLIC_URL_VALIDATION="${CI_SKIP_PUBLIC_URL_VALIDATION:-true}"
 export SKIP_PUBLIC_URL_VALIDATION="${SKIP_PUBLIC_URL_VALIDATION:-true}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CI_VARS="$REPO_ROOT/ci/ci-extra-vars.json"
 
 # --- CI prerequisites (TLS certs, /etc/hosts, ansible collections) ---
 ./ci/setup-ci-env.sh
+
+# --- Install mock config repo (demonstrates the config-repo pattern) ---
+./ci/setup-ci-config-repo.sh
 
 # --- Init phase ---
 ./scripts/set-mode.sh locked
@@ -23,12 +25,12 @@ assert_contains /etc/admin-node/mode "locked"
 ./scripts/set-mode.sh init
 assert_contains /etc/admin-node/mode "init"
 
-# --- Deploy via Ansible playbook (init mode - starts services) ---
+# --- Deploy via Ansible playbook with config repo (init mode - starts services) ---
 echo "=== Running Ansible playbook (init mode) ==="
 ansible-playbook \
   -i "$REPO_ROOT/ansible/inventory.ini" \
-  "$REPO_ROOT/ansible/site.yml" \
-  --extra-vars "@$CI_VARS"
+  -i /etc/admin-config/ \
+  "$REPO_ROOT/ansible/site.yml"
 
 # --- Initialize and unseal OpenBao ---
 ./ci/init-openbao-ci.sh
@@ -43,8 +45,8 @@ assert_contains /etc/admin-node/mode "normal"
 echo "=== Running Ansible playbook (normal mode) ==="
 ansible-playbook \
   -i "$REPO_ROOT/ansible/inventory.ini" \
+  -i /etc/admin-config/ \
   "$REPO_ROOT/ansible/site.yml" \
-  --extra-vars "@$CI_VARS" \
   --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}}"
 
 # --- Create sentinel data + additional backups ---

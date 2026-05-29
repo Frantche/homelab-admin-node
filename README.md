@@ -78,6 +78,16 @@ Mocks CI par défaut pour Pi-hole et Cloudflare Tunnel si infra absente.
 - stacks Docker Compose et validations API/DNS/Tunnel
 - backup + restore + rétention 3 snapshots
 
+## 22. Dépôt de configuration séparé (config repo)
+Gérez votre configuration et vos secrets dans un dépôt Git **privé** séparé.
+Voir `docs/config-repo.md` pour la structure, la mise en place et l'utilisation avec `admin-converge.sh`.
+
+```bash
+export ADMIN_REPO_URL="ssh://git@github.com/Frantche/homelab-admin-node.git"
+export CONFIG_REPO_URL="ssh://git@github.com/VOUS/homelab-admin-node-config.git"
+sudo -E ./scripts/admin-converge.sh
+```
+
 ## Commandes
 ```bash
 make lint
