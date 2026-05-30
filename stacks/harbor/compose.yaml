@@ -28,7 +28,7 @@ services:
       - admin-net
 
   harbor-redis:
-    image: redis:7
+    image: redis:8
     container_name: harbor-redis
     restart: unless-stopped
     healthcheck:
