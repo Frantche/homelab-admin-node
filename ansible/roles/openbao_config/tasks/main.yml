@@ -119,8 +119,6 @@
           {'allowed_redirect_uris': openbao_config.oidc.role.allowed_redirect_uris | default([])}
           if (openbao_config.oidc.role.role_type | default('oidc')) == 'oidc'
           else {}
-        )
-      }}
     status_code: [200, 204]
   when: openbao_config.oidc.enabled | default(false)
-  no_log: true
+  # no_log temporarily removed to debug HTTP 400
