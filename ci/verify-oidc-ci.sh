@@ -21,10 +21,15 @@ if ! echo "$bao_auth_methods" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
 methods = d.get('data', d)
-if not any(key.rstrip('/') == 'oidc' for key in methods):
+oidc_mount = None
+for key, value in methods.items():
+    if key.rstrip('/') == 'oidc' and isinstance(value, dict) and value.get('type') == 'oidc':
+        oidc_mount = key
+        break
+if oidc_mount is None:
     print('ERROR: oidc auth method not found in OpenBao', file=sys.stderr)
     sys.exit(1)
-print('OK: oidc auth method present')
+print(f'OK: oidc auth method present at mount {oidc_mount}')
 "; then
   echo "[verify-oidc] ERROR: OpenBao OIDC auth method check failed" >&2
   exit 1
