@@ -77,4 +77,25 @@
   when:
     - (harbor_registry_lookup_final.json | length) > 0
     - (harbor_project_lookup.json | length) == 0
-  no_log: true
+  register: harbor_create_project_result
+  ignore_errors: true
+
+- name: Debug proxy cache project creation failure
+  when:
+    - harbor_create_project_result is defined
+    - harbor_create_project_result is failed
+  block:
+    - name: Show Harbor core env vars for proxy cache
+      ansible.builtin.command: docker exec harbor-core printenv PERMITTED_REGISTRY_TYPES_FOR_PROXY_CACHE
+      register: harbor_env_debug
+      ignore_errors: true
+
+    - name: Print debug info
+      ansible.builtin.debug:
+        msg: |
+          Create proxy cache project response: {{ harbor_create_project_result.json | default('no json') }}
+          Harbor PERMITTED_REGISTRY_TYPES_FOR_PROXY_CACHE: {{ harbor_env_debug.stdout | default('NOT SET') }}
+
+    - name: Fail after debug
+      ansible.builtin.fail:
+        msg: "Failed to create proxy cache project: {{ harbor_create_project_result.json | default(harbor_create_project_result.msg) }}"
