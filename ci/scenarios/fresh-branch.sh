@@ -47,7 +47,7 @@ ansible-playbook \
   -i "$REPO_ROOT/ansible/inventory.ini" \
   -i /etc/admin-config/ \
   "$REPO_ROOT/ansible/site.yml" \
-  --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}}"
+  --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}, \"openbao_root_token\": \"${OPENBAO_TOKEN}\"}"
 
 # --- Create sentinel data + additional backups ---
 ./ci/create-sentinel-data.sh

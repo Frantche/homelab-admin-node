@@ -53,9 +53,7 @@ ansible-playbook \
   -i "$REPO_ROOT/ansible/inventory.ini" \
   -i /etc/admin-config/ \
   "$REPO_ROOT/ansible/site.yml" \
-  --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}}"
-
-# --- Backup after upgrade ---
+  --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}, \"openbao_root_token\": \"${OPENBAO_TOKEN}\"}"
 ./scripts/backup.sh
 
 echo "=== upgrade-main-to-branch scenario PASSED ==="

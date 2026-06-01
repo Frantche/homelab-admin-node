@@ -32,3 +32,66 @@ openbao:
 backup:
   restic_repository: "/srv/admin/backups/restic"
   restic_password: "ci-restic-pass"
+
+# --- SSO configuration (keycloak_config role) ---
+# Enables realm, roles, clients and a CI user in Keycloak.
+keycloak_config:
+  enabled: true
+  realm:
+    name: "homelab"
+    display_name: "Homelab"
+    ssl_required: "external"
+  realm_roles:
+    - "admin"
+    - "viewer"
+  clients:
+    - client_id: "openbao"
+      name: "OpenBao"
+      standard_flow_enabled: true
+      redirect_uris:
+        - "https://bao.example.com/ui/vault/auth/oidc/oidc/callback"
+        - "http://localhost:8250/oidc/callback"
+      web_origins:
+        - "+"
+      secret: "ci-openbao-client-secret"
+    - client_id: "harbor"
+      name: "Harbor"
+      standard_flow_enabled: true
+      redirect_uris:
+        - "https://harbor.example.com/c/oidc/callback"
+      web_origins:
+        - "+"
+      secret: "ci-harbor-client-secret"
+  users:
+    - username: "ci-admin"
+      email: "ci-admin@example.com"
+      first_name: "CI"
+      last_name: "Admin"
+      password: "ci-admin-pass"
+      realm_roles:
+        - "admin"
+
+# --- OpenBao configuration (openbao_config role) ---
+# openbao_root_token is injected at runtime via --extra-vars after openbao-init-ci.sh.
+openbao_config:
+  enabled: true
+  root_token: "{{ openbao_root_token | default('') }}"
+  secret_engines:
+    - path: "app"
+      type: "kv-v2"
+  oidc:
+    enabled: false
+
+# --- Harbor configuration (harbor_config role) ---
+# OIDC is disabled in CI. A Docker Hub proxy-cache mirror is declared.
+harbor_config:
+  enabled: true
+  oidc:
+    enabled: false
+  registry_mirrors:
+    - name: "docker-hub"
+      type: "docker-hub"
+      url: "https://hub.docker.com"
+      description: "Docker Hub proxy cache"
+      project_name: "dockerhub-mirror"
+      public: true
