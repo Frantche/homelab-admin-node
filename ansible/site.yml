@@ -42,11 +42,11 @@
     - role: keycloak_config
       when: admin_mode != 'locked' and (keycloak_config.enabled | default(false))
     - role: openbao_config
-      when: admin_mode != 'locked' and (openbao_config.enabled | default(false))
+      when: admin_mode == 'normal' and (openbao_config.enabled | default(false))
     - role: harbor
       when: admin_mode != 'locked'
     - role: harbor_config
-      when: admin_mode != 'locked' and (harbor_config.enabled | default(false))
+      when: admin_mode == 'normal' and (harbor_config.enabled | default(false))
     - role: cloudflared
       when: admin_mode != 'locked'
     - role: pihole_dns
