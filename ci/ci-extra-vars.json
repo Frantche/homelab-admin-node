@@ -47,7 +47,8 @@
           "http://localhost:8250/oidc/callback"
         ],
         "web_origins": ["+"],
-        "secret": "ci-openbao-client-secret"
+        "secret": "ci-openbao-client-secret",
+        "direct_access_grants_enabled": true
       },
       {
         "client_id": "harbor",
@@ -83,6 +84,7 @@
       "default_role": "default",
       "role": {
         "name": "default",
+        "role_type": "jwt",
         "user_claim": "preferred_username",
         "groups_claim": "groups",
         "allowed_redirect_uris": [
