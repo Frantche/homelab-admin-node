@@ -99,6 +99,23 @@
   when: openbao_config.oidc.enabled | default(false)
   no_log: true
 
+- name: Set OpenBao OIDC role base body
+  ansible.builtin.set_fact:
+    _openbao_role_body:
+      role_type: "{{ openbao_config.oidc.role.role_type | default('oidc') }}"
+      user_claim: "{{ openbao_config.oidc.role.user_claim | default('sub') }}"
+      groups_claim: "{{ openbao_config.oidc.role.groups_claim | default('groups') }}"
+      bound_audiences: "{{ openbao_config.oidc.role.bound_audiences | default([]) }}"
+      policies: "{{ openbao_config.oidc.role.policies | default(['default']) }}"
+  when: openbao_config.oidc.enabled | default(false)
+
+- name: Add allowed_redirect_uris for OIDC role type
+  ansible.builtin.set_fact:
+    _openbao_role_body: "{{ _openbao_role_body | combine({'allowed_redirect_uris': openbao_config.oidc.role.allowed_redirect_uris | default([])}) }}"
+  when:
+    - openbao_config.oidc.enabled | default(false)
+    - (openbao_config.oidc.role.role_type | default('oidc')) == 'oidc'
+
 - name: Configure OpenBao OIDC role
   ansible.builtin.uri:
     url: "{{ openbao_config_url }}/v1/auth/oidc/role/{{ openbao_config.oidc.role.name | default('default') }}"
@@ -107,18 +124,7 @@
       X-Vault-Token: "{{ openbao_config.root_token }}"
     validate_certs: "{{ openbao_config_validate_certs }}"
     body_format: json
-    body: >-
-      {{
-        {
-          'role_type': openbao_config.oidc.role.role_type | default('oidc'),
-          'user_claim': openbao_config.oidc.role.user_claim | default('sub'),
-          'groups_claim': openbao_config.oidc.role.groups_claim | default('groups'),
-          'bound_audiences': openbao_config.oidc.role.bound_audiences | default([]),
-          'policies': openbao_config.oidc.role.policies | default(['default'])
-        } | combine(
-          {'allowed_redirect_uris': openbao_config.oidc.role.allowed_redirect_uris | default([])}
-          if (openbao_config.oidc.role.role_type | default('oidc')) == 'oidc'
-          else {}
+    body: "{{ _openbao_role_body }}"
     status_code: [200, 204]
   when: openbao_config.oidc.enabled | default(false)
-  # no_log temporarily removed to debug HTTP 400
+  no_log: true
