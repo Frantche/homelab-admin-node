@@ -11,6 +11,19 @@
     dest: "{{ admin_node_root }}/stacks/harbor/"
     mode: preserve
 
+- name: Ensure harbor secret key directory
+  ansible.builtin.file:
+    path: /srv/admin/data/harbor/secret
+    state: directory
+    mode: "0700"
+
+- name: Generate harbor secret key (used for encrypting credentials)
+  ansible.builtin.copy:
+    dest: /srv/admin/data/harbor/secret/key
+    content: "{{ lookup('ansible.builtin.password', '/dev/null chars=ascii_lowercase,digits length=16') }}"
+    mode: "0600"
+    force: false
+
 - name: Render harbor env
   ansible.builtin.copy:
     dest: "{{ admin_node_root }}/env/harbor.env"

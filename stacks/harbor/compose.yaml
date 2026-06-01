@@ -80,6 +80,7 @@ services:
       LOG_LEVEL: info
     volumes:
       - ./config/core-app.conf:/etc/core/app.conf:ro
+      - /srv/admin/data/harbor/secret/key:/etc/core/key:ro
       - /srv/admin/data/harbor/core:/data
     depends_on:
       harbor-db:
