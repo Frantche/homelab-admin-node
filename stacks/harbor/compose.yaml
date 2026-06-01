@@ -76,6 +76,7 @@ services:
       TOKEN_SERVICE_URL: http://harbor-core:8080/service/token
       HARBOR_ADMIN_PASSWORD: ${HARBOR_ADMIN_PASSWORD:-Harbor12345}
       WITH_TRIVY: "false"
+      PERMITTED_REGISTRY_TYPES_FOR_PROXY_CACHE: "docker-hub,harbor,docker-registry,aws-ecr,azure-acr,google-gcr,quay,github-ghcr,jfrog-artifactory"
       LOG_LEVEL: info
     volumes:
       - ./config/core-app.conf:/etc/core/app.conf:ro

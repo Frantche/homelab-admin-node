@@ -77,19 +77,4 @@
   when:
     - (harbor_registry_lookup_final.json | length) > 0
     - (harbor_project_lookup.json | length) == 0
-  register: harbor_create_project_result
-  ignore_errors: true
-
-- name: Debug proxy cache project creation failure
-  ansible.builtin.debug:
-    msg: "Create proxy cache project failed: {{ harbor_create_project_result }}"
-  when:
-    - harbor_create_project_result is defined
-    - harbor_create_project_result is failed
-
-- name: Fail if proxy cache project creation failed
-  ansible.builtin.fail:
-    msg: "Failed to create proxy cache project"
-  when:
-    - harbor_create_project_result is defined
-    - harbor_create_project_result is failed
+  no_log: true
