@@ -118,6 +118,14 @@
       policies: "{{ openbao_config.oidc.role.policies | default(['default']) }}"
   when: openbao_config.oidc.enabled | default(false)
 
+- name: Fail when JWT role has empty bound_audiences
+  ansible.builtin.fail:
+    msg: "openbao_config.oidc.role.bound_audiences must not be empty when role_type is 'jwt'"
+  when:
+    - openbao_config.oidc.enabled | default(false)
+    - (openbao_config.oidc.role.role_type | default('oidc')) == 'jwt'
+    - (openbao_config.oidc.role.bound_audiences | default([]) | length) == 0
+
 - name: Add allowed_redirect_uris for OIDC role type
   ansible.builtin.set_fact:
     _openbao_role_body: "{{ _openbao_role_body | combine({'allowed_redirect_uris': openbao_config.oidc.role.allowed_redirect_uris | default([])}) }}"
