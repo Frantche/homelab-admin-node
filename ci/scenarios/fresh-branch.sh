@@ -49,6 +49,9 @@ ansible-playbook \
   "$REPO_ROOT/ansible/site.yml" \
   --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}, \"openbao_root_token\": \"${OPENBAO_TOKEN}\"}"
 
+# --- Verify OIDC configuration ---
+./ci/verify-oidc-ci.sh
+
 # --- Create sentinel data + additional backups ---
 ./ci/create-sentinel-data.sh
 assert_file_exists /srv/admin/data/sentinel/value.txt

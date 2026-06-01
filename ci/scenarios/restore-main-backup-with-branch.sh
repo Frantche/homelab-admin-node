@@ -64,4 +64,7 @@ ansible-playbook \
   "$REPO_ROOT/ansible/site.yml" \
   --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}, \"openbao_root_token\": \"${OPENBAO_TOKEN}\"}"
 
+# --- Verify OIDC configuration after restore ---
+./ci/verify-oidc-ci.sh
+
 echo "=== restore-main-backup-with-branch scenario PASSED ==="

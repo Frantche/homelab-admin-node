@@ -76,13 +76,37 @@
       {"path": "app", "type": "kv-v2"}
     ],
     "oidc": {
-      "enabled": false
+      "enabled": true,
+      "discovery_url": "http://keycloak:8080/realms/homelab",
+      "client_id": "openbao",
+      "client_secret": "ci-openbao-client-secret",
+      "default_role": "default",
+      "role": {
+        "name": "default",
+        "user_claim": "preferred_username",
+        "groups_claim": "groups",
+        "allowed_redirect_uris": [
+          "https://bao.example.com/ui/vault/auth/oidc/oidc/callback",
+          "http://localhost:8250/oidc/callback"
+        ],
+        "bound_audiences": [],
+        "policies": ["default"]
+      }
     }
   },
   "harbor_config": {
     "enabled": true,
     "oidc": {
-      "enabled": false
+      "enabled": true,
+      "endpoint": "http://keycloak:8080/realms/homelab",
+      "client_id": "harbor",
+      "client_secret": "ci-harbor-client-secret",
+      "scope": "openid,profile,email",
+      "verify_cert": false,
+      "auto_onboard": true,
+      "user_claim": "preferred_username",
+      "groups_claim": "groups",
+      "admin_group": ""
     },
     "registry_mirrors": [
       {

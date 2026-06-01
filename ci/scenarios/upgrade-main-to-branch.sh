@@ -54,6 +54,10 @@ ansible-playbook \
   -i /etc/admin-config/ \
   "$REPO_ROOT/ansible/site.yml" \
   --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}, \"openbao_root_token\": \"${OPENBAO_TOKEN}\"}"
+
+# --- Verify OIDC configuration after upgrade ---
+./ci/verify-oidc-ci.sh
+
 ./scripts/backup.sh
 
 echo "=== upgrade-main-to-branch scenario PASSED ==="
