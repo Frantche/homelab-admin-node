@@ -69,7 +69,8 @@
     body_format: json
     body:
       project_name: "{{ harbor_mirror_item.project_name | default(harbor_mirror_item.name) }}"
-      registry_id: "{{ (harbor_registry_lookup_final.json | first).id }}"
+      registry_id: "{{ (harbor_registry_lookup_final.json | first).id | int }}"
+      storage_limit: -1
       metadata:
         public: "{{ (harbor_mirror_item.public | default(false)) | ternary('true', 'false') }}"
     status_code: [201, 409]
