@@ -1,3 +1,4 @@
 ---
-keycloak_config_url: "http://127.0.0.1:8080"
+keycloak_config_url: "https://{{ service_domains.keycloak }}"
 keycloak_config_health_url: "http://127.0.0.1:9000"
+keycloak_config_validate_certs: false

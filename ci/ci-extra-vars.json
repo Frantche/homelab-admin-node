@@ -78,7 +78,8 @@
     ],
     "oidc": {
       "enabled": true,
-      "discovery_url": "http://keycloak:8080/realms/homelab",
+      "discovery_url": "https://keycloak.example.com/realms/homelab",
+      "discovery_ca_pem": "",
       "client_id": "openbao",
       "client_secret": "ci-openbao-client-secret",
       "default_role": "default",
@@ -91,7 +92,7 @@
           "https://bao.example.com/ui/vault/auth/oidc/oidc/callback",
           "http://localhost:8250/oidc/callback"
         ],
-        "bound_audiences": [],
+        "bound_audiences": ["openbao"],
         "policies": ["default"]
       }
     }
@@ -100,7 +101,7 @@
     "enabled": true,
     "oidc": {
       "enabled": true,
-      "endpoint": "http://keycloak:8080/realms/homelab",
+      "endpoint": "https://keycloak.example.com/realms/homelab",
       "client_id": "harbor",
       "client_secret": "ci-harbor-client-secret",
       "scope": "openid,profile,email",

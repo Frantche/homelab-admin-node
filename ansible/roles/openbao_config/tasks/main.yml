@@ -90,11 +90,20 @@
       X-Vault-Token: "{{ openbao_config.root_token }}"
     validate_certs: "{{ openbao_config_validate_certs }}"
     body_format: json
-    body:
-      oidc_discovery_url: "{{ openbao_config.oidc.discovery_url | mandatory('openbao_config.oidc.discovery_url is required') }}"
-      oidc_client_id: "{{ openbao_config.oidc.client_id | mandatory('openbao_config.oidc.client_id is required') }}"
-      oidc_client_secret: "{{ openbao_config.oidc.client_secret | mandatory('openbao_config.oidc.client_secret is required') }}"
-      default_role: "{{ openbao_config.oidc.default_role | default(openbao_config.oidc.role.name | default('default')) }}"
+    body: >-
+      {{
+        {
+          'oidc_discovery_url': openbao_config.oidc.discovery_url | mandatory('openbao_config.oidc.discovery_url is required'),
+          'oidc_client_id': openbao_config.oidc.client_id | mandatory('openbao_config.oidc.client_id is required'),
+          'oidc_client_secret': openbao_config.oidc.client_secret | mandatory('openbao_config.oidc.client_secret is required'),
+          'default_role': openbao_config.oidc.default_role | default(openbao_config.oidc.role.name | default('default'))
+        }
+        | combine(
+            {'oidc_discovery_ca_pem': openbao_config.oidc.discovery_ca_pem}
+            if (openbao_config.oidc.discovery_ca_pem | default('') | length > 0)
+            else {}
+          )
+      }}
     status_code: [200, 204]
   when: openbao_config.oidc.enabled | default(false)
   no_log: true

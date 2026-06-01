@@ -74,8 +74,7 @@ keycloak_config:
 
 # --- OpenBao configuration (openbao_config role) ---
 # openbao_root_token is injected at runtime via --extra-vars after openbao-init-ci.sh.
-# Discovery URL uses Docker-internal hostname so the OpenBao container can reach
-# Keycloak directly on admin-net without TLS complications.
+# Discovery URL uses HTTPS through Traefik; the CA cert is mounted in the container.
 openbao_config:
   enabled: true
   root_token: "{{ openbao_root_token | default('') }}"
@@ -84,7 +83,8 @@ openbao_config:
       type: "kv-v2"
   oidc:
     enabled: true
-    discovery_url: "http://keycloak:8080/realms/homelab"
+    discovery_url: "https://keycloak.example.com/realms/homelab"
+    discovery_ca_pem: "{{ lookup('file', '/srv/admin/certs/ca.pem') }}"
     client_id: "openbao"
     client_secret: "ci-openbao-client-secret"
     default_role: "default"
@@ -96,18 +96,18 @@ openbao_config:
       allowed_redirect_uris:
         - "https://bao.example.com/ui/vault/auth/oidc/oidc/callback"
         - "http://localhost:8250/oidc/callback"
-      bound_audiences: []
+      bound_audiences:
+        - "openbao"
       policies:
         - "default"
 
 # --- Harbor configuration (harbor_config role) ---
-# OIDC endpoint uses Docker-internal hostname so harbor-core can reach
-# Keycloak directly on admin-net. verify_cert is false (HTTP, no TLS).
+# OIDC endpoint uses HTTPS through Traefik. verify_cert is false for self-signed certs in CI.
 harbor_config:
   enabled: true
   oidc:
     enabled: true
-    endpoint: "http://keycloak:8080/realms/homelab"
+    endpoint: "https://keycloak.example.com/realms/homelab"
     client_id: "harbor"
     client_secret: "ci-harbor-client-secret"
     scope: "openid,profile,email"

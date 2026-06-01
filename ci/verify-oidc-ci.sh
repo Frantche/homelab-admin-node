@@ -6,10 +6,10 @@ set -euo pipefail
 #  2. Authenticate to OpenBao using that ID token (JWT auth via the OIDC auth method)
 #  3. Verify Harbor can reach Keycloak's OIDC endpoint (ping test from Harbor)
 #
-# Keycloak is accessed via http://keycloak:8080 (localhost-mapped in CI) so that
-# the token issuer matches the discovery URL that OpenBao uses on the Docker network.
+# All calls use HTTPS through Traefik. The CI certificate is self-signed so
+# curl uses -k and services are configured with verify_cert=false.
 
-KEYCLOAK_URL="http://keycloak:8080"
+KEYCLOAK_URL="https://keycloak.example.com"
 OPENBAO_URL="https://bao.example.com"
 HARBOR_URL="https://harbor.example.com"
 
@@ -32,7 +32,7 @@ fi
 # Step 1: Authenticate ci-admin with Keycloak (Resource Owner Password Grant)
 # ---------------------------------------------------------------------------
 echo "[verify-oidc] Step 1: Authenticating ${CI_USER} with Keycloak..."
-keycloak_response=$(curl -sf \
+keycloak_response=$(curl -sf -k \
   -X POST \
   "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
   -d "grant_type=password" \

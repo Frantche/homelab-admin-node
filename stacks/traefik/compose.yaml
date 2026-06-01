@@ -14,7 +14,12 @@ services:
       - /srv/admin/certs:/certs:ro
     env_file: /srv/admin/env/traefik.env
     networks:
-      - admin-net
+      admin-net:
+        aliases:
+          - keycloak.example.com
+          - bao.example.com
+          - harbor.example.com
+          - traefik.example.com
 
 networks:
   admin-net:

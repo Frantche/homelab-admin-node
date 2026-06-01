@@ -13,6 +13,7 @@
   ansible.builtin.uri:
     url: "{{ keycloak_config_url }}/realms/master/protocol/openid-connect/token"
     method: POST
+    validate_certs: "{{ keycloak_config_validate_certs }}"
     body_format: form-urlencoded
     body:
       grant_type: password
@@ -32,6 +33,7 @@
   ansible.builtin.uri:
     url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users?username={{ keycloak_user_item.username | urlencode }}&exact=true"
     method: GET
+    validate_certs: "{{ keycloak_config_validate_certs }}"
     headers:
       Authorization: "{{ keycloak_auth_header }}"
     status_code: 200
@@ -41,6 +43,7 @@
   ansible.builtin.uri:
     url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users"
     method: POST
+    validate_certs: "{{ keycloak_config_validate_certs }}"
     headers:
       Authorization: "{{ keycloak_auth_header }}"
     body_format: json
@@ -60,6 +63,7 @@
   ansible.builtin.uri:
     url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users?username={{ keycloak_user_item.username | urlencode }}&exact=true"
     method: GET
+    validate_certs: "{{ keycloak_config_validate_certs }}"
     headers:
       Authorization: "{{ keycloak_auth_header }}"
     status_code: 200
@@ -73,6 +77,7 @@
   ansible.builtin.uri:
     url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}"
     method: PUT
+    validate_certs: "{{ keycloak_config_validate_certs }}"
     headers:
       Authorization: "{{ keycloak_auth_header }}"
     body_format: json
@@ -84,6 +89,7 @@
   ansible.builtin.uri:
     url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/reset-password"
     method: PUT
+    validate_certs: "{{ keycloak_config_validate_certs }}"
     headers:
       Authorization: "{{ keycloak_auth_header }}"
     body_format: json
@@ -102,6 +108,7 @@
   ansible.builtin.uri:
     url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/role-mappings/realm"
     method: GET
+    validate_certs: "{{ keycloak_config_validate_certs }}"
     headers:
       Authorization: "{{ keycloak_auth_header }}"
     status_code: 200
@@ -117,6 +124,7 @@
   ansible.builtin.uri:
     url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/roles/{{ role_name }}"
     method: GET
+    validate_certs: "{{ keycloak_config_validate_certs }}"
     headers:
       Authorization: "{{ keycloak_auth_header }}"
     status_code: 200
@@ -132,6 +140,7 @@
   ansible.builtin.uri:
     url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/role-mappings/realm"
     method: POST
+    validate_certs: "{{ keycloak_config_validate_certs }}"
     headers:
       Authorization: "{{ keycloak_auth_header }}"
     body_format: json
