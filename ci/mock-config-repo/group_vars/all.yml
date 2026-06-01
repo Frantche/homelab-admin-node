@@ -48,6 +48,7 @@ keycloak_config:
     - client_id: "openbao"
       name: "OpenBao"
       standard_flow_enabled: true
+      direct_access_grants_enabled: true
       redirect_uris:
         - "https://bao.example.com/ui/vault/auth/oidc/oidc/callback"
         - "http://localhost:8250/oidc/callback"
@@ -89,6 +90,7 @@ openbao_config:
     default_role: "default"
     role:
       name: "default"
+      role_type: "jwt"
       user_claim: "preferred_username"
       groups_claim: "groups"
       allowed_redirect_uris:

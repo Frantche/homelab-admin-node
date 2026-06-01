@@ -108,6 +108,7 @@
     validate_certs: "{{ openbao_config_validate_certs }}"
     body_format: json
     body:
+      role_type: "{{ openbao_config.oidc.role.role_type | default('oidc') }}"
       user_claim: "{{ openbao_config.oidc.role.user_claim | default('sub') }}"
       groups_claim: "{{ openbao_config.oidc.role.groups_claim | default('groups') }}"
       allowed_redirect_uris: "{{ openbao_config.oidc.role.allowed_redirect_uris | default([]) }}"

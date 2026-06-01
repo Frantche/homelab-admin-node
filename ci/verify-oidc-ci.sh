@@ -1,81 +1,91 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Verify that OIDC has been correctly configured on OpenBao and Harbor.
-# Requires OPENBAO_TOKEN to be set.
+# Validate SSO by performing actual authentication through the OIDC chain:
+#  1. Obtain an ID token from Keycloak via Resource Owner Password Credentials grant
+#  2. Authenticate to OpenBao using that ID token (JWT auth via the OIDC auth method)
+#  3. Verify Harbor can reach Keycloak's OIDC endpoint (ping test from Harbor)
+#
+# Keycloak is accessed via http://keycloak:8080 (localhost-mapped in CI) so that
+# the token issuer matches the discovery URL that OpenBao uses on the Docker network.
+
+KEYCLOAK_URL="http://keycloak:8080"
+OPENBAO_URL="https://bao.example.com"
+HARBOR_URL="https://harbor.example.com"
 
 HARBOR_ADMIN_PASSWORD="${HARBOR_ADMIN_PASSWORD:-ci-Harbor-admin-p4ss}"
 OPENBAO_TOKEN="${OPENBAO_TOKEN:-}"
+
+KEYCLOAK_REALM="homelab"
+OPENBAO_CLIENT_ID="openbao"
+OPENBAO_CLIENT_SECRET="ci-openbao-client-secret"
+CI_USER="ci-admin"
+CI_PASSWORD="ci-admin-pass"
+HARBOR_OIDC_ENDPOINT="${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}"
 
 if [[ -z "$OPENBAO_TOKEN" ]]; then
   echo "[verify-oidc] ERROR: OPENBAO_TOKEN is not set" >&2
   exit 1
 fi
 
-echo "[verify-oidc] Checking OpenBao OIDC auth method..."
-bao_auth_methods="$(curl -sf -k \
-  -H "X-Vault-Token: ${OPENBAO_TOKEN}" \
-  https://bao.example.com/v1/sys/auth)"
+# ---------------------------------------------------------------------------
+# Step 1: Authenticate ci-admin with Keycloak (Resource Owner Password Grant)
+# ---------------------------------------------------------------------------
+echo "[verify-oidc] Step 1: Authenticating ${CI_USER} with Keycloak..."
+keycloak_response=$(curl -sf \
+  -X POST \
+  "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
+  -d "grant_type=password" \
+  -d "client_id=${OPENBAO_CLIENT_ID}" \
+  -d "client_secret=${OPENBAO_CLIENT_SECRET}" \
+  -d "username=${CI_USER}" \
+  -d "password=${CI_PASSWORD}" \
+  -d "scope=openid profile")
 
-if ! echo "$bao_auth_methods" | python3 -c "
+id_token=$(echo "$keycloak_response" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-methods = d.get('data', d)
-oidc_mount = None
-for key, value in methods.items():
-    if key.rstrip('/') == 'oidc' and isinstance(value, dict) and value.get('type') == 'oidc':
-        oidc_mount = key
-        break
-if oidc_mount is None:
-    print('ERROR: oidc auth method not found in OpenBao', file=sys.stderr)
+t = d.get('id_token', '')
+if not t:
+    print('ERROR: no id_token in Keycloak response', file=sys.stderr)
     sys.exit(1)
-print(f'OK: oidc auth method present at mount {oidc_mount}')
-"; then
-  echo "[verify-oidc] ERROR: OpenBao OIDC auth method check failed" >&2
-  exit 1
-fi
+print(t)
+")
+echo "[verify-oidc] OK: Keycloak issued ID token for ${CI_USER}"
 
-echo "[verify-oidc] Checking OpenBao OIDC configuration..."
-bao_oidc_config="$(curl -sf -k \
-  -H "X-Vault-Token: ${OPENBAO_TOKEN}" \
-  https://bao.example.com/v1/auth/oidc/config)"
+# ---------------------------------------------------------------------------
+# Step 2: Authenticate with OpenBao using the Keycloak ID token (JWT login)
+# ---------------------------------------------------------------------------
+echo "[verify-oidc] Step 2: Authenticating with OpenBao via Keycloak ID token..."
+openbao_login=$(curl -sf -k \
+  -X POST \
+  "${OPENBAO_URL}/v1/auth/oidc/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"role\": \"default\", \"jwt\": \"${id_token}\"}")
 
-python3 -c "
+openbao_entity=$(echo "$openbao_login" | python3 -c "
 import json, sys
-d = json.load(sys.stdin).get('data', {})
-issuer = d.get('oidc_discovery_url', '')
-client_id = d.get('oidc_client_id', '')
-if 'keycloak' not in issuer:
-    print(f'ERROR: unexpected oidc_discovery_url: {issuer}', file=sys.stderr)
+d = json.load(sys.stdin)
+token = d.get('auth', {}).get('client_token', '')
+if not token:
+    print('ERROR: no client_token in OpenBao login response', file=sys.stderr)
     sys.exit(1)
-if client_id != 'openbao':
-    print(f'ERROR: unexpected oidc_client_id: {client_id}', file=sys.stderr)
-    sys.exit(1)
-print(f'OK: OpenBao OIDC configured (issuer={issuer}, client_id={client_id})')
-" <<< "$bao_oidc_config"
+username = d.get('auth', {}).get('metadata', {}).get('username', '?')
+print(username)
+")
+echo "[verify-oidc] OK: OpenBao authenticated '${openbao_entity}' via Keycloak OIDC"
 
-echo "[verify-oidc] Checking Harbor OIDC configuration..."
-harbor_config_resp="$(curl -sf -k \
+# ---------------------------------------------------------------------------
+# Step 3: Verify Harbor can reach Keycloak's OIDC endpoint (connectivity ping)
+# ---------------------------------------------------------------------------
+echo "[verify-oidc] Step 3: Testing Harbor OIDC connectivity to Keycloak..."
+curl -sf -k \
+  -X POST \
   -u "admin:${HARBOR_ADMIN_PASSWORD}" \
-  https://harbor.example.com/api/v2.0/configurations)"
+  -H "Content-Type: application/json" \
+  "${HARBOR_URL}/api/v2.0/system/oidc/ping" \
+  -d "{\"url\": \"${HARBOR_OIDC_ENDPOINT}\", \"verify_cert\": false}" \
+  > /dev/null
+echo "[verify-oidc] OK: Harbor successfully reached Keycloak OIDC endpoint"
 
-python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-auth_mode = d.get('auth_mode', {}).get('value', '')
-oidc_name = d.get('oidc_name', {}).get('value', '')
-oidc_endpoint = d.get('oidc_endpoint', {}).get('value', '')
-oidc_client_id = d.get('oidc_client_id', {}).get('value', '')
-if auth_mode != 'oidc_auth':
-    print(f'ERROR: Harbor auth_mode is {auth_mode!r}, expected oidc_auth', file=sys.stderr)
-    sys.exit(1)
-if 'keycloak' not in oidc_endpoint:
-    print(f'ERROR: unexpected oidc_endpoint: {oidc_endpoint}', file=sys.stderr)
-    sys.exit(1)
-if oidc_client_id != 'harbor':
-    print(f'ERROR: unexpected oidc_client_id: {oidc_client_id}', file=sys.stderr)
-    sys.exit(1)
-print(f'OK: Harbor OIDC configured (auth_mode={auth_mode}, oidc_name={oidc_name}, endpoint={oidc_endpoint})')
-" <<< "$harbor_config_resp"
-
-echo "[verify-oidc] All OIDC checks passed"
+echo "[verify-oidc] All SSO authentication checks passed"

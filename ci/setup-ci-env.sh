@@ -52,7 +52,10 @@ fi
 echo "[ci-setup] TLS certificate generated and CA trusted"
 
 # --- Add /etc/hosts entries for service domains ---
-for domain in keycloak.example.com bao.example.com harbor.example.com traefik.example.com; do
+# "keycloak" (without TLD) must also resolve to localhost so that tokens
+# obtained from http://keycloak:8080 carry the same issuer URL that OpenBao
+# uses when it contacts Keycloak directly on the Docker network.
+for domain in keycloak.example.com bao.example.com harbor.example.com traefik.example.com keycloak; do
   if ! grep -qF "$domain" /etc/hosts; then
     echo "127.0.0.1 $domain" >> /etc/hosts
   fi
