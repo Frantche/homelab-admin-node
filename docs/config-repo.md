@@ -164,13 +164,12 @@ git push -u origin main
 
 ## Utilisation avec admin-converge.sh
 
-Le script `admin-converge.sh` ne fait plus de `git clone/pull`.  
-La mise à jour des dépôts se fait explicitement via la CLI `git`.
+Le premier `git clone` du dépôt `homelab-admin-node` est réalisé par cloud-init dans `/opt/homelab-admin-node`.  
+Le script `admin-converge.sh` exécute ensuite `git pull --ff-only` sur ce dépôt avant chaque convergence.
 
-### 1. Mettre à jour les dépôts via git CLI
+### 1. Mettre à jour le config repo via git CLI (optionnel)
 
 ```bash
-git -C /opt/homelab-admin-node pull --ff-only
 git -C /etc/admin-config pull --ff-only
 ```
 
@@ -191,9 +190,10 @@ sudo ./scripts/admin-converge.sh
 
 `admin-converge.sh` :
 
-1. Vérifie la présence du playbook local `/opt/homelab-admin-node/ansible/site.yml`
-2. Vérifie la présence de l'inventaire utilisateur `/etc/admin-config/hosts`
-3. Exécute `ansible-playbook -i /etc/admin-config/hosts /opt/homelab-admin-node/ansible/site.yml`
+1. Met à jour `/opt/homelab-admin-node` via `git pull --ff-only`
+2. Vérifie la présence du playbook local `/opt/homelab-admin-node/ansible/site.yml`
+3. Vérifie la présence de l'inventaire utilisateur `/etc/admin-config/hosts`
+4. Exécute `ansible-playbook -i /etc/admin-config/hosts /opt/homelab-admin-node/ansible/site.yml`
 
 ## Modifier les secrets
 

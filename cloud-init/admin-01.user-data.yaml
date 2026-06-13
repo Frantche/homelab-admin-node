@@ -40,8 +40,7 @@ write_files:
         exec "$SCRIPT_PATH"
       fi
       echo "[admin-converge] $SCRIPT_PATH not found"
-      echo "[admin-converge] clone the homelab-admin-node repository manually with git CLI into $REPO_DIR"
-      echo "[admin-converge] see README.md for clone instructions"
+      echo "[admin-converge] initial clone should be done by cloud-init into $REPO_DIR"
       exit 1
   - path: /etc/systemd/system/admin-converge.service
     owner: root:root
@@ -72,6 +71,7 @@ write_files:
 
 runcmd:
   - [ mkdir, -p, /etc/admin-node ]
+  - [ bash, -lc, 'if [ ! -d /opt/homelab-admin-node/.git ]; then git clone ssh://git@github.com/Frantche/homelab-admin-node.git /opt/homelab-admin-node; fi' ]
   - [ systemctl, daemon-reload ]
   - [ systemctl, enable, --now, sshd ]
   - [ systemctl, enable, --now, docker ]

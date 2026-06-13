@@ -18,9 +18,18 @@ fi
 
 echo "[admin-converge] lock acquired"
 
+if [[ ! -d "$REPO_DIR/.git" ]]; then
+  echo "[admin-converge] git repository not found in $REPO_DIR"
+  echo "[admin-converge] ensure initial clone is completed by cloud-init"
+  exit 1
+fi
+
+echo "[admin-converge] updating git repository in $REPO_DIR"
+git -C "$REPO_DIR" pull --ff-only
+
 if [[ ! -f "$PLAYBOOK_PATH" ]]; then
   echo "[admin-converge] playbook not found: $PLAYBOOK_PATH"
-  echo "[admin-converge] clone the repository manually via git CLI in $REPO_DIR"
+  echo "[admin-converge] check cloud-init first clone and repository content"
   exit 1
 fi
 
