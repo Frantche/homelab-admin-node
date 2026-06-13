@@ -8,6 +8,7 @@ PLAYBOOK_PATH="${PLAYBOOK_PATH:-$REPO_DIR/ansible/site.yml}"
 
 mkdir -p /run
 echo "[admin-converge] starting"
+echo "[admin-converge] playbook=$PLAYBOOK_PATH inventory=$INVENTORY_PATH"
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
@@ -19,7 +20,7 @@ echo "[admin-converge] lock acquired"
 
 if [[ ! -f "$PLAYBOOK_PATH" ]]; then
   echo "[admin-converge] playbook not found: $PLAYBOOK_PATH"
-  echo "[admin-converge] clone or update repository manually via git CLI in $REPO_DIR"
+  echo "[admin-converge] clone the repository manually via git CLI in $REPO_DIR"
   exit 1
 fi
 

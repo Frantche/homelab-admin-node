@@ -41,6 +41,7 @@ write_files:
       fi
       echo "[admin-converge] $SCRIPT_PATH not found"
       echo "[admin-converge] clone the homelab-admin-node repository manually with git CLI into $REPO_DIR"
+      echo "[admin-converge] see README.md for clone instructions"
       exit 1
   - path: /etc/systemd/system/admin-converge.service
     owner: root:root

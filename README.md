@@ -17,7 +17,8 @@ Le secret zéro est la clé privée age installée manuellement dans `/etc/sops/
 
 ## 5. Première installation
 1. Provisionner la VM avec `cloud-init/admin-01.user-data.yaml`.
-2. Cloner ce dépôt sur la VM via `git` dans `/opt/homelab-admin-node`.
+2. Cloner ce dépôt sur la VM via `git` dans `/opt/homelab-admin-node` :
+   `git clone ssh://git@github.com/Frantche/homelab-admin-node.git /opt/homelab-admin-node`.
 3. Déposer votre inventaire Ansible (exemple : `ansible/inventory.ini`) dans `/etc/admin-config/hosts`.
 4. Vérifier `/etc/admin-node/mode` = `locked`.
 5. Injecter la clé age via `scripts/unlock.sh`.
