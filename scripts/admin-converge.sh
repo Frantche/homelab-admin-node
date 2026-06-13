@@ -25,7 +25,11 @@ if [[ ! -d "$REPO_DIR/.git" ]]; then
 fi
 
 echo "[admin-converge] updating git repository in $REPO_DIR"
-git -C "$REPO_DIR" pull --ff-only
+if ! git -C "$REPO_DIR" pull --ff-only; then
+  echo "[admin-converge] git pull failed in $REPO_DIR"
+  echo "[admin-converge] check network access and ensure no local git changes block fast-forward pulls"
+  exit 1
+fi
 
 if [[ ! -f "$PLAYBOOK_PATH" ]]; then
   echo "[admin-converge] playbook not found: $PLAYBOOK_PATH"
