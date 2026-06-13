@@ -1,46 +1,4 @@
 http:
-  routers:
-    keycloak:
-      rule: "Host(`keycloak.example.com`)"
-      entryPoints:
-        - websecure
-      service: keycloak
-      tls: {}
-    openbao:
-      rule: "Host(`bao.example.com`)"
-      entryPoints:
-        - websecure
-      service: openbao
-      tls: {}
-    harbor:
-      rule: "Host(`harbor.example.com`)"
-      entryPoints:
-        - websecure
-      service: harbor
-      tls: {}
-    dashboard:
-      rule: "Host(`traefik.example.com`)"
-      entryPoints:
-        - websecure
-      service: api@internal
-      middlewares:
-        - dashboard-auth
-      tls: {}
-
-  services:
-    keycloak:
-      loadBalancer:
-        servers:
-          - url: "http://keycloak:8080"
-    openbao:
-      loadBalancer:
-        servers:
-          - url: "http://openbao:8200"
-    harbor:
-      loadBalancer:
-        servers:
-          - url: "http://harbor-core:8080"
-
   middlewares:
     dashboard-auth:
       basicAuth:

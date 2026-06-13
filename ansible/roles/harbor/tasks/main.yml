@@ -11,6 +11,12 @@
     dest: "{{ admin_node_root }}/stacks/harbor/"
     mode: preserve
 
+- name: Render harbor compose
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../stacks/harbor/compose.yaml"
+    dest: "{{ admin_node_root }}/stacks/harbor/compose.yaml"
+    mode: "0644"
+
 - name: Render harbor env
   ansible.builtin.copy:
     dest: "{{ admin_node_root }}/env/harbor.env"

@@ -12,7 +12,16 @@ services:
       - ./dynamic:/etc/traefik/dynamic:ro
       - /srv/admin/data/traefik/letsencrypt:/letsencrypt
       - /srv/admin/certs:/certs:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     env_file: /srv/admin/env/traefik.env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=admin-net"
+      - "traefik.http.routers.dashboard.rule=Host(`{{ service_domains.traefik }}`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=dashboard-auth@file"
     networks:
       - admin-net
 

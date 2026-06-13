@@ -12,6 +12,10 @@ providers:
   file:
     directory: /etc/traefik/dynamic
     watch: true
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    network: "admin-net"
+    exposedByDefault: false
 certificatesResolvers:
   letsencrypt:
     acme:

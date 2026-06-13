@@ -70,7 +70,7 @@ services:
       POSTGRESQL_DATABASE: registry
       POSTGRESQL_SSLMODE: disable
       CONFIG_PATH: /etc/core/app.conf
-      EXT_ENDPOINT: https://harbor.example.com
+      EXT_ENDPOINT: https://{{ service_domains.harbor }}
       CORE_URL: http://harbor-core:8080
       REGISTRY_URL: http://harbor-registry:5000
       TOKEN_SERVICE_URL: http://harbor-core:8080/service/token
@@ -87,6 +87,13 @@ services:
         condition: service_healthy
       harbor-registry:
         condition: service_started
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=admin-net"
+      - "traefik.http.routers.harbor.rule=Host(`{{ service_domains.harbor }}`)"
+      - "traefik.http.routers.harbor.entrypoints=websecure"
+      - "traefik.http.routers.harbor.tls=true"
+      - "traefik.http.services.harbor.loadbalancer.server.port=8080"
     networks:
       - admin-net
 

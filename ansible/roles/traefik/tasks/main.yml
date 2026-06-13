@@ -21,6 +21,14 @@
     group: root
     mode: preserve
 
+- name: Render traefik compose
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../stacks/traefik/compose.yaml"
+    dest: "{{ admin_node_root }}/stacks/traefik/compose.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Render traefik static config (production)
   ansible.builtin.template:
     src: "{{ playbook_dir }}/../stacks/traefik/traefik.yml"
