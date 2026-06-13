@@ -192,8 +192,8 @@ jobs:
 
       - name: Copy repository into VM
         run: |
-          # Create tar of the repository (excluding .git and .ci)
-          tar --exclude='.git' --exclude='.ci' -czf /tmp/repo.tar.gz .
+          # Create tar of the repository (excluding .ci)
+          tar --exclude='.ci' -czf /tmp/repo.tar.gz .
 
           # Copy tar to VM
           scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
