@@ -33,6 +33,8 @@
   loop:
     - admin-stack@.service
     - admin-stacks.target
+    - admin-converge.service
+    - admin-converge.timer
     - admin-backup.service
     - admin-backup.timer
     - admin-unlock.path
@@ -47,6 +49,12 @@
 - name: Enable admin-backup.timer
   ansible.builtin.systemd:
     name: admin-backup.timer
+    enabled: true
+    state: started
+
+- name: Enable admin-converge.timer
+  ansible.builtin.systemd:
+    name: admin-converge.timer
     enabled: true
     state: started
 
