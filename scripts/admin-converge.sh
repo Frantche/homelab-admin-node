@@ -49,6 +49,11 @@ MSG
 }
 
 collect_missing_files() {
+  if [[ $# -ne 1 ]]; then
+    log "collect_missing_files requires one argument"
+    return 1
+  fi
+
   local -n missing_ref=$1
   missing_ref=()
   for required_file in "${REQUIRED_FILES[@]}"; do
