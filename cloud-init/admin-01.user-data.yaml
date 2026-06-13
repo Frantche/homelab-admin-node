@@ -21,73 +21,42 @@ packages:
   - jq
   - curl
   - python
-
-write_files:
-  - path: /etc/admin-node/mode
-    owner: root:root
-    permissions: '0644'
-    content: |
-      locked
-  - path: /etc/admin-node/git-ref
-    owner: root:root
-    permissions: '0644'
-    content: |
-      main
-  - path: /usr/local/bin/admin-converge.sh
-    owner: root:root
-    permissions: '0755'
-    content: |
-      #!/usr/bin/env bash
-      set -euo pipefail
-      REF_FILE=/etc/admin-node/git-ref
-      REF="main"
-      if [[ -f "$REF_FILE" ]]; then
-        REF="$(tr -d '[:space:]' < "$REF_FILE")"
-      fi
-      # Use ansible-pull to clone/update the repo and run the playbook.
-      # --directory ensures the repo is checked out to /opt/homelab-admin-node
-      # so subsequent runs can delegate to scripts/admin-converge.sh.
-      if [[ -x /opt/homelab-admin-node/scripts/admin-converge.sh ]]; then
-        exec /opt/homelab-admin-node/scripts/admin-converge.sh
-      fi
-      exec ansible-pull \
-        -U "${ADMIN_REPO_URL:-ssh://git@example.com/homelab/homelab-admin-node.git}" \
-        --directory /opt/homelab-admin-node \
-        -i localhost, \
-        -c local \
-        --checkout "$REF" \
-        ansible/site.yml
-  - path: /etc/systemd/system/admin-converge.service
-    owner: root:root
-    permissions: '0644'
-    content: |
-      [Unit]
-      Description=Admin node ansible converge
-      After=network-online.target
-      Wants=network-online.target
-
-      [Service]
-      Type=oneshot
-      ExecStart=/usr/local/bin/admin-converge.sh
-  - path: /etc/systemd/system/admin-converge.timer
-    owner: root:root
-    permissions: '0644'
-    content: |
-      [Unit]
-      Description=Periodic admin converge
-
-      [Timer]
-      OnBootSec=5min
-      OnUnitActiveSec=30min
-      Unit=admin-converge.service
-
-      [Install]
-      WantedBy=timers.target
+  - vim
 
 runcmd:
-  - [ mkdir, -p, /etc/admin-node ]
-  - [ systemctl, daemon-reload ]
-  - [ systemctl, enable, --now, sshd ]
-  - [ systemctl, enable, --now, docker ]
-  - [ systemctl, enable, --now, admin-converge.timer ]
-  - [ /usr/local/bin/admin-converge.sh ]
+  - [systemctl, enable, --now, sshd]
+  - [systemctl, enable, --now, docker]
+  - |
+    bash -lc '
+      set -euo pipefail
+      REPO_DIR=/opt/homelab-admin-node
+      REPO_URL="${ADMIN_REPO_URL:-https://github.com/Frantche/homelab-admin-node.git}"
+
+      if [[ -d "$REPO_DIR/.git" ]]; then
+        git -C "$REPO_DIR" pull --ff-only
+      else
+        git clone "$REPO_URL" "$REPO_DIR"
+      fi
+
+      copy_if_missing() {
+        local src="$1"
+        local dst="$2"
+        local mode="$3"
+
+        if [[ ! -e "$dst" ]]; then
+          install -D -m "$mode" "$src" "$dst"
+        fi
+      }
+
+      copy_if_missing "$REPO_DIR/examples/admin-config/inventory.ini" /etc/admin-config/inventory.ini 0644
+      copy_if_missing "$REPO_DIR/examples/admin-config/group_vars/all.yml.example" /etc/admin-config/group_vars/all.yml 0644
+      copy_if_missing "$REPO_DIR/examples/admin-config/group_vars/secrets.sops.yaml.example" /etc/admin-config/group_vars/secrets.sops.yaml 0600
+      copy_if_missing "$REPO_DIR/examples/admin-config/mode" /etc/admin-config/mode 0644
+
+      install -D -m 0644 "$REPO_DIR/systemd/admin-converge.service" /etc/systemd/system/admin-converge.service
+      install -D -m 0644 "$REPO_DIR/systemd/admin-converge.timer" /etc/systemd/system/admin-converge.timer
+      install -D -m 0755 "$REPO_DIR/scripts/adminctl" /usr/local/bin/adminctl
+    '
+  - [systemctl, daemon-reload]
+  - [systemctl, enable, --now, admin-converge.timer]
+  - [bash, -lc, "systemctl start admin-converge.service || true"]

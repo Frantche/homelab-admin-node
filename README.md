@@ -1,6 +1,6 @@
 # homelab-admin-node
 
-Repository complet pour construire et opérer un nœud d'administration homelab (Arch Linux + cloud-init + Ansible Pull + Docker Compose).
+Repository complet pour construire et opérer un nœud d'administration homelab (Arch Linux + cloud-init + Ansible + Docker Compose).
 
 ## 1. Objectif du projet
 Ce dépôt reconstruit une VM `admin-01` indépendante de Talos/Kubernetes pour gérer Traefik, Keycloak, OpenBao, Harbor, Cloudflare Tunnel, backups et restauration.
@@ -17,10 +17,10 @@ Le secret zéro est la clé privée age installée manuellement dans `/etc/sops/
 
 ## 5. Première installation
 1. Provisionner la VM avec `cloud-init/admin-01.user-data.yaml`.
-2. Vérifier `/etc/admin-node/mode` = `locked`.
+2. Vérifier `/etc/admin-config/mode` = `locked`.
 3. Injecter la clé age via `scripts/unlock.sh`.
-4. Passer en mode `init` via `scripts/set-mode.sh init`.
-5. Lancer `scripts/admin-converge.sh`.
+4. Passer en mode `init` via `adminctl mode init`.
+5. Lancer `adminctl converge`.
 
 ## 6. Injection manuelle de la clé age
 Utiliser `sudo ./scripts/unlock.sh /path/to/age-key.txt`.
@@ -35,7 +35,7 @@ Lancer `scripts/openbao-init.sh` puis enregistrer les clés d'unseal dans `secre
 Utiliser le format multi-keyset documenté dans `secrets/openbao-unseal.sops.yaml.example`.
 
 ## 10. Passage en mode normal
-`sudo ./scripts/set-mode.sh normal && sudo ./scripts/admin-converge.sh`.
+`sudo adminctl mode normal && sudo adminctl converge`.
 
 ## 11. Configuration Traefik
 Voir `docs/traefik.md` et `stacks/traefik`.
@@ -83,9 +83,9 @@ Gérez votre configuration et vos secrets dans un dépôt Git **privé** sépar�
 Voir `docs/config-repo.md` pour la structure, la mise en place et l'utilisation avec `admin-converge.sh`.
 
 ```bash
-export ADMIN_REPO_URL="ssh://git@github.com/Frantche/homelab-admin-node.git"
+export ADMIN_REPO_URL="https://github.com/Frantche/homelab-admin-node.git"
 export CONFIG_REPO_URL="ssh://git@github.com/<username>/homelab-admin-node-config.git"
-sudo -E ./scripts/admin-converge.sh
+sudo adminctl converge
 ```
 
 ## Commandes

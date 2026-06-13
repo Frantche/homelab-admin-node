@@ -2,70 +2,114 @@
 set -euo pipefail
 
 LOCK_FILE=/run/admin-converge.lock
-REF_FILE=/etc/admin-node/git-ref
-REF="main"
-ADMIN_REPO_URL="${ADMIN_REPO_URL:-ssh://git@example.com/homelab/homelab-admin-node.git}"
-CONFIG_REPO_URL="${CONFIG_REPO_URL:-}"
-CONFIG_REPO_BRANCH="${CONFIG_REPO_BRANCH:-main}"
-CONFIG_REPO_DIR="${CONFIG_REPO_DIR:-/etc/admin-config}"
+LOG_FILE=/var/log/admin-converge.log
+MODE_FILE=/etc/admin-config/mode
 REPO_DIR=/opt/homelab-admin-node
+INVENTORY_FILE=/etc/admin-config/inventory.ini
+PLAYBOOK_FILE="$REPO_DIR/ansible/site.yml"
 
-if [[ -f "$REF_FILE" ]]; then
-  REF="$(tr -d '[:space:]' < "$REF_FILE")"
-fi
+REQUIRED_FILES=(
+  /etc/sops/age/keys.txt
+  /etc/admin-config/inventory.ini
+  /etc/admin-config/group_vars/all.yml
+  /etc/admin-config/group_vars/secrets.sops.yaml
+)
 
-mkdir -p /run
-echo "[admin-converge] starting with ref=$REF"
+log() {
+  echo "[admin-converge] $*"
+}
+
+setup_logging() {
+  if install -d -m 0755 /var/log 2>/dev/null && touch "$LOG_FILE" 2>/dev/null; then
+    chmod 0644 "$LOG_FILE" 2>/dev/null || true
+    exec > >(tee -a "$LOG_FILE") 2>&1
+  fi
+}
+
+ensure_mode_file() {
+  install -d -m 0755 /etc/admin-config
+  if [[ ! -f "$MODE_FILE" ]]; then
+    echo "locked" > "$MODE_FILE"
+  fi
+}
+
+print_required_files() {
+  log "required files:"
+  for file in "${REQUIRED_FILES[@]}"; do
+    echo "- $file"
+  done
+}
+
+print_unlock_instructions() {
+  cat <<'MSG'
+Deposit the required secrets and configuration, then run:
+sudo adminctl mode init
+sudo adminctl converge
+MSG
+}
+
+collect_missing_files() {
+  local -n missing_ref=$1
+  missing_ref=()
+  for required_file in "${REQUIRED_FILES[@]}"; do
+    if [[ ! -f "$required_file" ]]; then
+      missing_ref+=("$required_file")
+    fi
+  done
+}
+
+setup_logging
+ensure_mode_file
+
+install -d -m 0755 /run
+log "starting"
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
-  echo "[admin-converge] another run is in progress, exiting"
+  log "another run is in progress, exiting"
   exit 0
 fi
 
-echo "[admin-converge] lock acquired"
+log "lock acquired"
+mode="$(tr -d '[:space:]' < "$MODE_FILE")"
 
-if [[ -n "$CONFIG_REPO_URL" ]]; then
-  # --- Config repo mode: git clone/pull + ansible-playbook with both inventories ---
-  echo "[admin-converge] config repo mode: $CONFIG_REPO_URL"
+case "$mode" in
+  locked)
+    log "mode is locked"
+    print_required_files
+    print_unlock_instructions
+    exit 0
+    ;;
+  init|normal)
+    missing_files=()
+    collect_missing_files missing_files
+    if ((${#missing_files[@]} > 0)); then
+      echo "locked" > "$MODE_FILE"
+      log "missing required files, mode switched to locked"
+      for missing in "${missing_files[@]}"; do
+        echo "- $missing"
+      done
+      print_unlock_instructions
+      exit 0
+    fi
+    ;;
+  restore|restore_failed)
+    log "mode is $mode"
+    ;;
+  *)
+    log "unknown mode '$mode', forcing locked"
+    echo "locked" > "$MODE_FILE"
+    print_required_files
+    print_unlock_instructions
+    exit 0
+    ;;
+esac
 
-  # Pull or clone the config repo
-  if [[ -d "$CONFIG_REPO_DIR/.git" ]]; then
-    echo "[admin-converge] updating config repo in $CONFIG_REPO_DIR"
-    git -C "$CONFIG_REPO_DIR" fetch --prune origin
-    git -C "$CONFIG_REPO_DIR" checkout "$CONFIG_REPO_BRANCH"
-    echo "[admin-converge] resetting $CONFIG_REPO_DIR to origin/$CONFIG_REPO_BRANCH (local changes will be discarded)"
-    git -C "$CONFIG_REPO_DIR" reset --hard "origin/$CONFIG_REPO_BRANCH"
-  else
-    echo "[admin-converge] cloning config repo to $CONFIG_REPO_DIR"
-    git clone --branch "$CONFIG_REPO_BRANCH" "$CONFIG_REPO_URL" "$CONFIG_REPO_DIR"
-  fi
+ansible-playbook -i "$INVENTORY_FILE" "$PLAYBOOK_FILE"
 
-  # Pull or clone the main repo
-  if [[ -d "$REPO_DIR/.git" ]]; then
-    echo "[admin-converge] updating main repo in $REPO_DIR"
-    git -C "$REPO_DIR" fetch --prune origin
-    git -C "$REPO_DIR" checkout "$REF"
-    echo "[admin-converge] resetting $REPO_DIR to origin/$REF (local changes will be discarded)"
-    git -C "$REPO_DIR" reset --hard "origin/$REF"
-  else
-    echo "[admin-converge] cloning main repo to $REPO_DIR"
-    git clone --branch "$REF" "$ADMIN_REPO_URL" "$REPO_DIR"
-  fi
-
-  ansible-playbook \
-    -i "$REPO_DIR/ansible/inventory.ini" \
-    -i "$CONFIG_REPO_DIR/" \
-    "$REPO_DIR/ansible/site.yml"
-else
-  # --- Default mode: ansible-pull ---
-  ansible-pull \
-    -U "$ADMIN_REPO_URL" \
-    --directory "$REPO_DIR" \
-    -i localhost, \
-    -c local \
-    --checkout "$REF" \
-    ansible/site.yml
+if [[ "$mode" == "init" ]]; then
+  echo "normal" > "$MODE_FILE"
+  log "init convergence succeeded, mode switched to normal"
 fi
 
-echo "[admin-converge] completed"
+log "completed"

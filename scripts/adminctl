@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MODE_FILE=/etc/admin-config/mode
+SERVICE_NAME=admin-converge.service
+TIMER_NAME=admin-converge.timer
+CONVERGE_SCRIPT=/opt/homelab-admin-node/scripts/admin-converge.sh
+LOG_FILE=/var/log/admin-converge.log
+
+VALID_MODES=(locked init normal restore restore_failed)
+REQUIRED_FILES=(
+  /etc/sops/age/keys.txt
+  /etc/admin-config/inventory.ini
+  /etc/admin-config/group_vars/all.yml
+  /etc/admin-config/group_vars/secrets.sops.yaml
+)
+
+usage() {
+  cat <<'MSG'
+Usage:
+  adminctl status
+  adminctl mode <locked|init|normal|restore|restore_failed>
+  adminctl converge
+  adminctl logs
+MSG
+}
+
+ensure_mode_file() {
+  install -d -m 0755 /etc/admin-config
+  if [[ ! -f "$MODE_FILE" ]]; then
+    echo "locked" > "$MODE_FILE"
+  fi
+}
+
+is_valid_mode() {
+  local mode="$1"
+  local valid_mode
+  for valid_mode in "${VALID_MODES[@]}"; do
+    if [[ "$mode" == "$valid_mode" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+missing_required_files() {
+  local missing_any=1
+  local required_file
+  for required_file in "${REQUIRED_FILES[@]}"; do
+    if [[ ! -f "$required_file" ]]; then
+      echo "- $required_file"
+      missing_any=0
+    fi
+  done
+  return "$missing_any"
+}
+
+show_status() {
+  ensure_mode_file
+  echo "mode: $(tr -d '[:space:]' < "$MODE_FILE")"
+
+  if command -v systemctl >/dev/null 2>&1; then
+    echo "service: $(systemctl is-active "$SERVICE_NAME" 2>/dev/null || true)"
+    echo "timer: $(systemctl is-active "$TIMER_NAME" 2>/dev/null || true)"
+    echo "timer-enabled: $(systemctl is-enabled "$TIMER_NAME" 2>/dev/null || true)"
+  else
+    echo "service: systemctl unavailable"
+    echo "timer: systemctl unavailable"
+    echo "timer-enabled: systemctl unavailable"
+  fi
+
+  echo "missing files:"
+  if missing_required_files; then
+    echo "- none"
+  fi
+}
+
+set_mode() {
+  local mode="$1"
+  if ! is_valid_mode "$mode"; then
+    echo "Invalid mode: $mode" >&2
+    usage
+    exit 1
+  fi
+
+  ensure_mode_file
+  echo "$mode" > "$MODE_FILE"
+  echo "mode set to $mode"
+}
+
+run_converge() {
+  if command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl start "$SERVICE_NAME"
+  else
+    exec "$CONVERGE_SCRIPT"
+  fi
+}
+
+show_logs() {
+  if command -v journalctl >/dev/null 2>&1; then
+    journalctl -u "$SERVICE_NAME" -n 200 --no-pager || true
+  fi
+
+  if [[ -f "$LOG_FILE" ]]; then
+    echo "--- $LOG_FILE ---"
+    tail -n 200 "$LOG_FILE"
+  fi
+}
+
+if [[ $# -lt 1 ]]; then
+  usage
+  exit 1
+fi
+
+command="$1"
+shift
+
+case "$command" in
+  status)
+    show_status
+    ;;
+  mode)
+    if [[ $# -ne 1 ]]; then
+      usage
+      exit 1
+    fi
+    set_mode "$1"
+    ;;
+  converge)
+    if [[ $# -ne 0 ]]; then
+      usage
+      exit 1
+    fi
+    run_converge
+    ;;
+  logs)
+    if [[ $# -ne 0 ]]; then
+      usage
+      exit 1
+    fi
+    show_logs
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
