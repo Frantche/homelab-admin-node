@@ -35,8 +35,6 @@
     - admin-stacks.target
     - admin-backup.service
     - admin-backup.timer
-    - admin-converge.service
-    - admin-converge.timer
     - admin-unlock.path
   notify: systemd daemon-reload
 
@@ -49,12 +47,6 @@
 - name: Enable admin-backup.timer
   ansible.builtin.systemd:
     name: admin-backup.timer
-    enabled: true
-    state: started
-
-- name: Enable admin-converge.timer
-  ansible.builtin.systemd:
-    name: admin-converge.timer
     enabled: true
     state: started
 

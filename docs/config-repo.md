@@ -164,27 +164,36 @@ git push -u origin main
 
 ## Utilisation avec admin-converge.sh
 
-Définissez les variables d'environnement avant de lancer la convergence :
+Le script `admin-converge.sh` ne fait plus de `git clone/pull`.  
+La mise à jour des dépôts se fait explicitement via la CLI `git`.
+
+### 1. Mettre à jour les dépôts via git CLI
 
 ```bash
-export ADMIN_REPO_URL="ssh://git@github.com/Frantche/homelab-admin-node.git"
-export CONFIG_REPO_URL="ssh://git@github.com/<username>/homelab-admin-node-config.git"
-# optionnel :
-export CONFIG_REPO_BRANCH="main"   # défaut : main
-export CONFIG_REPO_DIR="/etc/admin-config"  # défaut : /etc/admin-config
-
-sudo -E ./scripts/admin-converge.sh
+git -C /opt/homelab-admin-node pull --ff-only
+git -C /etc/admin-config pull --ff-only
 ```
 
-Quand `CONFIG_REPO_URL` est défini, `admin-converge.sh` :
+### 2. Déposer l'inventaire Ansible utilisateur
 
-1. Clone / met à jour le config repo dans `CONFIG_REPO_DIR`
-2. Clone / met à jour `homelab-admin-node` dans `/opt/homelab-admin-node`
-3. Lance `ansible-playbook` avec les deux sources d'inventaire :
-   - `/opt/homelab-admin-node/ansible/inventory.ini` (infrastructure)
-   - `CONFIG_REPO_DIR/` (variables & secrets de votre déploiement)
+Par défaut, `admin-converge.sh` lit l'inventaire depuis `/etc/admin-config/hosts`.  
+Un exemple minimal est disponible dans ce dépôt: `ansible/inventory.ini`.
 
-Sans `CONFIG_REPO_URL`, le comportement original `ansible-pull` est conservé.
+```bash
+sudo install -D -m 0644 /opt/homelab-admin-node/ansible/inventory.ini /etc/admin-config/hosts
+```
+
+### 3. Lancer la convergence
+
+```bash
+sudo ./scripts/admin-converge.sh
+```
+
+`admin-converge.sh` :
+
+1. Vérifie la présence du playbook local `/opt/homelab-admin-node/ansible/site.yml`
+2. Vérifie la présence de l'inventaire utilisateur `/etc/admin-config/hosts`
+3. Exécute `ansible-playbook -i /etc/admin-config/hosts /opt/homelab-admin-node/ansible/site.yml`
 
 ## Modifier les secrets
 
