@@ -71,11 +71,7 @@ write_files:
 
 runcmd:
   - [ mkdir, -p, /etc/admin-node ]
-  - [ mkdir, -p, /root/.ssh ]
-  - [ chmod, '0700', /root/.ssh ]
-  - [ bash, -lc, 'ssh-keyscan -H github.com >> /root/.ssh/known_hosts' ]
-  - [ chmod, '0644', /root/.ssh/known_hosts ]
-  - [ bash, -lc, 'if [ ! -d /opt/homelab-admin-node/.git ]; then if ! GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=yes" git clone ssh://git@github.com/Frantche/homelab-admin-node.git /opt/homelab-admin-node; then echo "[cloud-init] initial clone failed for /opt/homelab-admin-node" >&2; exit 1; fi; fi' ]
+  - [ bash, -lc, 'REPO_URL="${REPO_URL:-https://github.com/Frantche/homelab-admin-node.git}"; if [ ! -d /opt/homelab-admin-node/.git ]; then git clone "$REPO_URL" /opt/homelab-admin-node || { echo "[cloud-init] initial clone failed for /opt/homelab-admin-node using $REPO_URL" >&2; echo "[cloud-init] verify repository access/authentication and network connectivity" >&2; exit 1; }; fi' ]
   - [ systemctl, daemon-reload ]
   - [ systemctl, enable, --now, sshd ]
   - [ systemctl, enable, --now, docker ]

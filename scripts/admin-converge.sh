@@ -27,7 +27,8 @@ fi
 echo "[admin-converge] updating git repository in $REPO_DIR"
 if ! git -C "$REPO_DIR" pull --ff-only; then
   echo "[admin-converge] git pull failed in $REPO_DIR"
-  echo "[admin-converge] check network access and ensure no local git changes block fast-forward pulls"
+  echo "[admin-converge] run: git -C $REPO_DIR status"
+  echo "[admin-converge] then resolve/stash local changes and retry"
   exit 1
 fi
 
