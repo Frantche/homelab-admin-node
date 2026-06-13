@@ -12,6 +12,13 @@ services:
     volumes:
       - ./openbao.hcl:/etc/openbao/openbao.hcl:ro
       - /srv/admin/data/openbao:/openbao/file
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=admin-net"
+      - "traefik.http.routers.openbao.rule=Host(`{{ service_domains.openbao }}`)"
+      - "traefik.http.routers.openbao.entrypoints=websecure"
+      - "traefik.http.routers.openbao.tls=true"
+      - "traefik.http.services.openbao.loadbalancer.server.port=8200"
     networks:
       - admin-net
 

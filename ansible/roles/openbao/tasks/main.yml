@@ -11,12 +11,18 @@
     dest: "{{ admin_node_root }}/stacks/openbao/"
     mode: preserve
 
+- name: Render openbao compose
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../stacks/openbao/compose.yaml"
+    dest: "{{ admin_node_root }}/stacks/openbao/compose.yaml"
+    mode: "0644"
+
 - name: Render openbao env
   ansible.builtin.copy:
     dest: "{{ admin_node_root }}/env/openbao.env"
     mode: "0600"
     content: |
-      OPENBAO_ADDR=https://bao.example.com
+      OPENBAO_ADDR=https://{{ service_domains.openbao }}
   no_log: true
 
 - name: Start openbao stack

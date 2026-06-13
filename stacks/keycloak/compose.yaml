@@ -39,6 +39,13 @@ services:
       - "127.0.0.1:9000:9000"
     depends_on:
       - keycloak-db
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=admin-net"
+      - "traefik.http.routers.keycloak.rule=Host(`{{ service_domains.keycloak }}`)"
+      - "traefik.http.routers.keycloak.entrypoints=websecure"
+      - "traefik.http.routers.keycloak.tls=true"
+      - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
     networks:
       - admin-net
 

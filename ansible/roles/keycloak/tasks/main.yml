@@ -11,6 +11,12 @@
     dest: "{{ admin_node_root }}/stacks/keycloak/"
     mode: preserve
 
+- name: Render keycloak compose
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../stacks/keycloak/compose.yaml"
+    dest: "{{ admin_node_root }}/stacks/keycloak/compose.yaml"
+    mode: "0644"
+
 - name: Render keycloak env
   ansible.builtin.copy:
     dest: "{{ admin_node_root }}/env/keycloak.env"
