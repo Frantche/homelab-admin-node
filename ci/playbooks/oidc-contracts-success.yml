@@ -63,17 +63,19 @@
 
     - name: Capture Harbor Keycloak client
       ansible.builtin.set_fact:
-        harbor_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', oidc_clients.harbor.client_id) | list | first }}"
+        harbor_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', oidc_clients.harbor.client_id) | list | first | default({}) }}"
 
     - name: Capture Harbor groups mapper
       ansible.builtin.set_fact:
-        harbor_groups_mapper: "{{ harbor_keycloak_client.protocol_mappers | selectattr('name', 'equalto', 'groups') | list | first }}"
+        harbor_groups_mapper: "{{ harbor_keycloak_client.protocol_mappers | default([]) | selectattr('name', 'equalto', 'groups') | list | first | default({}) }}"
 
     - name: Assert non-CI OIDC contracts
       ansible.builtin.assert:
         that:
           - harbor_runtime.db_password == 'prod-harbor-db'
           - harbor_api_validate_certs | bool
+          - harbor_keycloak_client | length > 0
+          - harbor_groups_mapper | length > 0
           - harbor_oidc_configuration_payload.oidc_client_id == oidc_clients.harbor.client_id
           - harbor_oidc_configuration_payload.oidc_client_secret == oidc_clients.harbor.client_secret
           - harbor_keycloak_client.secret == oidc_clients.harbor.client_secret

@@ -107,7 +107,7 @@
       - harbor_current_auth_mode in ['db_auth', 'oidc_auth']
     fail_msg: "Harbor OIDC configuration only supports existing auth_mode values db_auth or oidc_auth. Current value: {{ harbor_current_auth_mode | default('unknown') }}."
   vars:
-    harbor_current_auth_mode: "{{ harbor_current_configuration.json.auth_mode | default('') }}"
+    harbor_current_auth_mode: "{{ harbor_current_configuration.json.auth_mode | default('unknown') }}"
   when:
     - harbor_config.oidc.enabled | default(false)
     - not (harbor_config_test_mode | default(false))
@@ -135,14 +135,16 @@
   loop: "{{ harbor_users_response.json | default([]) }}"
   loop_control:
     label: "{{ item.username | default('unknown') }}"
+  vars:
+    harbor_user_source: "{{ item.source | default('local') | string | lower }}"
+    harbor_user_is_local: "{{ (harbor_user_source in ['0', 'local', 'db_auth']) or ((item.source is not defined) and ((item.oidc_user_meta | default(none)) is none)) }}"
   when:
     - harbor_config.oidc.enabled | default(false)
     - not (harbor_config_test_mode | default(false))
     - harbor_current_configuration.json.auth_mode | default('') == 'db_auth'
     - not (item.sysadmin_flag | default(false))
     - item.username | default('') != 'admin'
-    - (item.source | default('local') | string | lower) in ['0', 'local', 'db_auth']
-      or ((item.source is not defined) and ((item.oidc_user_meta | default(none)) is none))
+    - harbor_user_is_local
   no_log: true
 
 - name: Refuse Harbor OIDC migration when local non-admin users exist
