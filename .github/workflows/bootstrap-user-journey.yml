@@ -1,0 +1,326 @@
+name: bootstrap-user-journey
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    env:
+      VM_NAME: bootstrap-ci
+      SSH_PORT: "2222"
+      CI_MOCK_PIHOLE: "true"
+      CI_MOCK_CLOUDFLARE_TUNNEL: "true"
+      CI_SKIP_PUBLIC_URL_VALIDATION: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            qemu-system-x86 \
+            qemu-utils \
+            cloud-image-utils \
+            openssh-client \
+            sshpass \
+            curl \
+            jq \
+            python3-yaml
+
+      - name: Enable KVM permissions when available
+        run: |
+          if [ -e /dev/kvm ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+            sudo udevadm control --reload-rules
+            if ! sudo udevadm trigger --name-match=kvm; then
+              echo "Warning: udev trigger for /dev/kvm failed; continuing"
+            fi
+            ls -l /dev/kvm
+          else
+            echo "KVM not available, QEMU will run without hardware acceleration"
+          fi
+
+      - name: Download Arch cloud image
+        run: |
+          mkdir -p .ci/vm
+          curl -L \
+            -o .ci/vm/arch.qcow2 \
+            https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2
+          qemu-img resize .ci/vm/arch.qcow2 20G
+
+      - name: Generate SSH key
+        run: |
+          mkdir -p .ci/ssh
+          ssh-keygen -t ed25519 -N "" -f .ci/ssh/id_ed25519
+          chmod 600 .ci/ssh/id_ed25519
+
+      - name: Prepare cloud-init with repository URL and branch
+        env:
+          REPO_URL: "https://github.com/${{ github.repository }}.git"
+          REPO_BRANCH: "${{ github.head_ref || github.ref_name }}"
+        run: |
+          # Inject SSH key, REPO_URL, and REPO_BRANCH into the real cloud-init template.
+          # The repository is NOT copied into the VM; cloud-init will git clone it.
+          python3 - <<'PYEOF'
+          import yaml
+          import os
+
+          PUBKEY = open('.ci/ssh/id_ed25519.pub').read().strip()
+          REPO_URL = os.environ['REPO_URL']
+          REPO_BRANCH = os.environ['REPO_BRANCH']
+
+          with open('cloud-init/admin-01.user-data.yaml') as f:
+              data = yaml.safe_load(f)
+
+          # Replace the SSH key placeholder with the generated public key
+          for user in data.get('users', []):
+              keys = user.get('ssh_authorized_keys', [])
+              user['ssh_authorized_keys'] = [
+                  PUBKEY if k == 'ssh-ed25519 AAAA_PLACEHOLDER_REPLACE_ME admin@example' else k
+                  for k in keys
+              ]
+
+          # Inject REPO_URL and REPO_BRANCH into the git clone runcmd
+          new_runcmd = []
+          for cmd in data.get('runcmd', []):
+              if isinstance(cmd, list) and len(cmd) >= 3 and cmd[0] == 'bash' and 'REPO_URL' in cmd[-1]:
+                  script = cmd[-1]
+                  script = script.replace(
+                      'https://github.com/Frantche/homelab-admin-node.git',
+                      REPO_URL
+                  )
+                  script = script.replace(
+                      'git clone "$REPO_URL"',
+                      f'git clone --branch {REPO_BRANCH} "$REPO_URL"'
+                  )
+                  new_runcmd.append(cmd[:-1] + [script])
+              else:
+                  new_runcmd.append(cmd)
+
+          data['runcmd'] = new_runcmd
+
+          with open('.ci/vm/user-data', 'w') as f:
+              f.write('#cloud-config\n')
+              yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+          PYEOF
+
+          cat > .ci/vm/meta-data <<METADATA
+          instance-id: ${VM_NAME}
+          local-hostname: ${VM_NAME}
+          METADATA
+
+          cloud-localds .ci/vm/seed.img .ci/vm/user-data .ci/vm/meta-data
+
+      - name: Start Arch VM
+        run: |
+          KVM_FLAG=""
+          CPU_TYPE="qemu64"
+          if [ -e /dev/kvm ]; then
+            KVM_FLAG="-enable-kvm"
+            CPU_TYPE="host"
+          fi
+
+          qemu-system-x86_64 \
+            ${KVM_FLAG} \
+            -m 4096 \
+            -smp 2 \
+            -cpu ${CPU_TYPE} \
+            -nographic \
+            -drive file=.ci/vm/arch.qcow2,format=qcow2,if=virtio \
+            -drive file=.ci/vm/seed.img,format=raw,if=virtio \
+            -netdev user,id=net0,hostfwd=tcp::${SSH_PORT}-:22 \
+            -device virtio-net-pci,netdev=net0 \
+            -serial mon:stdio \
+            &> .ci/vm/qemu.log &
+
+          echo $! > .ci/vm/qemu.pid
+          echo "QEMU started with PID $(cat .ci/vm/qemu.pid) (KVM: ${KVM_FLAG:-disabled})"
+
+      - name: Wait for VM SSH to be ready
+        timeout-minutes: 15
+        run: |
+          echo "Waiting for SSH on port ${SSH_PORT}..."
+          for i in $(seq 1 180); do
+            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+                   -o UserKnownHostsFile=/dev/null \
+                   -i .ci/ssh/id_ed25519 \
+                   -p ${SSH_PORT} admin@127.0.0.1 "echo ready" 2>/dev/null; then
+              echo "VM SSH is ready after ${i} attempts"
+              break
+            fi
+            if [[ $i -eq 180 ]]; then
+              echo "ERROR: VM did not become ready within 900s"
+              tail -50 .ci/vm/qemu.log
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Wait for cloud-init to complete
+        timeout-minutes: 30
+        run: |
+          # Cannot use `cloud-init status --wait` because cloud-init reinstalls Python
+          # during package installation, breaking the CLI. Poll for boot-finished instead.
+          echo "Waiting for cloud-init to finish (repo clone + package install)..."
+          for j in $(seq 1 360); do
+            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+                   -o UserKnownHostsFile=/dev/null \
+                   -i .ci/ssh/id_ed25519 \
+                   -p ${SSH_PORT} admin@127.0.0.1 \
+                   "test -f /var/lib/cloud/instance/boot-finished" 2>/dev/null; then
+              echo "Cloud-init completed after ${j} polling attempts"
+              break
+            fi
+            if [[ $j -eq 360 ]]; then
+              echo "ERROR: cloud-init did not complete within 1800s"
+              ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                  -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
+                  "cat /var/log/cloud-init-output.log" 2>/dev/null | tail -50
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Verify repository cloned in /opt/homelab-admin-node
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
+              "test -d /opt/homelab-admin-node/.git && \
+               test -f /opt/homelab-admin-node/scripts/admin-converge.sh && \
+               test -f /opt/homelab-admin-node/scripts/adminctl"
+          echo "Repository successfully cloned at /opt/homelab-admin-node"
+
+      - name: Verify VM is in locked mode
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
+              "grep -q locked /etc/admin-node/mode"
+          echo "VM is in locked mode as expected"
+
+      - name: Copy mock user config to /etc/admin-config
+        run: |
+          # Copy only the inventory hosts file (user configuration, no secrets)
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
+              "sudo mkdir -p /etc/admin-config/group_vars"
+
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
+              ci/mock-config-repo/hosts admin@127.0.0.1:/tmp/ci-hosts
+
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
+              "sudo cp /tmp/ci-hosts /etc/admin-config/hosts"
+          echo "Mock user config installed at /etc/admin-config/hosts"
+
+      - name: Generate CI secrets and add to /etc/admin-config
+        run: |
+          # Generate the CI secrets file with mock credentials (unencrypted for CI use).
+          # In production this would be a SOPS-encrypted secrets file from a private config repo.
+          cat > /tmp/ci-secrets.yml <<'SECRETS'
+          # Generated CI secrets — unencrypted mock values for testing only
+          ci_mode: true
+
+          admin:
+            traefik_dashboard_basic_auth: "admin:$$apr1$$ci$$fakehash"
+
+          cloudflare:
+            tunnel_id: "fake-tunnel-id"
+            tunnel_token: "eyJhIjoiZmFrZSIsInQiOiJmYWtlIiwicyI6ImZha2UifQ=="
+            account_id: "fake-account-id"
+            dns_api_token: "fake-dns-token"
+            credentials_json: "{}"
+
+          keycloak:
+            db_password: "ci-keycloak-db-pass"
+            admin_user: "admin"
+            admin_password: "ci-keycloak-admin-pass"
+
+          harbor:
+            admin_password: "ci-Harbor-admin-p4ss"
+            db_password: "ci-harbor-db-pass"
+            core_secret: "ci-harbor-core-secret"
+            jobservice_secret: "ci-harbor-job-secret"
+            registry_password: "ci-harbor-registry"
+
+          openbao:
+            root_token: ""
+
+          backup:
+            restic_repository: "/srv/admin/backups/restic"
+            restic_password: "ci-restic-pass"
+          SECRETS
+
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
+              /tmp/ci-secrets.yml admin@127.0.0.1:/tmp/ci-secrets.yml
+
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
+              "sudo cp /tmp/ci-secrets.yml /etc/admin-config/group_vars/all.yml"
+          echo "CI secrets installed at /etc/admin-config/group_vars/all.yml"
+
+      - name: Run bootstrap user journey in VM
+        timeout-minutes: 45
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
+              "sudo CI_MOCK_PIHOLE=${CI_MOCK_PIHOLE} \
+                    CI_MOCK_CLOUDFLARE_TUNNEL=${CI_MOCK_CLOUDFLARE_TUNNEL} \
+                    CI_SKIP_PUBLIC_URL_VALIDATION=${CI_SKIP_PUBLIC_URL_VALIDATION} \
+                    SKIP_PUBLIC_URL_VALIDATION=true \
+                    /opt/homelab-admin-node/ci/scenarios/bootstrap-user-journey.sh"
+
+      - name: Show VM logs on failure
+        if: failure()
+        run: |
+          echo "=== QEMU log (last 50 lines) ==="
+          if [ -f .ci/vm/qemu.log ]; then
+            tail -50 .ci/vm/qemu.log
+          else
+            echo "QEMU log not found"
+          fi
+          echo ""
+          echo "=== Cloud-init output log (last 80 lines) ==="
+          if ! ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
+              "cat /var/log/cloud-init-output.log" 2>/dev/null | tail -80; then
+            echo "Unable to fetch cloud-init log"
+          fi
+          echo ""
+          echo "=== Docker containers in VM ==="
+          if ! ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
+              "sudo docker ps -a" 2>/dev/null; then
+            echo "Unable to fetch container list from VM"
+          fi
+          echo ""
+          echo "=== Docker logs ==="
+          if ! ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
+              "for c in traefik keycloak keycloak-db openbao harbor-core; do echo \"--- \$c ---\"; sudo docker logs \$c 2>&1 | tail -20; done" 2>/dev/null; then
+            echo "Unable to fetch container logs from VM"
+          fi
+
+      - name: Stop VM
+        if: always()
+        run: |
+          if [ -f .ci/vm/qemu.pid ]; then
+            if ! kill "$(cat .ci/vm/qemu.pid)" 2>/dev/null; then
+              echo "QEMU process already stopped"
+            fi
+          fi
