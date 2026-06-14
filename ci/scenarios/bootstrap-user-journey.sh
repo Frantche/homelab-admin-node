@@ -70,7 +70,7 @@ if [[ "$BACKUP_COUNT" -lt 1 ]]; then
 fi
 
 echo "=== Running restore ==="
-"$REPO_ROOT/scripts/set-mode.sh" restore
+"$REPO_ROOT/scripts/adminctl" set-mode restore
 assert_contains /etc/admin-node/mode "restore"
 
 "$REPO_ROOT/scripts/restore.sh"
