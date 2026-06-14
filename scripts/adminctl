@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  cat >&2 <<EOF
+Usage: $(basename "$0") <command> [args]
+Commands:
+  set-mode <mode>  Set admin node mode (locked|init|normal|restore|restore_failed)
+  converge         Pull latest code and run ansible convergence
+EOF
+  exit 1
+}
+
+if [[ $# -lt 1 ]]; then
+  usage
+fi
+
+cmd="$1"
+shift
+
+case "$cmd" in
+  set-mode)
+    exec "$SCRIPT_DIR/set-mode.sh" "$@"
+    ;;
+  converge)
+    exec "$SCRIPT_DIR/admin-converge.sh" "$@"
+    ;;
+  *)
+    echo "$(basename "$0"): unknown command: $cmd" >&2
+    usage
+    ;;
+esac
