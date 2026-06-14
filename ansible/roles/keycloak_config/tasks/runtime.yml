@@ -1,0 +1,71 @@
+---
+- name: Wait for Keycloak readiness
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/health/ready"
+    method: GET
+    status_code: 200
+  register: keycloak_ready
+  until: keycloak_ready.status == 200
+  retries: 30
+  delay: 5
+
+- name: Ensure realm exists
+  community.general.keycloak_realm:
+    auth_keycloak_url: "{{ keycloak_config_url }}"
+    auth_realm: master
+    auth_username: "{{ keycloak.admin_user | default('admin') }}"
+    auth_password: "{{ keycloak.admin_password | mandatory('keycloak.admin_password is required for keycloak_config role') }}"
+    id: "{{ keycloak_realm_cfg.name }}"
+    realm: "{{ keycloak_realm_cfg.name }}"
+    display_name: "{{ keycloak_realm_cfg.display_name | default(keycloak_realm_cfg.name) }}"
+    enabled: true
+    ssl_required: "{{ keycloak_realm_cfg.ssl_required | default('external') }}"
+    state: present
+  no_log: true
+
+- name: Ensure realm roles exist
+  community.general.keycloak_role:
+    auth_keycloak_url: "{{ keycloak_config_url }}"
+    auth_realm: master
+    auth_username: "{{ keycloak.admin_user | default('admin') }}"
+    auth_password: "{{ keycloak.admin_password | mandatory('keycloak.admin_password is required for keycloak_config role') }}"
+    realm: "{{ keycloak_realm_cfg.name }}"
+    name: "{{ item }}"
+    state: present
+  loop: "{{ keycloak_config.realm_roles | default([]) }}"
+  no_log: true
+
+- name: Ensure configured clients exist
+  community.general.keycloak_client:
+    auth_keycloak_url: "{{ keycloak_config_url }}"
+    auth_realm: master
+    auth_username: "{{ keycloak.admin_user | default('admin') }}"
+    auth_password: "{{ keycloak.admin_password | mandatory('keycloak.admin_password is required for keycloak_config role') }}"
+    realm: "{{ keycloak_realm_cfg.name }}"
+    client_id: "{{ keycloak_client_item.client_id }}"
+    name: "{{ keycloak_client_item.name | default(keycloak_client_item.client_id) }}"
+    enabled: "{{ keycloak_client_item.enabled | default(true) }}"
+    public_client: "{{ keycloak_client_item.public | default(false) }}"
+    client_authenticator_type: "{{ keycloak_client_item.client_authenticator_type | default(omit) }}"
+    standard_flow_enabled: "{{ keycloak_client_item.standard_flow_enabled | default(true) }}"
+    direct_access_grants_enabled: "{{ keycloak_client_item.direct_access_grants_enabled | default(false) }}"
+    service_accounts_enabled: "{{ keycloak_client_item.service_accounts_enabled | default(false) }}"
+    redirect_uris: "{{ keycloak_client_item.redirect_uris | default([]) }}"
+    web_origins: "{{ keycloak_client_item.web_origins | default([]) }}"
+    root_url: "{{ keycloak_client_item.root_url | default(omit) }}"
+    base_url: "{{ keycloak_client_item.base_url | default(omit) }}"
+    protocol_mappers: "{{ keycloak_client_item.protocol_mappers | default(omit) }}"
+    secret: "{{ keycloak_client_item.secret | default(omit) }}"
+    state: present
+  loop: "{{ keycloak_effective_clients }}"
+  loop_control:
+    loop_var: keycloak_client_item
+    label: "{{ keycloak_client_item.client_id }}"
+  no_log: true
+
+- name: Ensure configured users exist and are updated
+  ansible.builtin.include_tasks: user.yml
+  loop: "{{ keycloak_config.users | default([]) }}"
+  loop_control:
+    loop_var: keycloak_user_item
+    label: "{{ keycloak_user_item.username }}"

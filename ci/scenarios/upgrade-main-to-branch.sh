@@ -24,8 +24,7 @@ assert_contains /etc/admin-node/mode "init"
 # --- Deploy via Ansible playbook with config repo (init mode) ---
 echo "=== Running Ansible playbook (init mode) ==="
 ansible-playbook \
-  -i "$REPO_ROOT/ansible/inventory.ini" \
-  -i /etc/admin-config/ \
+  -i /etc/admin-config/hosts \
   "$REPO_ROOT/ansible/site.yml"
 
 # --- Initialize and unseal OpenBao ---
@@ -50,8 +49,7 @@ assert_file_exists /etc/admin-node/git-ref
 # --- Re-run Ansible playbook after upgrade ---
 echo "=== Running Ansible playbook after branch upgrade ==="
 ansible-playbook \
-  -i "$REPO_ROOT/ansible/inventory.ini" \
-  -i /etc/admin-config/ \
+  -i /etc/admin-config/hosts \
   "$REPO_ROOT/ansible/site.yml" \
   --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}}"
 

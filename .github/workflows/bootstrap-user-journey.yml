@@ -23,6 +23,7 @@ jobs:
       - name: Install Ansible
         run: |
           python3 -m pip install --user ansible-core
+          ~/.local/bin/ansible-galaxy collection install -r ansible/requirements.yml
 
       - name: Run OIDC contract tests
         run: |
