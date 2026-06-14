@@ -14,7 +14,7 @@
     auth_keycloak_url: "{{ keycloak_config_url }}"
     auth_realm: master
     auth_username: "{{ keycloak.admin_user | default('admin') }}"
-    auth_password: "{{ keycloak.admin_password | mandatory('keycloak.admin_password is required for keycloak_config role') }}"
+    auth_password: "{{ keycloak.admin_password | mandatory }}"
     id: "{{ keycloak_realm_cfg.name }}"
     realm: "{{ keycloak_realm_cfg.name }}"
     display_name: "{{ keycloak_realm_cfg.display_name | default(keycloak_realm_cfg.name) }}"
@@ -28,7 +28,7 @@
     auth_keycloak_url: "{{ keycloak_config_url }}"
     auth_realm: master
     auth_username: "{{ keycloak.admin_user | default('admin') }}"
-    auth_password: "{{ keycloak.admin_password | mandatory('keycloak.admin_password is required for keycloak_config role') }}"
+    auth_password: "{{ keycloak.admin_password | mandatory }}"
     realm: "{{ keycloak_realm_cfg.name }}"
     name: "{{ item }}"
     state: present
@@ -40,7 +40,7 @@
     auth_keycloak_url: "{{ keycloak_config_url }}"
     auth_realm: master
     auth_username: "{{ keycloak.admin_user | default('admin') }}"
-    auth_password: "{{ keycloak.admin_password | mandatory('keycloak.admin_password is required for keycloak_config role') }}"
+    auth_password: "{{ keycloak.admin_password | mandatory }}"
     realm: "{{ keycloak_realm_cfg.name }}"
     client_id: "{{ keycloak_client_item.client_id }}"
     name: "{{ keycloak_client_item.name | default(keycloak_client_item.client_id) }}"
