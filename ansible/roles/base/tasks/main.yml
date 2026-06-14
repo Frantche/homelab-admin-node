@@ -33,10 +33,10 @@
   loop:
     - admin-stack@.service
     - admin-stacks.target
-    - admin-backup.service
-    - admin-backup.timer
     - admin-converge.service
     - admin-converge.timer
+    - admin-backup.service
+    - admin-backup.timer
     - admin-unlock.path
   notify: systemd daemon-reload
 

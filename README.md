@@ -1,6 +1,6 @@
 # homelab-admin-node
 
-Repository complet pour construire et opérer un nœud d'administration homelab (Arch Linux + cloud-init + Ansible Pull + Docker Compose).
+Repository complet pour construire et opérer un nœud d'administration homelab (Arch Linux + cloud-init + Ansible + Docker Compose).
 
 ## 1. Objectif du projet
 Ce dépôt reconstruit une VM `admin-01` indépendante de Talos/Kubernetes pour gérer Traefik, Keycloak, OpenBao, Harbor, Cloudflare Tunnel, backups et restauration.
@@ -9,18 +9,20 @@ Ce dépôt reconstruit une VM `admin-01` indépendante de Talos/Kubernetes pour 
 LAN -> Pi-hole -> admin-01 -> Traefik -> Keycloak/OpenBao/Harbor/dashboard.
 Internet -> Cloudflare -> cloudflared -> Traefik -> mêmes services.
 
-## 3. Pourquoi cloud-init est volontairement incomplet
-Le cloud-init prépare uniquement la base système et lance une convergence. Les secrets restent absents pour garantir le mode `locked` par défaut.
+## 3. Rôle du cloud-init
+Le cloud-init prépare la base système et configure entièrement le service `admin-converge` (script + unités systemd + timer). Les secrets restent absents pour garantir le mode `locked` par défaut.
 
 ## 4. Principe du secret zéro
 Le secret zéro est la clé privée age installée manuellement dans `/etc/sops/age/keys.txt` (0400 root:root).
 
 ## 5. Première installation
 1. Provisionner la VM avec `cloud-init/admin-01.user-data.yaml`.
-2. Vérifier `/etc/admin-node/mode` = `locked`.
-3. Injecter la clé age via `scripts/unlock.sh`.
-4. Passer en mode `init` via `scripts/set-mode.sh init`.
-5. Lancer `scripts/admin-converge.sh`.
+2. Le premier clone de ce dépôt dans `/opt/homelab-admin-node` est réalisé automatiquement par le cloud-init.
+3. Déposer votre inventaire Ansible (exemple : `ansible/inventory.ini`) dans `/etc/admin-config/hosts`.
+4. Vérifier `/etc/admin-node/mode` = `locked`.
+5. Injecter la clé age via `scripts/unlock.sh`.
+6. Passer en mode `init` via `scripts/set-mode.sh init`.
+7. Lancer `scripts/admin-converge.sh`.
 
 ## 6. Injection manuelle de la clé age
 Utiliser `sudo ./scripts/unlock.sh /path/to/age-key.txt`.
@@ -83,9 +85,9 @@ Gérez votre configuration et vos secrets dans un dépôt Git **privé** sépar�
 Voir `docs/config-repo.md` pour la structure, la mise en place et l'utilisation avec `admin-converge.sh`.
 
 ```bash
-export ADMIN_REPO_URL="ssh://git@github.com/Frantche/homelab-admin-node.git"
-export CONFIG_REPO_URL="ssh://git@github.com/<username>/homelab-admin-node-config.git"
-sudo -E ./scripts/admin-converge.sh
+# inventaire utilisateur (exemple fourni dans ansible/inventory.ini)
+sudo install -D -m 0644 /opt/homelab-admin-node/ansible/inventory.ini /etc/admin-config/hosts
+sudo ./scripts/admin-converge.sh
 ```
 
 ## Commandes
