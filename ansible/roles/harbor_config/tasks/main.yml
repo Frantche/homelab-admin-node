@@ -2,6 +2,9 @@
 - name: Build Harbor API TLS validation fact
   ansible.builtin.set_fact:
     harbor_api_validate_certs: "{{ harbor_config.validate_certs | default(not (ci_mode | default(false))) }}"
+    harbor_allowed_auth_modes:
+      - "db_auth"
+      - "oidc_auth"
 
 - name: Build Harbor OIDC facts
   ansible.builtin.set_fact:
@@ -104,8 +107,8 @@
 - name: Fail when Harbor auth mode cannot be safely migrated to OIDC
   ansible.builtin.assert:
     that:
-      - harbor_current_auth_mode in ['db_auth', 'oidc_auth']
-    fail_msg: "Harbor OIDC configuration only supports existing auth_mode values db_auth or oidc_auth. Current value: {{ harbor_current_auth_mode | default('unknown') }}."
+      - harbor_current_auth_mode in harbor_allowed_auth_modes
+    fail_msg: "Harbor OIDC configuration only supports existing auth_mode values {{ harbor_allowed_auth_modes | join(', ') }}. Current value: {{ harbor_current_auth_mode | default('unknown') }}."
   vars:
     harbor_current_auth_mode: "{{ harbor_current_configuration.json.auth_mode | default('unknown') }}"
   when:

@@ -78,8 +78,19 @@
             }
           ]
         }
-        | combine((keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_harbor_client_id) | list | first) | default({}), recursive=True)
-        | combine({'client_id': keycloak_harbor_client_id, 'secret': keycloak_harbor_client_secret}, recursive=True)
+        | combine(
+            (
+              (
+                (keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_harbor_client_id) | list | first)
+                | default({})
+              )
+              | dict2items
+              | rejectattr('key', 'equalto', 'client_id')
+              | rejectattr('key', 'equalto', 'secret')
+              | items2dict
+            ),
+            recursive=True
+          )
       }}
   when: keycloak_manage_harbor_oidc_client
   no_log: true
@@ -99,8 +110,19 @@
           'service_accounts_enabled': false,
           'secret': keycloak_openbao_client_secret
         }
-        | combine((keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_openbao_client_id) | list | first) | default({}), recursive=True)
-        | combine({'client_id': keycloak_openbao_client_id, 'secret': keycloak_openbao_client_secret}, recursive=True)
+        | combine(
+            (
+              (
+                (keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_openbao_client_id) | list | first)
+                | default({})
+              )
+              | dict2items
+              | rejectattr('key', 'equalto', 'client_id')
+              | rejectattr('key', 'equalto', 'secret')
+              | items2dict
+            ),
+            recursive=True
+          )
       }}
   when: keycloak_manage_openbao_oidc_client
   no_log: true

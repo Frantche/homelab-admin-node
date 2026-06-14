@@ -49,7 +49,7 @@
 
     - name: Capture Harbor CI Keycloak client
       ansible.builtin.set_fact:
-        harbor_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', 'harbor') | list | first | default({}) }}"
+        harbor_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', (oidc_clients.harbor.client_id | default('harbor'))) | list | first | default({}) }}"
 
     - name: Assert CI mock contracts
       ansible.builtin.assert:
@@ -58,7 +58,7 @@
           - harbor_runtime.core_secret == 'ci-harbor-core-secret'
           - harbor_api_validate_certs == false
           - harbor_keycloak_client | length > 0
-          - harbor_oidc_configuration_payload.oidc_client_id == 'harbor'
+          - harbor_oidc_configuration_payload.oidc_client_id == (oidc_clients.harbor.client_id | default('harbor'))
           - harbor_oidc_configuration_payload.oidc_client_secret == 'ci-oidc-harbor-client-secret'
           - harbor_oidc_configuration_payload.oidc_verify_cert == false
           - harbor_keycloak_client.secret == 'ci-oidc-harbor-client-secret'
