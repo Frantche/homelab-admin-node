@@ -1,4 +1,117 @@
 ---
+- name: Set Keycloak connection facts
+  ansible.builtin.set_fact:
+    keycloak_realm_cfg: "{{ keycloak_config.realm }}"
+    keycloak_manage_harbor_oidc_client: "{{ (harbor_config.enabled | default(false)) and (harbor_config.oidc.enabled | default(false)) }}"
+    keycloak_manage_openbao_oidc_client: "{{ (openbao_config.enabled | default(false)) and (openbao_config.oidc.enabled | default(false)) }}"
+
+- name: Build Keycloak-managed OIDC client facts
+  ansible.builtin.set_fact:
+    keycloak_harbor_client_id: "{{ oidc_clients.harbor.client_id | default('harbor', true) if (ci_mode | default(false)) else (oidc_clients.harbor.client_id | default('', true)) }}"
+    keycloak_harbor_client_secret: "{{ oidc_clients.harbor.client_secret | default('ci-oidc-harbor-client-secret', true) if (ci_mode | default(false)) else (oidc_clients.harbor.client_secret | default('', true)) }}"
+    keycloak_openbao_client_id: "{{ oidc_clients.openbao.client_id | default('openbao', true) if (ci_mode | default(false)) else (oidc_clients.openbao.client_id | default('', true)) }}"
+    keycloak_openbao_client_secret: "{{ oidc_clients.openbao.client_secret | default('ci-oidc-openbao-client-secret', true) if (ci_mode | default(false)) else (oidc_clients.openbao.client_secret | default('', true)) }}"
+  no_log: true
+
+- name: Validate required Harbor OIDC client settings
+  ansible.builtin.assert:
+    that:
+      - item.value | length > 0
+    fail_msg: "{{ item.path }} is required when ci_mode is false. Define it in the inventory, preferably in secrets.sops.yaml."
+  loop:
+    - { path: "oidc_clients.harbor.client_id", value: "{{ keycloak_harbor_client_id }}" }
+    - { path: "oidc_clients.harbor.client_secret", value: "{{ keycloak_harbor_client_secret }}" }
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - keycloak_manage_harbor_oidc_client
+    - not (ci_mode | default(false))
+  no_log: true
+
+- name: Validate required OpenBao OIDC client settings
+  ansible.builtin.assert:
+    that:
+      - item.value | length > 0
+    fail_msg: "{{ item.path }} is required when ci_mode is false. Define it in the inventory, preferably in secrets.sops.yaml."
+  loop:
+    - { path: "oidc_clients.openbao.client_id", value: "{{ keycloak_openbao_client_id }}" }
+    - { path: "oidc_clients.openbao.client_secret", value: "{{ keycloak_openbao_client_secret }}" }
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - keycloak_manage_openbao_oidc_client
+    - not (ci_mode | default(false))
+  no_log: true
+
+- name: Build Harbor Keycloak client definition
+  ansible.builtin.set_fact:
+    keycloak_harbor_client_definition: >-
+      {{
+        {
+          'client_id': keycloak_harbor_client_id,
+          'name': keycloak_harbor_client_id,
+          'enabled': true,
+          'public': false,
+          'client_authenticator_type': 'client-secret',
+          'standard_flow_enabled': true,
+          'direct_access_grants_enabled': false,
+          'service_accounts_enabled': false,
+          'secret': keycloak_harbor_client_secret,
+          'protocol_mappers': [
+            {
+              'name': 'groups',
+              'protocol': 'openid-connect',
+              'protocolMapper': 'oidc-group-membership-mapper',
+              'config': {
+                'claim.name': 'groups',
+                'full.path': 'false',
+                'id.token.claim': 'true',
+                'access.token.claim': 'true',
+                'userinfo.token.claim': 'true'
+              }
+            }
+          ]
+        }
+        | combine((keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_harbor_client_id) | list | first) | default({}), recursive=True)
+        | combine({'client_id': keycloak_harbor_client_id, 'secret': keycloak_harbor_client_secret}, recursive=True)
+      }}
+  when: keycloak_manage_harbor_oidc_client
+  no_log: true
+
+- name: Build OpenBao Keycloak client definition
+  ansible.builtin.set_fact:
+    keycloak_openbao_client_definition: >-
+      {{
+        {
+          'client_id': keycloak_openbao_client_id,
+          'name': keycloak_openbao_client_id,
+          'enabled': true,
+          'public': false,
+          'client_authenticator_type': 'client-secret',
+          'standard_flow_enabled': true,
+          'direct_access_grants_enabled': false,
+          'service_accounts_enabled': false,
+          'secret': keycloak_openbao_client_secret
+        }
+        | combine((keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_openbao_client_id) | list | first) | default({}), recursive=True)
+        | combine({'client_id': keycloak_openbao_client_id, 'secret': keycloak_openbao_client_secret}, recursive=True)
+      }}
+  when: keycloak_manage_openbao_oidc_client
+  no_log: true
+
+- name: Build effective Keycloak client list
+  ansible.builtin.set_fact:
+    keycloak_effective_clients: >-
+      {{
+        (keycloak_config.clients | default([]))
+        | rejectattr('client_id', 'equalto', keycloak_harbor_client_id)
+        | rejectattr('client_id', 'equalto', keycloak_openbao_client_id)
+        | list
+        + ([keycloak_harbor_client_definition] if keycloak_manage_harbor_oidc_client else [])
+        + ([keycloak_openbao_client_definition] if keycloak_manage_openbao_oidc_client else [])
+      }}
+  no_log: true
+
 - name: Wait for Keycloak readiness
   ansible.builtin.uri:
     url: "{{ keycloak_config_url }}/health/ready"
@@ -8,10 +121,7 @@
   until: keycloak_ready.status == 200
   retries: 30
   delay: 5
-
-- name: Set Keycloak connection facts
-  ansible.builtin.set_fact:
-    keycloak_realm_cfg: "{{ keycloak_config.realm }}"
+  when: not (keycloak_config_test_mode | default(false))
 
 - name: Ensure realm exists
   community.general.keycloak_realm:
@@ -25,6 +135,7 @@
     enabled: true
     ssl_required: "{{ keycloak_realm_cfg.ssl_required | default('external') }}"
     state: present
+  when: not (keycloak_config_test_mode | default(false))
   no_log: true
 
 - name: Ensure realm roles exist
@@ -37,6 +148,7 @@
     name: "{{ item }}"
     state: present
   loop: "{{ keycloak_config.realm_roles | default([]) }}"
+  when: not (keycloak_config_test_mode | default(false))
   no_log: true
 
 - name: Ensure configured clients exist
@@ -50,6 +162,7 @@
     name: "{{ keycloak_client_item.name | default(keycloak_client_item.client_id) }}"
     enabled: "{{ keycloak_client_item.enabled | default(true) }}"
     public_client: "{{ keycloak_client_item.public | default(false) }}"
+    client_authenticator_type: "{{ keycloak_client_item.client_authenticator_type | default(omit) }}"
     standard_flow_enabled: "{{ keycloak_client_item.standard_flow_enabled | default(true) }}"
     direct_access_grants_enabled: "{{ keycloak_client_item.direct_access_grants_enabled | default(false) }}"
     service_accounts_enabled: "{{ keycloak_client_item.service_accounts_enabled | default(false) }}"
@@ -57,12 +170,14 @@
     web_origins: "{{ keycloak_client_item.web_origins | default([]) }}"
     root_url: "{{ keycloak_client_item.root_url | default(omit) }}"
     base_url: "{{ keycloak_client_item.base_url | default(omit) }}"
+    protocol_mappers: "{{ keycloak_client_item.protocol_mappers | default(omit) }}"
     secret: "{{ keycloak_client_item.secret | default(omit) }}"
     state: present
-  loop: "{{ keycloak_config.clients | default([]) }}"
+  loop: "{{ keycloak_effective_clients }}"
   loop_control:
     loop_var: keycloak_client_item
     label: "{{ keycloak_client_item.client_id }}"
+  when: not (keycloak_config_test_mode | default(false))
   no_log: true
 
 - name: Ensure configured users exist and are updated
@@ -71,3 +186,4 @@
   loop_control:
     loop_var: keycloak_user_item
     label: "{{ keycloak_user_item.username }}"
+  when: not (keycloak_config_test_mode | default(false))

@@ -1,0 +1,60 @@
+# Public example only — keep real secrets in group_vars/secrets.sops.yaml
+ci_mode: false
+
+service_domains:
+  harbor: "harbor.example.com"
+  openbao: "bao.example.com"
+  keycloak: "keycloak.example.com"
+  traefik: "traefik.example.com"
+
+oidc_clients:
+  harbor:
+    client_id: "harbor"
+    client_secret: "{{ vault_oidc_harbor_client_secret }}"
+  openbao:
+    client_id: "openbao"
+    client_secret: "{{ vault_oidc_openbao_client_secret }}"
+
+keycloak_config:
+  enabled: true
+  realm:
+    name: "homelab"
+    display_name: "Homelab"
+  realm_roles:
+    - "admin"
+  clients:
+    - client_id: "harbor"
+      redirect_uris:
+        - "https://harbor.example.com/c/oidc/callback"
+      web_origins:
+        - "https://harbor.example.com"
+    - client_id: "openbao"
+      redirect_uris:
+        - "https://bao.example.com/ui/vault/auth/oidc/oidc/callback"
+
+harbor_config:
+  enabled: true
+  validate_certs: true
+  oidc:
+    enabled: true
+    endpoint: "https://keycloak.example.com/realms/homelab"
+    scope: "openid,profile,email,offline_access"
+    user_claim: "preferred_username"
+    groups_claim: "groups"
+    admin_group: "harbor-admins"
+    verify_cert: true
+
+openbao_config:
+  enabled: true
+  oidc:
+    enabled: true
+    discovery_url: "https://keycloak.example.com/realms/homelab"
+    default_role: "default"
+    role:
+      name: "default"
+      user_claim: "sub"
+      groups_claim: "groups"
+      allowed_redirect_uris:
+        - "https://bao.example.com/ui/vault/auth/oidc/oidc/callback"
+      bound_audiences:
+        - "openbao"

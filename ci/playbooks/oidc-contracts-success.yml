@@ -1,0 +1,83 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ci_mode: false
+    service_domains:
+      harbor: "harbor.example.com"
+      openbao: "bao.example.com"
+      keycloak: "keycloak.example.com"
+      traefik: "traefik.example.com"
+    harbor:
+      admin_password: "prod-harbor-admin"
+      db_password: "prod-harbor-db"
+      core_secret: "prod-harbor-core"
+      jobservice_secret: "prod-harbor-job"
+      registry_password: "prod-harbor-registry"
+    keycloak:
+      admin_password: "prod-keycloak-admin"
+    oidc_clients:
+      harbor:
+        client_id: "harbor"
+        client_secret: "prod-harbor-oidc-secret"
+    keycloak_config:
+      enabled: true
+      realm:
+        name: "homelab"
+      clients:
+        - client_id: "harbor"
+          redirect_uris:
+            - "https://harbor.example.com/c/oidc/callback"
+          web_origins:
+            - "https://harbor.example.com"
+    openbao_config:
+      enabled: false
+      oidc:
+        enabled: false
+    harbor_config:
+      enabled: true
+      validate_certs: true
+      oidc:
+        enabled: true
+        endpoint: "https://keycloak.example.com/realms/homelab"
+        admin_group: "harbor-admins"
+  tasks:
+    - name: Build Harbor secrets in test mode
+      ansible.builtin.include_role:
+        name: harbor
+      vars:
+        harbor_test_mode: true
+
+    - name: Build Keycloak client definitions in test mode
+      ansible.builtin.include_role:
+        name: keycloak_config
+      vars:
+        keycloak_config_test_mode: true
+
+    - name: Build Harbor OIDC payload in test mode
+      ansible.builtin.include_role:
+        name: harbor_config
+      vars:
+        harbor_config_test_mode: true
+
+    - name: Capture Harbor Keycloak client
+      ansible.builtin.set_fact:
+        harbor_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', oidc_clients.harbor.client_id) | list | first }}"
+
+    - name: Capture Harbor groups mapper
+      ansible.builtin.set_fact:
+        harbor_groups_mapper: "{{ harbor_keycloak_client.protocol_mappers | selectattr('name', 'equalto', 'groups') | list | first }}"
+
+    - name: Assert non-CI OIDC contracts
+      ansible.builtin.assert:
+        that:
+          - harbor_runtime.db_password == 'prod-harbor-db'
+          - harbor_api_validate_certs | bool
+          - harbor_oidc_configuration_payload.oidc_client_id == oidc_clients.harbor.client_id
+          - harbor_oidc_configuration_payload.oidc_client_secret == oidc_clients.harbor.client_secret
+          - harbor_keycloak_client.secret == oidc_clients.harbor.client_secret
+          - "'offline_access' in (harbor_oidc_configuration_payload.oidc_scope.split(',') | map('trim') | list)"
+          - harbor_groups_mapper.protocolMapper == 'oidc-group-membership-mapper'
+          - harbor_groups_mapper.config['claim.name'] == 'groups'
+          - harbor_groups_mapper.config['userinfo.token.claim'] == 'true'

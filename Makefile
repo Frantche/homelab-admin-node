@@ -27,6 +27,9 @@ validate-dns:
 validate-cloudflare-tunnel:
 	@./scripts/validate-cloudflare-tunnel.sh
 
+test-oidc-contracts:
+	@./ci/test-oidc-contracts.sh
+
 test-ci-fast:
 	@./ci/run-admin-lifecycle.sh fresh-branch
 

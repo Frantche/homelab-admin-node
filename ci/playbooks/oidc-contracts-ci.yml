@@ -1,0 +1,63 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ci_mode: true
+    service_domains:
+      harbor: "harbor.example.com"
+      openbao: "bao.example.com"
+      keycloak: "keycloak.example.com"
+      traefik: "traefik.example.com"
+    harbor: {}
+    oidc_clients: {}
+    keycloak_config:
+      enabled: true
+      realm:
+        name: "homelab"
+      clients:
+        - client_id: "harbor"
+          redirect_uris:
+            - "https://harbor.example.com/c/oidc/callback"
+    openbao_config:
+      enabled: false
+      oidc:
+        enabled: false
+    harbor_config:
+      enabled: true
+      oidc:
+        enabled: true
+        endpoint: "https://keycloak.example.com/realms/homelab"
+  tasks:
+    - name: Build Harbor secrets in CI test mode
+      ansible.builtin.include_role:
+        name: harbor
+      vars:
+        harbor_test_mode: true
+
+    - name: Build Keycloak client definitions in CI test mode
+      ansible.builtin.include_role:
+        name: keycloak_config
+      vars:
+        keycloak_config_test_mode: true
+
+    - name: Build Harbor OIDC payload in CI test mode
+      ansible.builtin.include_role:
+        name: harbor_config
+      vars:
+        harbor_config_test_mode: true
+
+    - name: Capture Harbor CI Keycloak client
+      ansible.builtin.set_fact:
+        harbor_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', 'harbor') | list | first }}"
+
+    - name: Assert CI mock contracts
+      ansible.builtin.assert:
+        that:
+          - harbor_runtime.db_password == 'ci-harbor-db-pass'
+          - harbor_runtime.core_secret == 'ci-harbor-core-secret'
+          - harbor_api_validate_certs == false
+          - harbor_oidc_configuration_payload.oidc_client_id == 'harbor'
+          - harbor_oidc_configuration_payload.oidc_client_secret == 'ci-oidc-harbor-client-secret'
+          - harbor_oidc_configuration_payload.oidc_verify_cert == false
+          - harbor_keycloak_client.secret == 'ci-oidc-harbor-client-secret'

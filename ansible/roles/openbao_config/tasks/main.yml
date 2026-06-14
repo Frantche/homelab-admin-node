@@ -4,6 +4,29 @@
     msg: "openbao_config.root_token is required when openbao_config.enabled=true"
   when: (openbao_config.root_token | default('') | length) == 0
 
+- name: Build OpenBao OIDC client facts
+  ansible.builtin.set_fact:
+    openbao_oidc_client_id: "{{ oidc_clients.openbao.client_id | default('openbao', true) if (ci_mode | default(false)) else (oidc_clients.openbao.client_id | default('', true)) }}"
+    openbao_oidc_client_secret: "{{ oidc_clients.openbao.client_secret | default('ci-oidc-openbao-client-secret', true) if (ci_mode | default(false)) else (oidc_clients.openbao.client_secret | default('', true)) }}"
+    openbao_oidc_discovery_url: "{{ openbao_config.oidc.discovery_url | default('https://' ~ service_domains.keycloak ~ '/realms/' ~ keycloak_config.realm.name, true) }}"
+  when: openbao_config.oidc.enabled | default(false)
+  no_log: true
+
+- name: Validate required OpenBao OIDC client settings
+  ansible.builtin.assert:
+    that:
+      - item.value | length > 0
+    fail_msg: "{{ item.path }} is required when ci_mode is false. Define it in the inventory, preferably in secrets.sops.yaml."
+  loop:
+    - { path: "oidc_clients.openbao.client_id", value: "{{ openbao_oidc_client_id }}" }
+    - { path: "oidc_clients.openbao.client_secret", value: "{{ openbao_oidc_client_secret }}" }
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - openbao_config.oidc.enabled | default(false)
+    - not (ci_mode | default(false))
+  no_log: true
+
 - name: Wait for OpenBao API readiness
   ansible.builtin.uri:
     url: "{{ openbao_config_url }}/v1/sys/health"
@@ -16,6 +39,7 @@
   until: openbao_health.status in [200, 429]
   retries: 30
   delay: 5
+  no_log: true
 
 - name: Read enabled OpenBao secret engines
   ansible.builtin.uri:
@@ -91,9 +115,9 @@
     validate_certs: "{{ openbao_config_validate_certs }}"
     body_format: json
     body:
-      oidc_discovery_url: "{{ openbao_config.oidc.discovery_url | mandatory('openbao_config.oidc.discovery_url is required') }}"
-      oidc_client_id: "{{ openbao_config.oidc.client_id | mandatory('openbao_config.oidc.client_id is required') }}"
-      oidc_client_secret: "{{ openbao_config.oidc.client_secret | mandatory('openbao_config.oidc.client_secret is required') }}"
+      oidc_discovery_url: "{{ openbao_oidc_discovery_url }}"
+      oidc_client_id: "{{ openbao_oidc_client_id }}"
+      oidc_client_secret: "{{ openbao_oidc_client_secret }}"
       default_role: "{{ openbao_config.oidc.default_role | default(openbao_config.oidc.role.name | default('default')) }}"
     status_code: [200, 204]
   when: openbao_config.oidc.enabled | default(false)

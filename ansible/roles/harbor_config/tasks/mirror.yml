@@ -4,9 +4,9 @@
     url: "https://{{ service_domains.harbor }}/api/v2.0/registries?name={{ harbor_mirror_item.name | urlencode }}"
     method: GET
     user: admin
-    password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations') }}"
+    password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
     force_basic_auth: true
-    validate_certs: false
+    validate_certs: "{{ harbor_api_validate_certs }}"
     status_code: 200
   register: harbor_registry_lookup
   no_log: true
@@ -16,9 +16,9 @@
     url: "https://{{ service_domains.harbor }}/api/v2.0/registries"
     method: POST
     user: admin
-    password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations') }}"
+    password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
     force_basic_auth: true
-    validate_certs: false
+    validate_certs: "{{ harbor_api_validate_certs }}"
     body_format: json
     body:
       name: "{{ harbor_mirror_item.name }}"
@@ -39,9 +39,9 @@
     url: "https://{{ service_domains.harbor }}/api/v2.0/registries?name={{ harbor_mirror_item.name | urlencode }}"
     method: GET
     user: admin
-    password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations') }}"
+    password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
     force_basic_auth: true
-    validate_certs: false
+    validate_certs: "{{ harbor_api_validate_certs }}"
     status_code: 200
   register: harbor_registry_lookup_final
   no_log: true
@@ -51,9 +51,9 @@
     url: "https://{{ service_domains.harbor }}/api/v2.0/projects?name={{ (harbor_mirror_item.project_name | default(harbor_mirror_item.name)) | urlencode }}"
     method: GET
     user: admin
-    password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations') }}"
+    password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
     force_basic_auth: true
-    validate_certs: false
+    validate_certs: "{{ harbor_api_validate_certs }}"
     status_code: 200
   register: harbor_project_lookup
   no_log: true
@@ -63,9 +63,9 @@
     url: "https://{{ service_domains.harbor }}/api/v2.0/projects"
     method: POST
     user: admin
-    password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations') }}"
+    password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
     force_basic_auth: true
-    validate_certs: false
+    validate_certs: "{{ harbor_api_validate_certs }}"
     body_format: json
     body:
       project_name: "{{ harbor_mirror_item.project_name | default(harbor_mirror_item.name) }}"

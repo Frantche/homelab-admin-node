@@ -27,6 +27,7 @@
 - name: Set auth header for user operations
   ansible.builtin.set_fact:
     keycloak_auth_header: "{{ 'Bearer ' ~ keycloak_user_token_response.json.access_token }}"
+  no_log: true
 
 - name: Find user
   ansible.builtin.uri:
@@ -36,6 +37,7 @@
       Authorization: "{{ keycloak_auth_header }}"
     status_code: 200
   register: keycloak_user_lookup
+  no_log: true
 
 - name: Create user when missing
   ansible.builtin.uri:
@@ -64,10 +66,12 @@
       Authorization: "{{ keycloak_auth_header }}"
     status_code: 200
   register: keycloak_user_lookup_final
+  no_log: true
 
 - name: Set user id fact
   ansible.builtin.set_fact:
     keycloak_user_id: "{{ (keycloak_user_lookup_final.json | first).id if (keycloak_user_lookup_final.json | length) > 0 else '' }}"
+  no_log: true
 
 - name: Update user profile
   ansible.builtin.uri:
@@ -79,6 +83,7 @@
     body: "{{ keycloak_user_spec }}"
     status_code: 204
   when: keycloak_user_id | length > 0
+  no_log: true
 
 - name: Update user password when provided
   ansible.builtin.uri:
@@ -107,11 +112,13 @@
     status_code: 200
   register: keycloak_user_roles_current
   when: keycloak_user_id | length > 0
+  no_log: true
 
 - name: Compute missing realm roles for user
   ansible.builtin.set_fact:
     keycloak_user_missing_realm_roles: "{{ (keycloak_user_item.realm_roles | default([])) | difference(keycloak_user_roles_current.json | map(attribute='name') | list) }}"
   when: keycloak_user_id | length > 0
+  no_log: true
 
 - name: Fetch missing realm role representations
   ansible.builtin.uri:
@@ -127,6 +134,7 @@
   when:
     - keycloak_user_id | length > 0
     - keycloak_user_missing_realm_roles | length > 0
+  no_log: true
 
 - name: Assign missing realm roles to user
   ansible.builtin.uri:
@@ -140,3 +148,4 @@
   when:
     - keycloak_user_id | length > 0
     - keycloak_user_missing_realm_roles | length > 0
+  no_log: true

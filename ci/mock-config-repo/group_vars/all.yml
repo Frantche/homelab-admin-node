@@ -1,8 +1,22 @@
-# CI mock configuration — plain text (no SOPS encryption)
+# CI mock configuration -- plain text (no SOPS encryption)
 # This file mirrors the structure of a real config repo's group_vars/all.yml
 # combined with group_vars/secrets.sops.yaml for CI purposes.
 
 ci_mode: true
+
+service_domains:
+  harbor: "harbor.example.com"
+  openbao: "bao.example.com"
+  keycloak: "keycloak.example.com"
+  traefik: "traefik.example.com"
+
+oidc_clients:
+  harbor:
+    client_id: "harbor"
+    client_secret: "ci-oidc-harbor-client-secret"
+  openbao:
+    client_id: "openbao"
+    client_secret: "ci-oidc-openbao-client-secret"
 
 admin:
   traefik_dashboard_basic_auth: "admin:$$apr1$$ci$$fakehash"
@@ -29,8 +43,41 @@ harbor:
 openbao:
   root_token: ""
 
+keycloak_config:
+  enabled: true
+  realm:
+    name: "homelab"
+    display_name: "Homelab"
+  realm_roles:
+    - "admin"
+  clients:
+    - client_id: "harbor"
+      redirect_uris:
+        - "https://harbor.example.com/c/oidc/callback"
+      web_origins:
+        - "https://harbor.example.com"
+    - client_id: "openbao"
+      redirect_uris:
+        - "https://bao.example.com/ui/vault/auth/oidc/oidc/callback"
+
+harbor_config:
+  enabled: true
+  oidc:
+    enabled: true
+    endpoint: "https://keycloak.example.com/realms/homelab"
+    admin_group: "admin"
+
 openbao_config:
+  enabled: true
   root_token: ""
+  oidc:
+    enabled: true
+    discovery_url: "https://keycloak.example.com/realms/homelab"
+    role:
+      allowed_redirect_uris:
+        - "https://bao.example.com/ui/vault/auth/oidc/oidc/callback"
+      bound_audiences:
+        - "openbao"
 
 backup:
   restic_repository: "/srv/admin/backups/restic"
