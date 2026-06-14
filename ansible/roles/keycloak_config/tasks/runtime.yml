@@ -1,4 +1,11 @@
 ---
+- name: Require Keycloak admin password
+  ansible.builtin.assert:
+    that:
+      - (keycloak.admin_password | default('', true)) | length > 0
+    fail_msg: keycloak.admin_password is required for keycloak_config role
+  no_log: true
+
 - name: Wait for Keycloak readiness
   ansible.builtin.uri:
     url: "{{ keycloak_config_url }}/health/ready"
@@ -14,7 +21,7 @@
     auth_keycloak_url: "{{ keycloak_config_url }}"
     auth_realm: master
     auth_username: "{{ keycloak.admin_user | default('admin') }}"
-    auth_password: "{{ keycloak.admin_password | mandatory }}"
+    auth_password: "{{ keycloak.admin_password }}"
     id: "{{ keycloak_realm_cfg.name }}"
     realm: "{{ keycloak_realm_cfg.name }}"
     display_name: "{{ keycloak_realm_cfg.display_name | default(keycloak_realm_cfg.name) }}"
@@ -28,7 +35,7 @@
     auth_keycloak_url: "{{ keycloak_config_url }}"
     auth_realm: master
     auth_username: "{{ keycloak.admin_user | default('admin') }}"
-    auth_password: "{{ keycloak.admin_password | mandatory }}"
+    auth_password: "{{ keycloak.admin_password }}"
     realm: "{{ keycloak_realm_cfg.name }}"
     name: "{{ item }}"
     state: present
@@ -40,7 +47,7 @@
     auth_keycloak_url: "{{ keycloak_config_url }}"
     auth_realm: master
     auth_username: "{{ keycloak.admin_user | default('admin') }}"
-    auth_password: "{{ keycloak.admin_password | mandatory }}"
+    auth_password: "{{ keycloak.admin_password }}"
     realm: "{{ keycloak_realm_cfg.name }}"
     client_id: "{{ keycloak_client_item.client_id }}"
     name: "{{ keycloak_client_item.name | default(keycloak_client_item.client_id) }}"
