@@ -16,32 +16,38 @@
 - name: Validate required Harbor OIDC client settings
   ansible.builtin.assert:
     that:
-      - item.value | length > 0
+      - keycloak_required_harbor_oidc_values[item.key] | length > 0
     fail_msg: "{{ item.path }} is required when ci_mode is false. Define it in the inventory, preferably in secrets.sops.yaml."
+  vars:
+    keycloak_required_harbor_oidc_values:
+      harbor_client_id: "{{ keycloak_harbor_client_id }}"
+      harbor_client_secret: "{{ keycloak_harbor_client_secret }}"
   loop:
-    - { path: "oidc_clients.harbor.client_id", value: "{{ keycloak_harbor_client_id }}" }
-    - { path: "oidc_clients.harbor.client_secret", value: "{{ keycloak_harbor_client_secret }}" }
+    - { path: "oidc_clients.harbor.client_id", key: "harbor_client_id" }
+    - { path: "oidc_clients.harbor.client_secret", key: "harbor_client_secret" }
   loop_control:
     label: "{{ item.path }}"
   when:
     - keycloak_manage_harbor_oidc_client
     - not (ci_mode | default(false))
-  no_log: true
 
 - name: Validate required OpenBao OIDC client settings
   ansible.builtin.assert:
     that:
-      - item.value | length > 0
+      - keycloak_required_openbao_oidc_values[item.key] | length > 0
     fail_msg: "{{ item.path }} is required when ci_mode is false. Define it in the inventory, preferably in secrets.sops.yaml."
+  vars:
+    keycloak_required_openbao_oidc_values:
+      openbao_client_id: "{{ keycloak_openbao_client_id }}"
+      openbao_client_secret: "{{ keycloak_openbao_client_secret }}"
   loop:
-    - { path: "oidc_clients.openbao.client_id", value: "{{ keycloak_openbao_client_id }}" }
-    - { path: "oidc_clients.openbao.client_secret", value: "{{ keycloak_openbao_client_secret }}" }
+    - { path: "oidc_clients.openbao.client_id", key: "openbao_client_id" }
+    - { path: "oidc_clients.openbao.client_secret", key: "openbao_client_secret" }
   loop_control:
     label: "{{ item.path }}"
   when:
     - keycloak_manage_openbao_oidc_client
     - not (ci_mode | default(false))
-  no_log: true
 
 - name: Build Harbor Keycloak client definition
   ansible.builtin.set_fact:

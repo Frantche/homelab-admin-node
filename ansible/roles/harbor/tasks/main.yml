@@ -23,7 +23,6 @@
   loop_control:
     label: "{{ item.path }}"
   when: not (ci_mode | default(false))
-  no_log: true
 
 - name: Ensure harbor stack directory
   ansible.builtin.file:

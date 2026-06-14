@@ -7,6 +7,7 @@ CI_PLAYBOOK="$REPO_ROOT/ci/playbooks/oidc-contracts-ci.yml"
 MISSING_SECRET_PLAYBOOK="$REPO_ROOT/ci/playbooks/oidc-contracts-missing-secret.yml"
 
 export ANSIBLE_NOCOLOR=1
+export ANSIBLE_ROLES_PATH="$REPO_ROOT/ansible/roles"
 
 echo "[oidc-contracts] non-CI success scenario"
 ansible-playbook -i localhost, "$SUCCESS_PLAYBOOK"

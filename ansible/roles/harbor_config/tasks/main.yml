@@ -7,7 +7,7 @@
   ansible.builtin.set_fact:
     harbor_oidc_client_id: "{{ oidc_clients.harbor.client_id | default('harbor', true) if (ci_mode | default(false)) else (oidc_clients.harbor.client_id | default('', true)) }}"
     harbor_oidc_client_secret: "{{ oidc_clients.harbor.client_secret | default('ci-oidc-harbor-client-secret', true) if (ci_mode | default(false)) else (oidc_clients.harbor.client_secret | default('', true)) }}"
-    harbor_oidc_endpoint: "{{ harbor_config.oidc.endpoint | default('https://' ~ service_domains.keycloak ~ '/realms/' ~ keycloak_config.realm.name, true) }}"
+    harbor_oidc_endpoint: "{{ harbor_config.oidc.endpoint if (harbor_config.oidc.endpoint | default('', true) | length > 0) else ('https://' ~ service_domains.keycloak ~ '/realms/' ~ (((keycloak_config | default({})).realm | default({})).name | default('homelab'))) }}"
     harbor_oidc_scope: "{{ harbor_config.oidc.scope | default('openid,profile,email,offline_access') }}"
     harbor_oidc_verify_cert: "{{ harbor_config.oidc.verify_cert | default(not (ci_mode | default(false))) }}"
     harbor_oidc_user_claim: "{{ harbor_config.oidc.user_claim | default('preferred_username') }}"
@@ -20,17 +20,20 @@
 - name: Validate required Harbor OIDC client settings
   ansible.builtin.assert:
     that:
-      - item.value | length > 0
+      - harbor_required_oidc_values[item.key] | length > 0
     fail_msg: "{{ item.path }} is required when ci_mode is false. Define it in the inventory, preferably in secrets.sops.yaml."
+  vars:
+    harbor_required_oidc_values:
+      harbor_client_id: "{{ harbor_oidc_client_id }}"
+      harbor_client_secret: "{{ harbor_oidc_client_secret }}"
   loop:
-    - { path: "oidc_clients.harbor.client_id", value: "{{ harbor_oidc_client_id }}" }
-    - { path: "oidc_clients.harbor.client_secret", value: "{{ harbor_oidc_client_secret }}" }
+    - { path: "oidc_clients.harbor.client_id", key: "harbor_client_id" }
+    - { path: "oidc_clients.harbor.client_secret", key: "harbor_client_secret" }
   loop_control:
     label: "{{ item.path }}"
   when:
     - harbor_config.oidc.enabled | default(false)
     - not (ci_mode | default(false))
-  no_log: true
 
 - name: Require Harbor OIDC endpoint
   ansible.builtin.assert:
