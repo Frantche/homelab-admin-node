@@ -3,7 +3,7 @@ set -euo pipefail
 
 LOCK_FILE=/run/admin-converge.lock
 REPO_DIR="${REPO_DIR:-/opt/homelab-admin-node}"
-INVENTORY_PATH="${INVENTORY_PATH:-/etc/admin-config/hosts}"
+INVENTORY_PATH="${INVENTORY_PATH:-/etc/admin-config/hosts/inventory.ini}"
 PLAYBOOK_PATH="${PLAYBOOK_PATH:-$REPO_DIR/ansible/site.yml}"
 
 mkdir -p /run
