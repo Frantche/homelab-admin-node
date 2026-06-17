@@ -1,4 +1,8 @@
 ---
+- name: Compute Traefik TLS mode
+  ansible.builtin.set_fact:
+    traefik_letsencrypt_enabled: "{{ (not (ci_mode | default(false))) and (not (traefik.local_tls_enabled | default(false))) and ((cloudflare.dns_api_token | default('') | length) > 0) and ((acme_email | default('') | length) > 0) }}"
+
 - name: Ensure traefik stack directory
   ansible.builtin.file:
     path: "{{ admin_node_root }}/stacks/traefik"
@@ -29,6 +33,37 @@
     group: root
     mode: "0644"
 
+- name: Generate fallback self-signed TLS certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -nodes
+      - -sha256
+      - -days
+      - "825"
+      - -newkey
+      - rsa:2048
+      - -keyout
+      - "{{ admin_node_root }}/certs/key.pem"
+      - -out
+      - "{{ admin_node_root }}/certs/cert.pem"
+      - -subj
+      - "/CN={{ service_domains.traefik }}"
+      - -addext
+      - "subjectAltName={{ (((service_domains | dict2items | map(attribute='value') | list) + ['localhost']) | unique | map('regex_replace', '^(.*)$', 'DNS:\\1') | list + ['IP:127.0.0.1', 'IP:' ~ admin_node_lan_ip]) | join(',') }}"
+    creates: "{{ admin_node_root }}/certs/cert.pem"
+  when: not traefik_letsencrypt_enabled
+
+- name: Lock down fallback self-signed TLS private key
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/certs/key.pem"
+    owner: root
+    group: root
+    mode: "0600"
+  when: not traefik_letsencrypt_enabled
+
 - name: Render traefik static config (production)
   ansible.builtin.template:
     src: "{{ playbook_dir }}/../stacks/traefik/traefik.yml"
@@ -58,9 +93,9 @@
     TRAEFIK_DASHBOARD_BASIC_AUTH: "{{ admin.traefik_dashboard_basic_auth | mandatory('admin.traefik_dashboard_basic_auth is required') }}"
   no_log: true
 
-- name: Deploy CI TLS dynamic config
+- name: Deploy default TLS dynamic config
   ansible.builtin.copy:
-    dest: "{{ admin_node_root }}/stacks/traefik/dynamic/tls-ci.yml"
+    dest: "{{ admin_node_root }}/stacks/traefik/dynamic/tls-default.yml"
     owner: root
     group: root
     mode: "0644"
@@ -71,7 +106,13 @@
             defaultCertificate:
               certFile: /certs/cert.pem
               keyFile: /certs/key.pem
-  when: ci_mode | default(false)
+  when: not traefik_letsencrypt_enabled
+
+- name: Remove default TLS dynamic config when LetsEncrypt is enabled
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/stacks/traefik/dynamic/tls-default.yml"
+    state: absent
+  when: traefik_letsencrypt_enabled
 
 - name: Render traefik env
   ansible.builtin.copy:

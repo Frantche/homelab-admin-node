@@ -1,9 +1,12 @@
+{% set traefik_letsencrypt_enabled = traefik_letsencrypt_enabled | default((not (ci_mode | default(false))) and (not (traefik.local_tls_enabled | default(false))) and ((cloudflare.dns_api_token | default('') | length) > 0) and ((acme_email | default('') | length) > 0)) %}
 entryPoints:
   websecure:
     address: ":443"
     http:
       tls:
+{% if traefik_letsencrypt_enabled %}
         certResolver: letsencrypt
+{% endif %}
 api:
   dashboard: true
 ping:
@@ -16,6 +19,7 @@ providers:
     endpoint: "unix:///var/run/docker.sock"
     network: "admin-net"
     exposedByDefault: false
+{% if traefik_letsencrypt_enabled %}
 certificatesResolvers:
   letsencrypt:
     acme:
@@ -26,6 +30,7 @@ certificatesResolvers:
         resolvers:
           - "1.1.1.1:53"
           - "8.8.8.8:53"
+{% endif %}
 log:
   level: INFO
 accessLog: {}
