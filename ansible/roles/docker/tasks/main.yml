@@ -29,3 +29,22 @@
   community.docker.docker_network:
     name: admin-net
     state: present
+
+- name: Probe Docker bridge networking support
+  ansible.builtin.command: docker run --rm --network admin-net alpine:3.20 true
+  register: docker_bridge_probe
+  failed_when: false
+  changed_when: docker_bridge_probe.rc == 0
+
+- name: Record Docker bridge support
+  ansible.builtin.set_fact:
+    docker_bridge_supported: "{{ docker_bridge_probe.rc == 0 }}"
+
+- name: Fail when Docker bridge networking is unavailable
+  ansible.builtin.fail:
+    msg: >-
+      Docker bridge networking is unavailable in this environment.
+      The admin stack requires bridge-capable container networking
+      to start traefik, openbao, keycloak, harbor, and cloudflared.
+      The probe command that failed was: docker run --rm --network admin-net alpine:3.20 true
+  when: not docker_bridge_supported
