@@ -25,7 +25,7 @@ assert_contains /etc/admin-node/mode "init"
 
 # --- Run convergence via adminctl converge (init mode: starts services) ---
 echo "=== Running convergence (init mode) via adminctl ==="
-"$REPO_ROOT/scripts/adminctl" converge
+ADMIN_CONVERGE_SKIP_GIT_PULL=true "$REPO_ROOT/scripts/adminctl" converge
 
 # --- Initialize and unseal OpenBao ---
 "$REPO_ROOT/ci/init-openbao-ci.sh"
@@ -41,7 +41,7 @@ assert_contains /etc/admin-node/mode "normal"
 
 # --- Run convergence via adminctl converge (normal mode: validate + backup) ---
 echo "=== Running convergence (normal mode) via adminctl ==="
-"$REPO_ROOT/scripts/adminctl" converge
+ADMIN_CONVERGE_SKIP_GIT_PULL=true "$REPO_ROOT/scripts/adminctl" converge
 
 # --- Verify final mode is normal ---
 assert_contains /etc/admin-node/mode "normal"

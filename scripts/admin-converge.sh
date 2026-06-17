@@ -5,6 +5,7 @@ LOCK_FILE=/run/admin-converge.lock
 REPO_DIR="${REPO_DIR:-/opt/homelab-admin-node}"
 INVENTORY_PATH="${INVENTORY_PATH:-/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini}"
 PLAYBOOK_PATH="${PLAYBOOK_PATH:-$REPO_DIR/ansible/site.yml}"
+SKIP_GIT_PULL="${ADMIN_CONVERGE_SKIP_GIT_PULL:-false}"
 
 mkdir -p /run
 echo "[admin-converge] starting"
@@ -24,12 +25,16 @@ if [[ ! -d "$REPO_DIR/.git" ]]; then
   exit 1
 fi
 
-echo "[admin-converge] updating git repository in $REPO_DIR"
-if ! git -C "$REPO_DIR" pull --ff-only; then
-  echo "[admin-converge] git pull failed in $REPO_DIR"
-  echo "[admin-converge] run: git -C $REPO_DIR status"
-  echo "[admin-converge] then resolve/stash local changes and retry"
-  exit 1
+if [[ "$SKIP_GIT_PULL" == "true" ]]; then
+  echo "[admin-converge] skipping git pull (ADMIN_CONVERGE_SKIP_GIT_PULL=true)"
+else
+  echo "[admin-converge] updating git repository in $REPO_DIR"
+  if ! git -C "$REPO_DIR" pull --ff-only; then
+    echo "[admin-converge] git pull failed in $REPO_DIR"
+    echo "[admin-converge] run: git -C $REPO_DIR status"
+    echo "[admin-converge] then resolve/stash local changes and retry"
+    exit 1
+  fi
 fi
 
 if [[ ! -f "$PLAYBOOK_PATH" ]]; then
