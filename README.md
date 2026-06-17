@@ -14,6 +14,7 @@ Le cloud-init prépare la base système et configure entièrement le service `ad
 
 ## 4. Principe du secret zéro
 Le secret zéro est la clé privée age installée manuellement dans `/etc/sops/age/keys.txt` (0400 root:root).
+La procédure détaillée de génération, d'installation et de configuration SOPS est dans `docs/secret-zero.md`.
 
 ## 5. Première installation
 1. Provisionner la VM avec `cloud-init/admin-01.user-data.yaml`.
@@ -26,6 +27,7 @@ Le secret zéro est la clé privée age installée manuellement dans `/etc/sops/
 
 ## 6. Injection manuelle de la clé age
 Utiliser `sudo ./scripts/unlock.sh /path/to/age-key.txt`.
+Voir aussi `docs/secret-zero.md` pour la procédure complète.
 
 ## 7. Mode init
 Déploie les stacks, initialise OpenBao, configure DNS/Tunnel (ou mocks), valide APIs, exécute un premier backup.

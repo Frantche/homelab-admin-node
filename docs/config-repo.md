@@ -130,6 +130,7 @@ rm age-key.txt
 ```
 
 Conservez une copie sécurisée de la clé privée (gestionnaire de mots de passe, coffre HSM…).
+La procédure complète est documentée dans `docs/secret-zero.md`.
 
 ### 3. Configurer SOPS
 
