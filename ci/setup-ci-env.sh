@@ -15,7 +15,7 @@ mkdir -p /srv/admin/certs
 if [[ ! -f /etc/sops/age/keys.txt ]]; then
   echo "[ci-setup] Generating CI-only age key..."
   install -d -m 0700 /etc/sops/age
-  tmp_age_key="$(mktemp)"
+  tmp_age_key="$(mktemp -u /tmp/ci-age-key.XXXXXX)"
   age-keygen -o "$tmp_age_key" >/dev/null
   install -m 0400 "$tmp_age_key" /etc/sops/age/keys.txt
   rm -f "$tmp_age_key"
