@@ -66,8 +66,10 @@ sys.exit(1)
 # Save root token for later use
 echo "$root_token" > "$SECRETS_DIR/openbao-root-token"
 
-# Create the SOPS-compatible secrets file (unencrypted for CI)
-cat > "$SECRETS_DIR/openbao-unseal.sops.yaml" <<EOF
+# Create the SOPS-compatible secrets file using the CI-only age key.
+plain_secrets="$(mktemp)"
+trap 'rm -f "$plain_secrets"' EXIT
+cat > "$plain_secrets" <<EOF
 openbao:
   active_keyset: "ci-keyset"
   keysets:
@@ -77,6 +79,9 @@ openbao:
 $(echo "$unseal_keys" | while IFS= read -r key; do echo "        - \"$key\""; done)
   root_token: "$root_token"
 EOF
+
+age_public_key="$(sudo age-keygen -y /etc/sops/age/keys.txt)"
+sops --config /dev/null --encrypt --age "$age_public_key" --input-type yaml --output-type yaml "$plain_secrets" > "$SECRETS_DIR/openbao-unseal.sops.yaml"
 
 # Export root token for other scripts
 export OPENBAO_TOKEN="$root_token"
