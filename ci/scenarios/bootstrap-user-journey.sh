@@ -27,16 +27,6 @@ assert_contains /etc/admin-node/mode "init"
 echo "=== Running convergence (init mode) via adminctl ==="
 "$REPO_ROOT/scripts/adminctl" converge
 
-# --- Install a CI-only age key for SOPS-based secrets ---
-if [[ ! -f /etc/sops/age/keys.txt ]]; then
-  echo "=== Installing CI-only age key ==="
-  sudo install -d -m 0700 -o root -g root /etc/sops/age
-  tmp_age_key="$(mktemp)"
-  age-keygen -o "$tmp_age_key" >/dev/null
-  sudo install -m 0400 -o root -g root "$tmp_age_key" /etc/sops/age/keys.txt
-  rm -f "$tmp_age_key"
-fi
-
 # --- Initialize and unseal OpenBao ---
 "$REPO_ROOT/ci/init-openbao-ci.sh"
 OPENBAO_TOKEN="$(cat "$REPO_ROOT/secrets/openbao-root-token")"

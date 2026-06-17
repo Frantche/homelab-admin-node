@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Set up CI-specific prerequisites that the Ansible playbook cannot handle itself.
-# This only does: TLS self-signed cert generation, /etc/hosts entries, mode directory.
+# This only does: TLS self-signed cert generation, CI age key setup, /etc/hosts entries, mode directory.
 # All actual deployment is done by the Ansible playbook.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -10,6 +10,16 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Create required directories
 mkdir -p /etc/admin-node
 mkdir -p /srv/admin/certs
+
+# --- Install CI-only age key for SOPS secrets ---
+if [[ ! -f /etc/sops/age/keys.txt ]]; then
+  echo "[ci-setup] Generating CI-only age key..."
+  install -d -m 0700 /etc/sops/age
+  tmp_age_key="$(mktemp)"
+  age-keygen -o "$tmp_age_key" >/dev/null
+  install -m 0400 "$tmp_age_key" /etc/sops/age/keys.txt
+  rm -f "$tmp_age_key"
+fi
 
 # --- Generate self-signed CA and wildcard cert for *.example.com (CI only) ---
 echo "[ci-setup] Generating self-signed TLS certificate..."
