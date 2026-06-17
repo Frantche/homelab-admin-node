@@ -31,6 +31,12 @@
     chdir: "{{ admin_node_root }}/stacks/openbao"
   changed_when: true
 
+- name: Initialize openbao when entering init mode
+  ansible.builtin.command: /opt/homelab-admin-node/scripts/openbao-init-if-needed.sh
+  register: openbao_init_result
+  changed_when: "'wrote encrypted unseal secrets' in openbao_init_result.stdout"
+  when: admin_mode == 'init' and not (ci_mode | default(false))
+
 - name: Unseal openbao
   ansible.builtin.command: /opt/homelab-admin-node/scripts/openbao-unseal.sh
   changed_when: false

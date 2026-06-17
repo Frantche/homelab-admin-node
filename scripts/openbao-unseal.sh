@@ -56,7 +56,7 @@ for k in ks["unseal_keys"][:threshold]:
 PY
   # bao operator unseal returns exit 2 while still sealed (progress); only 0 or 2 are acceptable
   unseal_rc=0
-  docker exec -i -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal >/dev/null 2>&1 <<< "$key" || unseal_rc=$?
+  docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao operator unseal "$key" >/dev/null 2>&1 || unseal_rc=$?
   if [[ $unseal_rc -ne 0 && $unseal_rc -ne 2 ]]; then
     echo "OpenBao unseal command failed with exit code $unseal_rc" >&2
     exit 1
