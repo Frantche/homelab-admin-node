@@ -33,34 +33,7 @@ OPENBAO_TOKEN="$(cat "$REPO_ROOT/secrets/openbao-root-token")"
 export OPENBAO_TOKEN
 
 # Inject the root token into the mock config repo so the normal-mode playbook can use it
-OPENBAO_TOKEN="$OPENBAO_TOKEN" python3 - <<'PYEOF'
-import os
-from pathlib import Path
-
-config_path = Path('/etc/admin-config/homelab-node-admin-config/hosts/group_vars/all.yml')
-text = config_path.read_text()
-token = os.environ['OPENBAO_TOKEN']
-replacements = {
-    'openbao:': f'  root_token: "{token}"',
-    'openbao_config:': f'  root_token: "{token}"',
-}
-for section, replacement in replacements.items():
-    lines = text.splitlines()
-    in_section = False
-    for idx, line in enumerate(lines):
-        if line == section:
-            in_section = True
-            continue
-        if in_section and line and not line.startswith(' '):
-            break
-        if in_section and line.startswith('  root_token:'):
-            lines[idx] = replacement
-            break
-    else:
-        raise SystemExit(f'missing root_token under {section}')
-    text = "\n".join(lines) + "\n"
-config_path.write_text(text)
-PYEOF
+"$REPO_ROOT/ci/update-openbao-token.py"
 
 # --- Set mode to normal via adminctl ---
 "$REPO_ROOT/scripts/adminctl" set-mode normal
