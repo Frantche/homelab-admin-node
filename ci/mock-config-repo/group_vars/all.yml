@@ -29,6 +29,9 @@ harbor:
 openbao:
   root_token: ""
 
+openbao_config:
+  root_token: ""
+
 backup:
   restic_repository: "/srv/admin/backups/restic"
   restic_password: "ci-restic-pass"
