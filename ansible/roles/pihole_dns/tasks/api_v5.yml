@@ -1,13 +1,10 @@
 ---
 - name: Configure Pi-hole local DNS records via v5 API
   ansible.builtin.uri:
-    url: "{{ pihole.api_url }}/admin/api.php"
+    url: "{{ pihole.api_url }}/admin/api.php?customdns={{ (item.name ~ ',' ~ item.ip) | urlencode }}&auth={{ pihole.api_token | urlencode }}"
     method: GET
     return_content: true
     status_code: 200
     validate_certs: false
-    params:
-      customdns: "{{ item.name }},{{ item.ip }}"
-      auth: "{{ pihole.api_token }}"
   loop: "{{ pihole.dns_records }}"
   no_log: true
