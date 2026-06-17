@@ -80,8 +80,8 @@
     group: root
     mode: "0600"
     content: |
-      TRAEFIK_DASHBOARD_BASIC_AUTH={{ admin.traefik_dashboard_basic_auth | mandatory('admin.traefik_dashboard_basic_auth is required') }}
-      CF_DNS_API_TOKEN={{ cloudflare.dns_api_token | default('ci-not-used') }}
+      TRAEFIK_DASHBOARD_BASIC_AUTH={{ admin.traefik_dashboard_basic_auth | mandatory('admin.traefik_dashboard_basic_auth is required') | replace('$', '$$') }}
+      CF_DNS_API_TOKEN={{ cloudflare.dns_api_token | default('ci-not-used') | replace('$', '$$') }}
   no_log: true
 
 - name: Start traefik stack
