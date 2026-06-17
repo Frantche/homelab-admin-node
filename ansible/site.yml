@@ -80,7 +80,7 @@
     - role: openbao
       when: admin_mode != 'locked'
     - role: openbao_config
-      when: admin_mode != 'locked' and (openbao_config.enabled | default(false))
+      when: admin_mode == 'normal' and (openbao_config.enabled | default(false))
     - role: keycloak
       when: admin_mode != 'locked'
     - role: keycloak_config
