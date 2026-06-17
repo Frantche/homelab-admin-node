@@ -171,16 +171,16 @@ Le script `admin-converge.sh` exécute ensuite `git pull --ff-only` sur ce dép�
 ### 1. Mettre à jour le config repo via git CLI (optionnel)
 
 ```bash
-git -C /etc/admin-config pull --ff-only
+git -C /etc/admin-config/homelab-node-admin-config pull --ff-only
 ```
 
 ### 2. Déposer l'inventaire Ansible utilisateur
 
-Par défaut, `admin-converge.sh` lit l'inventaire depuis `/etc/admin-config/hosts`.  
+Par défaut, `admin-converge.sh` lit l'inventaire depuis `/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini`.  
 Un exemple minimal est disponible dans ce dépôt: `ansible/inventory.ini`.
 
 ```bash
-sudo install -D -m 0644 /opt/homelab-admin-node/ansible/inventory.ini /etc/admin-config/hosts
+sudo install -D -m 0644 /opt/homelab-admin-node/ansible/inventory.ini /etc/admin-config/homelab-node-admin-config/hosts/inventory.ini
 ```
 
 ### 3. Lancer la convergence
@@ -193,8 +193,8 @@ sudo ./scripts/admin-converge.sh
 
 1. Met à jour `/opt/homelab-admin-node` via `git pull --ff-only`
 2. Vérifie la présence du playbook local `/opt/homelab-admin-node/ansible/site.yml`
-3. Vérifie la présence de l'inventaire utilisateur `/etc/admin-config/hosts`
-4. Exécute `ansible-playbook -i /etc/admin-config/hosts /opt/homelab-admin-node/ansible/site.yml`
+3. Vérifie la présence de l'inventaire utilisateur `/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini`
+4. Exécute `ansible-playbook -i /etc/admin-config/homelab-node-admin-config/hosts/inventory.ini /opt/homelab-admin-node/ansible/site.yml`
 
 ## Modifier les secrets
 

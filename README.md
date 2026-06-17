@@ -19,7 +19,7 @@ La procédure détaillée de génération, d'installation et de configuration SO
 ## 5. Première installation
 1. Provisionner la VM avec `cloud-init/admin-01.user-data.yaml`.
 2. Le premier clone de ce dépôt dans `/opt/homelab-admin-node` est réalisé automatiquement par le cloud-init.
-3. Déposer votre inventaire Ansible (exemple : `ansible/inventory.ini`) dans `/etc/admin-config/hosts`.
+3. Initialiser le dépôt de configuration privé dans `/etc/admin-config/homelab-node-admin-config` et déposer l’inventaire dans `hosts/inventory.ini`.
 4. Vérifier `/etc/admin-node/mode` = `locked`.
 5. Injecter la clé age via `scripts/unlock.sh`.
 6. Passer en mode `init` via `scripts/set-mode.sh init`.
@@ -88,7 +88,7 @@ Voir `docs/config-repo.md` pour la structure, la mise en place et l'utilisation 
 
 ```bash
 # inventaire utilisateur (exemple fourni dans ansible/inventory.ini)
-sudo install -D -m 0644 /opt/homelab-admin-node/ansible/inventory.ini /etc/admin-config/hosts
+sudo install -D -m 0644 /opt/homelab-admin-node/ansible/inventory.ini /etc/admin-config/homelab-node-admin-config/hosts/inventory.ini
 sudo ./scripts/admin-converge.sh
 ```
 

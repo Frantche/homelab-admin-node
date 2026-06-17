@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Bootstrap user journey scenario — runs inside the VM after cloud-init completes.
 # The repository is already cloned to /opt/homelab-admin-node by cloud-init.
-# /etc/admin-config must be populated (hosts + group_vars/all.yml) before this script runs.
+# /etc/admin-config/homelab-node-admin-config must be populated before this script runs.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$REPO_ROOT/ci/assertions.sh"
@@ -32,8 +32,8 @@ echo "=== Running convergence (init mode) via adminctl ==="
 OPENBAO_TOKEN="$(cat "$REPO_ROOT/secrets/openbao-root-token")"
 export OPENBAO_TOKEN
 
-# Inject the root token into /etc/admin-config so the normal-mode playbook can use it
-sed -i "s|  root_token: .*|  root_token: \"${OPENBAO_TOKEN}\"|" /etc/admin-config/group_vars/all.yml
+# Inject the root token into the mock config repo so the normal-mode playbook can use it
+sed -i "s|  root_token: .*|  root_token: \"${OPENBAO_TOKEN}\"|" /etc/admin-config/homelab-node-admin-config/hosts/group_vars/all.yml
 
 # --- Set mode to normal via adminctl ---
 "$REPO_ROOT/scripts/adminctl" set-mode normal

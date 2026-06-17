@@ -211,29 +211,70 @@ jobs:
               "grep -q locked /etc/admin-node/mode"
           echo "VM is in locked mode as expected"
 
-      - name: Copy mock user config to /etc/admin-config
+      - name: Initialize mock config repo in VM
         run: |
-          # Copy only the inventory hosts file (user configuration, no secrets)
+          # Simulate the manual admin action performed after cloud-init:
+          # create the private config repo under /etc/admin-config and populate
+          # the inventory layout consumed by scripts/admin-converge.sh.
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
-              "sudo mkdir -p /etc/admin-config/group_vars"
+              "sudo mkdir -p /etc/admin-config/homelab-node-admin-config/hosts/group_vars && \
+               sudo chown -R admin:admin /etc/admin-config/homelab-node-admin-config && \
+               cd /etc/admin-config/homelab-node-admin-config && \
+               git init && \
+               git checkout -B main"
 
           scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
-              ci/mock-config-repo/hosts admin@127.0.0.1:/tmp/ci-hosts
+              ci/mock-config-repo/hosts admin@127.0.0.1:/tmp/ci-inventory.ini
 
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
-              "sudo cp /tmp/ci-hosts /etc/admin-config/hosts"
-          echo "Mock user config installed at /etc/admin-config/hosts"
+              "cp /tmp/ci-inventory.ini /etc/admin-config/homelab-node-admin-config/hosts/inventory.ini"
+          echo "Mock inventory installed at /etc/admin-config/homelab-node-admin-config/hosts/inventory.ini"
 
-      - name: Generate CI secrets and add to /etc/admin-config
+      - name: Generate CI config values in mock config repo
         run: |
-          # Generate the CI secrets file with mock credentials (unencrypted for CI use).
-          # In production this would be a SOPS-encrypted secrets file from a private config repo.
-          cat > /tmp/ci-secrets.yml <<'SECRETS'
-          # Generated CI secrets — unencrypted mock values for testing only
+          # Generate mock deployment values in the same file an admin would commit
+          # in the private config repo. CI keeps them unencrypted for readability.
+          cat > /tmp/ci-all.yml <<'CONFIG'
+          # Generated CI config values — unencrypted mock values for testing only
           ci_mode: true
+
+          admin_repo_url: "https://github.com/${{ github.repository }}.git"
+          admin_node_root: "/srv/admin"
+          admin_mode_file: "/etc/admin-node/mode"
+          admin_git_ref_file: "/etc/admin-node/git-ref"
+          admin_node_lan_ip: "127.0.0.1"
+          acme_email: "ci@example.com"
+
+          service_domains:
+            harbor: "harbor.example.com"
+            openbao: "bao.example.com"
+            keycloak: "keycloak.example.com"
+            traefik: "traefik.example.com"
+
+          traefik:
+            dashboard_enabled: true
+            dashboard_hostname: "traefik.example.com"
+            log_level: "INFO"
+            access_logs: true
+            local_tls_enabled: true
+
+          pihole:
+            enabled: true
+            api_version: "auto"
+            url: "http://pihole.local/admin"
+            api_url: "http://pihole.local"
+            dns_records:
+              - name: "harbor.example.com"
+                ip: "{{ admin_node_lan_ip }}"
+              - name: "bao.example.com"
+                ip: "{{ admin_node_lan_ip }}"
+              - name: "keycloak.example.com"
+                ip: "{{ admin_node_lan_ip }}"
+              - name: "traefik.example.com"
+                ip: "{{ admin_node_lan_ip }}"
 
           admin:
             traefik_dashboard_basic_auth: "admin:$$apr1$$ci$$fakehash"
@@ -250,6 +291,9 @@ jobs:
             admin_user: "admin"
             admin_password: "ci-keycloak-admin-pass"
 
+          keycloak_config:
+            enabled: false
+
           harbor:
             admin_password: "ci-Harbor-admin-p4ss"
             db_password: "ci-harbor-db-pass"
@@ -257,22 +301,38 @@ jobs:
             jobservice_secret: "ci-harbor-job-secret"
             registry_password: "ci-harbor-registry"
 
+          harbor_config:
+            enabled: false
+            registry_mirrors: []
+
           openbao:
             root_token: ""
+
+          openbao_config:
+            enabled: true
+            root_token: ""
+            secret_engines:
+              - path: "secret"
+                type: "kv-v2"
+            oidc:
+              enabled: false
 
           backup:
             restic_repository: "/srv/admin/backups/restic"
             restic_password: "ci-restic-pass"
-          SECRETS
+          CONFIG
 
           scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
-              /tmp/ci-secrets.yml admin@127.0.0.1:/tmp/ci-secrets.yml
+              /tmp/ci-all.yml admin@127.0.0.1:/tmp/ci-all.yml
 
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
-              "sudo cp /tmp/ci-secrets.yml /etc/admin-config/group_vars/all.yml"
-          echo "CI secrets installed at /etc/admin-config/group_vars/all.yml"
+              "cp /tmp/ci-all.yml /etc/admin-config/homelab-node-admin-config/hosts/group_vars/all.yml && \
+               cd /etc/admin-config/homelab-node-admin-config && \
+               git add hosts/inventory.ini hosts/group_vars/all.yml && \
+               git -c user.name='CI Admin' -c user.email='ci@example.com' commit -m 'Initial CI admin config'"
+          echo "CI config repo populated and committed"
 
       - name: Run bootstrap user journey in VM
         timeout-minutes: 45
