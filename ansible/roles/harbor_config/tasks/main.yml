@@ -1,7 +1,7 @@
 ---
 - name: Wait for Harbor API health
   ansible.builtin.uri:
-    url: "https://{{ service_domains.harbor }}/api/v2.0/health"
+    url: "{{ harbor_config_url | default('http://127.0.0.1:8088') }}/api/v2.0/health"
     method: GET
     user: admin
     password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required') }}"
@@ -16,7 +16,7 @@
 
 - name: Configure Harbor OIDC SSO
   ansible.builtin.uri:
-    url: "https://{{ service_domains.harbor }}/api/v2.0/configurations"
+    url: "{{ harbor_config_url | default('http://127.0.0.1:8088') }}/api/v2.0/configurations"
     method: PUT
     user: admin
     password: "{{ harbor.admin_password | mandatory('harbor.admin_password is required') }}"

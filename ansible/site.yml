@@ -4,6 +4,16 @@
   gather_facts: true
 
   pre_tasks:
+    - name: Check inventory configuration vars
+      ansible.builtin.stat:
+        path: "{{ inventory_dir }}/group_vars/all.yml"
+      register: inventory_config_file
+
+    - name: Load inventory configuration vars
+      ansible.builtin.include_vars:
+        file: "{{ inventory_dir }}/group_vars/all.yml"
+      when: inventory_config_file.stat.exists
+
     - name: Check encrypted inventory secrets
       ansible.builtin.stat:
         path: "{{ inventory_dir }}/group_vars/secrets.sops.yaml"

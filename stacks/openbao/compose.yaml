@@ -12,6 +12,8 @@ services:
     volumes:
       - ./openbao.hcl:/etc/openbao/openbao.hcl:ro
       - /srv/admin/data/openbao:/openbao/file
+    ports:
+      - "127.0.0.1:8200:8200"
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=admin-net"
