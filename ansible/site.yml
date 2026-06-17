@@ -4,6 +4,38 @@
   gather_facts: true
 
   pre_tasks:
+    - name: Check encrypted inventory secrets
+      ansible.builtin.stat:
+        path: "{{ inventory_dir }}/group_vars/secrets.sops.yaml"
+      register: inventory_secrets_file
+      no_log: true
+
+    - name: Decrypt encrypted inventory secrets
+      ansible.builtin.command: sops --decrypt --output-type json {{ inventory_dir }}/group_vars/secrets.sops.yaml
+      environment:
+        SOPS_AGE_KEY_FILE: /etc/sops/age/keys.txt
+      register: inventory_secrets
+      changed_when: false
+      when: inventory_secrets_file.stat.exists
+      no_log: true
+
+    - name: Merge encrypted inventory secrets
+      ansible.builtin.set_fact:
+        admin: "{{ admin | default({}) | combine(decrypted_inventory_secrets.admin | default({}), recursive=True) }}"
+        pihole: "{{ pihole | default({}) | combine(decrypted_inventory_secrets.pihole | default({}), recursive=True) }}"
+        cloudflare: "{{ cloudflare | default({}) | combine(decrypted_inventory_secrets.cloudflare | default({}), recursive=True) }}"
+        openbao: "{{ openbao | default({}) | combine(decrypted_inventory_secrets.openbao | default({}), recursive=True) }}"
+        openbao_config: "{{ openbao_config | default({}) | combine(decrypted_inventory_secrets.openbao_config | default({}), recursive=True) }}"
+        keycloak: "{{ keycloak | default({}) | combine(decrypted_inventory_secrets.keycloak | default({}), recursive=True) }}"
+        keycloak_config: "{{ keycloak_config | default({}) | combine(decrypted_inventory_secrets.keycloak_config | default({}), recursive=True) }}"
+        harbor: "{{ harbor | default({}) | combine(decrypted_inventory_secrets.harbor | default({}), recursive=True) }}"
+        harbor_config: "{{ harbor_config | default({}) | combine(decrypted_inventory_secrets.harbor_config | default({}), recursive=True) }}"
+        backup: "{{ backup | default({}) | combine(decrypted_inventory_secrets.backup | default({}), recursive=True) }}"
+      vars:
+        decrypted_inventory_secrets: "{{ inventory_secrets.stdout | from_json }}"
+      when: inventory_secrets_file.stat.exists
+      no_log: true
+
     - name: Ensure admin-node mode file exists
       ansible.builtin.file:
         path: "{{ admin_mode_file }}"
