@@ -66,13 +66,13 @@ if [[ -f "$restore_path/openbao.snap" ]]; then
   done
   # Raft snapshot restore requires the vault to be unsealed first
   BAO_TOKEN="${OPENBAO_TOKEN:-}"
-  if [[ -z "$BAO_TOKEN" && -f /opt/homelab-admin-node/secrets/openbao-root-token ]]; then
-    BAO_TOKEN="$(cat /opt/homelab-admin-node/secrets/openbao-root-token)"
+  if [[ -z "$BAO_TOKEN" && -f "$REPO_ROOT/secrets/openbao-root-token" ]]; then
+    BAO_TOKEN="$(cat "$REPO_ROOT/secrets/openbao-root-token")"
   fi
   # Unseal before restore using openbao-unseal.sh (handles SOPS decryption)
-  SECRETS_FILE=/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml
+  SECRETS_FILE="$REPO_ROOT/secrets/openbao-unseal.sops.yaml"
   if [[ -f /etc/sops/age/keys.txt && -f "$SECRETS_FILE" ]] && command -v sops &>/dev/null; then
-    "$SCRIPT_DIR/openbao-unseal.sh" || {
+    SECRETS_FILE="$SECRETS_FILE" "$SCRIPT_DIR/openbao-unseal.sh" || {
       echo "[restore] WARNING: openbao-unseal.sh failed during pre-restore unseal, continuing..." >&2
     }
   elif [[ -f "$SECRETS_FILE" ]]; then
@@ -117,10 +117,10 @@ for _ in $(seq 1 60); do
 done
 
 # Unseal OpenBao: try SOPS-based unseal first, fall back to CI secrets file
-SECRETS_FILE=/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml
+SECRETS_FILE="$REPO_ROOT/secrets/openbao-unseal.sops.yaml"
 unseal_ok=false
 if [[ -f /etc/sops/age/keys.txt && -f "$SECRETS_FILE" ]] && command -v sops &>/dev/null; then
-  if "$SCRIPT_DIR/openbao-unseal.sh"; then
+  if SECRETS_FILE="$SECRETS_FILE" "$SCRIPT_DIR/openbao-unseal.sh"; then
     unseal_ok=true
   fi
 elif [[ -f "$SECRETS_FILE" ]]; then
@@ -160,7 +160,7 @@ fi
 
 # Wait for Keycloak
 for _ in $(seq 1 60); do
-  if curl -fsS "https://${KEYCLOAK_DOMAIN}/health/ready" &>/dev/null; then break; fi
+  if curl -fsS "https://${KEYCLOAK_DOMAIN}/realms/master/.well-known/openid-configuration" &>/dev/null; then break; fi
   sleep 2
 done
 

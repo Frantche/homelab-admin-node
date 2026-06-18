@@ -36,7 +36,7 @@ fi
 echo "[validate-apis] checking Keycloak..."
 keycloak_ok=false
 for _ in $(seq 1 20); do
-  if curl -fsS "https://${KEYCLOAK_DOMAIN}/health/ready" >/dev/null 2>&1; then
+  if curl -fsS "https://${KEYCLOAK_DOMAIN}/realms/master/.well-known/openid-configuration" >/dev/null 2>&1; then
     keycloak_ok=true
     break
   fi

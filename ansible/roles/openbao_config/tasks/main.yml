@@ -51,8 +51,11 @@
     headers:
       X-Vault-Token: "{{ openbao_config.root_token }}"
     validate_certs: "{{ openbao_config_validate_certs }}"
-    status_code: 200
+    status_code: [200, 403]
   register: openbao_secret_engines_response
+  until: openbao_secret_engines_response.status == 200
+  retries: 30
+  delay: 2
   no_log: true
 
 - name: Set OpenBao secret engine map fact
@@ -83,8 +86,11 @@
     headers:
       X-Vault-Token: "{{ openbao_config.root_token }}"
     validate_certs: "{{ openbao_config_validate_certs }}"
-    status_code: 200
+    status_code: [200, 403]
   register: openbao_auth_methods_response
+  until: openbao_auth_methods_response.status == 200
+  retries: 30
+  delay: 2
   no_log: true
   when: openbao_config.oidc.enabled | default(false)
 
