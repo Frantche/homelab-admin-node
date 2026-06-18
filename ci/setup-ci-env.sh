@@ -34,14 +34,29 @@ _cert_dir="$(mktemp -d)"
 trap 'rm -rf "$_cert_dir"' EXIT
 
 openssl genrsa -out "$_cert_dir/ca.key" 4096 2>/dev/null
-openssl req -new -x509 -days 3650 -key "$_cert_dir/ca.key" -out "$_cert_dir/ca.crt"   -subj "/CN=Admin Node CI CA" 2>/dev/null
+openssl req -new -key "$_cert_dir/ca.key" -out "$_cert_dir/ca.csr"   -subj "/CN=Admin Node CI CA" 2>/dev/null
+cat > "$_cert_dir/ca.ext" <<'EOT'
+[v3_ca]
+basicConstraints=critical,CA:TRUE
+keyUsage=critical,keyCertSign,cRLSign
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid,issuer
+EOT
+openssl x509 -req -days 3650   -in "$_cert_dir/ca.csr"   -signkey "$_cert_dir/ca.key"   -out "$_cert_dir/ca.crt"   -extfile "$_cert_dir/ca.ext" -extensions v3_ca 2>/dev/null
 
 openssl genrsa -out "$_cert_dir/server.key" 2048 2>/dev/null
 openssl req -new -key "$_cert_dir/server.key" -out "$_cert_dir/server.csr"   -subj "/CN=${primary_domain}" 2>/dev/null
 
 {
   printf '[SAN]
-subjectAltName='
+'
+  printf 'basicConstraints=critical,CA:FALSE
+'
+  printf 'keyUsage=critical,digitalSignature,keyEncipherment
+'
+  printf 'extendedKeyUsage=serverAuth
+'
+  printf 'subjectAltName='
   first=true
   for domain in "${service_domains[@]}" localhost; do
     if [[ "$first" == true ]]; then
