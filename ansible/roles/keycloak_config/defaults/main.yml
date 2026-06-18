@@ -1,2 +1,2 @@
 ---
-keycloak_config_url: "http://127.0.0.1:9000"
+keycloak_config_url: "https://{{ service_domains.keycloak }}"

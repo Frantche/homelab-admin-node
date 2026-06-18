@@ -4,7 +4,9 @@ set -euo pipefail
 # Initialize OpenBao in CI and store unseal keys for the test lifecycle.
 # This creates a SOPS-compatible secrets file with the init output.
 
-SECRETS_DIR=/opt/homelab-admin-node/secrets
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SECRETS_DIR="$REPO_ROOT/secrets"
 
 mkdir -p "$SECRETS_DIR"
 

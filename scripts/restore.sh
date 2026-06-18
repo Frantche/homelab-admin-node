@@ -2,6 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+KEYCLOAK_DOMAIN="${KEYCLOAK_DOMAIN:-$("$REPO_ROOT/ci/service-domains.py" get keycloak)}"
 MODE_FILE=/etc/admin-node/mode
 RESTORE_ID_FILE=/etc/admin-node/restore-id
 BACKUP_ROOT=/srv/admin/backups/local
@@ -158,7 +160,7 @@ fi
 
 # Wait for Keycloak
 for _ in $(seq 1 60); do
-  if curl -fsS http://127.0.0.1:9000/health/ready &>/dev/null; then break; fi
+  if curl -fsS "https://${KEYCLOAK_DOMAIN}/health/ready" &>/dev/null; then break; fi
   sleep 2
 done
 
