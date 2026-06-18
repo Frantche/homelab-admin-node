@@ -15,10 +15,11 @@ mkdir -p /srv/admin/certs
 if [[ ! -f /etc/sops/age/keys.txt ]]; then
   echo "[ci-setup] Generating CI-only age key..."
   install -d -m 0700 /etc/sops/age
-  tmp_age_key="$(mktemp /tmp/ci-age-key.XXXXXX)"
+  tmp_age_dir="$(mktemp -d /tmp/ci-age-key.XXXXXX)"
+  tmp_age_key="$tmp_age_dir/keys.txt"
   age-keygen -o "$tmp_age_key" >/dev/null
   install -m 0400 "$tmp_age_key" /etc/sops/age/keys.txt
-  rm -f "$tmp_age_key"
+  rm -rf "$tmp_age_dir"
 fi
 
 mapfile -t service_domains < <("$REPO_ROOT/ci/service-domains.py" list)
