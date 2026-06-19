@@ -104,13 +104,26 @@
     - not (harbor_config_test_mode | default(false))
   no_log: true
 
+- name: Normalize Harbor current auth mode
+  ansible.builtin.set_fact:
+    harbor_current_auth_mode: >-
+      {{
+        (
+          harbor_current_configuration.json.auth_mode.value
+          if harbor_current_configuration.json.auth_mode is mapping
+          else harbor_current_configuration.json.auth_mode
+        ) | default('unknown', true)
+      }}
+  when:
+    - harbor_config.oidc.enabled | default(false)
+    - not (harbor_config_test_mode | default(false))
+  no_log: true
+
 - name: Fail when Harbor auth mode cannot be safely migrated to OIDC
   ansible.builtin.assert:
     that:
       - harbor_current_auth_mode in harbor_allowed_auth_modes
     fail_msg: "Harbor OIDC configuration only supports existing auth_mode values {{ harbor_allowed_auth_modes | join(', ') }}. Current value: {{ harbor_current_auth_mode | default('unknown') }}."
-  vars:
-    harbor_current_auth_mode: "{{ harbor_current_configuration.json.auth_mode | default('unknown') }}"
   when:
     - harbor_config.oidc.enabled | default(false)
     - not (harbor_config_test_mode | default(false))
@@ -129,7 +142,7 @@
   when:
     - harbor_config.oidc.enabled | default(false)
     - not (harbor_config_test_mode | default(false))
-    - harbor_current_configuration.json.auth_mode | default('') == 'db_auth'
+    - harbor_current_auth_mode == 'db_auth'
   no_log: true
 
 - name: Collect Harbor local non-admin users
@@ -144,7 +157,7 @@
   when:
     - harbor_config.oidc.enabled | default(false)
     - not (harbor_config_test_mode | default(false))
-    - harbor_current_configuration.json.auth_mode | default('') == 'db_auth'
+    - harbor_current_auth_mode == 'db_auth'
     - not (item.sysadmin_flag | default(false))
     - item.username | default('') != 'admin'
     - harbor_user_is_local
@@ -156,7 +169,7 @@
   when:
     - harbor_config.oidc.enabled | default(false)
     - not (harbor_config_test_mode | default(false))
-    - harbor_current_configuration.json.auth_mode | default('') == 'db_auth'
+    - harbor_current_auth_mode == 'db_auth'
     - (harbor_local_non_admin_users | default([]) | length) > 0
   no_log: true
 

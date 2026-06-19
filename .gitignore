@@ -23,10 +23,15 @@ backups/
 ci/tmp/
 ci/.tmp/
 .ci/
+__pycache__/
+ci/__pycache__/
 
 # Logs
 *.log
 logs/
+
+# Runtime secrets
+secrets/openbao-root-token
 
 # OS/editor
 .DS_Store
