@@ -46,6 +46,7 @@ services:
     volumes:
       - /srv/admin/data/harbor/registry:/storage
       - ./config/registry.yml:/etc/registry/config.yml:ro
+      - /srv/admin/data/harbor/core/token.crt:/etc/registry/root.crt:ro
     depends_on:
       harbor-redis:
         condition: service_healthy
@@ -62,6 +63,7 @@ services:
     volumes:
       - /srv/admin/data/harbor/registry:/storage
       - ./config/registry.yml:/etc/registry/config.yml:ro
+      - /srv/admin/data/harbor/core/token.crt:/etc/registry/root.crt:ro
       - ./config/registryctl.yml:/etc/registryctl/config.yml:ro
     depends_on:
       - harbor-registry
@@ -103,10 +105,12 @@ services:
       HARBOR_ADMIN_PASSWORD: ${HARBOR_ADMIN_PASSWORD}
       WITH_TRIVY: "false"
       REGISTRY_STORAGE_PROVIDER_NAME: filesystem
+      PERMITTED_REGISTRY_TYPES_FOR_PROXY_CACHE: docker-hub,harbor,docker-registry,aws-ecr,azure-acr,google-gcr,quay,github-ghcr,jfrog-artifactory
       READ_ONLY: "false"
       LOG_LEVEL: info
     volumes:
       - ./config/core-app.conf:/etc/core/app.conf:ro
+      - /srv/admin/data/harbor/core/token.key:/etc/core/private_key.pem:ro
       - /srv/admin/data/harbor/core:/data
     depends_on:
       harbor-db:

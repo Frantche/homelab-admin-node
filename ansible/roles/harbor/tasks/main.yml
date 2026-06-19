@@ -31,6 +31,55 @@
     mode: "0755"
   when: not (harbor_test_mode | default(false))
 
+- name: Ensure Harbor core data directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/data/harbor/core"
+    state: directory
+    mode: "0755"
+  when: not (harbor_test_mode | default(false))
+
+- name: Generate Harbor token signing key
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - genrsa
+      - -traditional
+      - -out
+      - "{{ admin_node_root }}/data/harbor/core/token.key"
+      - "4096"
+    creates: "{{ admin_node_root }}/data/harbor/core/token.key"
+  when: not (harbor_test_mode | default(false))
+  no_log: true
+
+- name: Generate Harbor token signing certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -new
+      - -x509
+      - -days
+      - "3650"
+      - -key
+      - "{{ admin_node_root }}/data/harbor/core/token.key"
+      - -out
+      - "{{ admin_node_root }}/data/harbor/core/token.crt"
+      - -subj
+      - /CN=harbor-token-issuer
+    creates: "{{ admin_node_root }}/data/harbor/core/token.crt"
+  when: not (harbor_test_mode | default(false))
+  no_log: true
+
+- name: Set Harbor token material permissions
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: "0644"
+  loop:
+    - "{{ admin_node_root }}/data/harbor/core/token.key"
+    - "{{ admin_node_root }}/data/harbor/core/token.crt"
+  when: not (harbor_test_mode | default(false))
+  no_log: true
+
 - name: Copy harbor stack files
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../stacks/harbor/"

@@ -35,6 +35,7 @@ keycloak_config:
 harbor_config:
   enabled: true
   validate_certs: true
+  validate_registry_mirrors: false
   oidc:
     enabled: true
     endpoint: "https://keycloak.example.com/realms/homelab"
@@ -43,6 +44,43 @@ harbor_config:
     groups_claim: "groups"
     admin_group: "harbor-admins"
     verify_cert: true
+  registry_mirrors:
+    - name: "dockerhub"
+      project_name: "dockerhub"
+      type: "docker-hub"
+      url: "https://hub.docker.com"
+      public: true
+      validation:
+        enabled: true
+        image: "library/busybox:latest"
+    - name: "quay"
+      project_name: "quay"
+      type: "quay"
+      url: "https://quay.io"
+      public: true
+      validation:
+        enabled: true
+        image: "prometheus/busybox:latest"
+    - name: "ghcr"
+      project_name: "ghcr"
+      type: "github-ghcr"
+      url: "https://ghcr.io"
+      public: true
+      validation:
+        enabled: true
+        image: "fluxcd/flux-cli:v2.4.0"
+    - name: "private-ghcr"
+      project_name: "private-ghcr"
+      type: "github-ghcr"
+      url: "https://ghcr.io"
+      public: false
+      username: "{{ vault_registry_mirror_private_username }}"
+      password: "{{ vault_registry_mirror_private_password }}"
+      validation:
+        enabled: false
+        image: "OWNER/PRIVATE_IMAGE:TAG"
+        username: "admin"
+        password: "{{ harbor.admin_password }}"
 
 openbao_config:
   enabled: true
