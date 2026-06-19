@@ -131,7 +131,7 @@
 
 - name: Read Harbor users before switching auth mode
   ansible.builtin.uri:
-    url: "https://{{ service_domains.harbor }}/api/v2.0/users?page=1&page_size=500"
+    url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/users?page=1&page_size=100"
     method: GET
     user: admin
     password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required')) }}"
