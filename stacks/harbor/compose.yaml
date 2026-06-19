@@ -16,7 +16,7 @@ services:
     environment:
       POSTGRES_DB: registry
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${HARBOR_DB_PASSWORD:-harbor-ci-db}
+      POSTGRES_PASSWORD: ${HARBOR_DB_PASSWORD}
     volumes:
       - /srv/admin/data/harbor/postgres:/var/lib/postgresql/data
     healthcheck:
@@ -77,14 +77,14 @@ services:
       CORE_SECRET: ${HARBOR_CORE_SECRET:-harbor-ci-core-secret}
       JOBSERVICE_SECRET: ${HARBOR_JOBSERVICE_SECRET:-harbor-ci-job-secret}
       REGISTRY_CREDENTIAL_USERNAME: harbor_registry_user
-      REGISTRY_CREDENTIAL_PASSWORD: ${HARBOR_REGISTRY_PASSWORD:-harbor-ci-registry}
+      REGISTRY_CREDENTIAL_PASSWORD: ${HARBOR_REGISTRY_PASSWORD}
       _REDIS_URL_CORE: redis://harbor-redis:6379/0
       _REDIS_URL_REG: redis://harbor-redis:6379/1
       DATABASE_TYPE: postgresql
       POSTGRESQL_HOST: harbor-db
       POSTGRESQL_PORT: 5432
       POSTGRESQL_USERNAME: postgres
-      POSTGRESQL_PASSWORD: ${HARBOR_DB_PASSWORD:-harbor-ci-db}
+      POSTGRESQL_PASSWORD: ${HARBOR_DB_PASSWORD}
       POSTGRESQL_DATABASE: registry
       POSTGRESQL_SSLMODE: disable
       POSTGRESQL_MAX_IDLE_CONNS: 50
@@ -100,7 +100,7 @@ services:
       REGISTRY_URL: http://harbor-registry:5000
       REGISTRY_CONTROLLER_URL: http://harbor-registryctl:8080
       TOKEN_SERVICE_URL: http://harbor-core:8080/service/token
-      HARBOR_ADMIN_PASSWORD: ${HARBOR_ADMIN_PASSWORD:-Harbor12345}
+      HARBOR_ADMIN_PASSWORD: ${HARBOR_ADMIN_PASSWORD}
       WITH_TRIVY: "false"
       REGISTRY_STORAGE_PROVIDER_NAME: filesystem
       READ_ONLY: "false"
@@ -167,8 +167,6 @@ services:
       - harbor-core
       - harbor-portal
       - harbor-registry
-    ports:
-      - "127.0.0.1:8088:8080"
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=admin-net"

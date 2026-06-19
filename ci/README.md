@@ -11,6 +11,7 @@ Ce dossier contient les scripts exécutés **à l'intérieur de la VM Arch Linux
 | `init-openbao-ci.sh` | Initialise et descelle OpenBao dans le conteneur Docker. Stocke le root token dans `/opt/homelab-admin-node/secrets/openbao-root-token` et crée le fichier de secrets SOPS (non chiffré) pour les tests. |
 | `create-sentinel-data.sh` | Crée un fichier sentinelle dans `/srv/admin/data/sentinel/value.txt` pour vérifier que la sauvegarde/restauration conserve bien les données. |
 | `assertions.sh` | Fonctions d'assertion shell (`assert_file_exists`, `assert_contains`) sourcées par tous les scénarios pour valider les étapes intermédiaires. |
+| `test-oidc-contracts.sh` | Vérifie localement les contrats Ansible OIDC/Harbor/Keycloak (mocks CI, échec explicite hors CI, secret partagé, scope `offline_access`, mapper `groups`). |
 | `ci-extra-vars.json` | Variables Ansible supplémentaires pour le mode CI : mots de passe factices, token Cloudflare fictif, paramètres Keycloak/Harbor/OpenBao/Backup. Passé via `--extra-vars` à chaque exécution du playbook. |
 
 ## Scénarios (`scenarios/`)

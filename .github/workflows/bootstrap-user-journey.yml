@@ -13,7 +13,25 @@ permissions:
   contents: read
 
 jobs:
+  oidc-contracts:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Ansible
+        run: |
+          python3 -m pip install --user ansible-core
+          ~/.local/bin/ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Run OIDC contract tests
+        run: |
+          ~/.local/bin/ansible-playbook --version
+          PATH="$HOME/.local/bin:$PATH" ./ci/test-oidc-contracts.sh
+
   bootstrap:
+    needs: oidc-contracts
     runs-on: ubuntu-24.04
     timeout-minutes: 90
 
@@ -30,6 +48,7 @@ jobs:
 
       - name: Install host dependencies
         run: |
+          sudo sed -i 's#azure.archive.ubuntu.com#archive.ubuntu.com#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
           sudo apt-get update
           sudo apt-get install -y \
             qemu-system-x86 \
@@ -238,7 +257,7 @@ jobs:
           # Generate mock deployment values in the same file an admin would commit
           # in the private config repo. CI keeps them unencrypted for readability.
           cat > /tmp/ci-all.yml <<'CONFIG'
-          # Generated CI config values — unencrypted mock values for testing only
+          # Generated CI config values -- unencrypted mock values for testing only
           ci_mode: true
 
           admin_repo_url: "https://github.com/${{ github.repository }}.git"
@@ -253,6 +272,14 @@ jobs:
             openbao: "bao.example.com"
             keycloak: "keycloak.example.com"
             traefik: "traefik.example.com"
+
+          oidc_clients:
+            harbor:
+              client_id: "harbor"
+              client_secret: "ci-oidc-harbor-client-secret"
+            openbao:
+              client_id: "openbao"
+              client_secret: "ci-oidc-openbao-client-secret"
 
           traefik:
             dashboard_enabled: true
@@ -292,7 +319,21 @@ jobs:
             admin_password: "ci-keycloak-admin-pass"
 
           keycloak_config:
-            enabled: false
+            enabled: true
+            realm:
+              name: "homelab"
+              display_name: "Homelab"
+            realm_roles:
+              - "admin"
+            clients:
+              - client_id: "harbor"
+                redirect_uris:
+                  - "https://harbor.example.com/c/oidc/callback"
+                web_origins:
+                  - "https://harbor.example.com"
+              - client_id: "openbao"
+                redirect_uris:
+                  - "https://bao.example.com/ui/vault/auth/oidc/oidc/callback"
 
           harbor:
             admin_password: "ci-Harbor-admin-p4ss"
@@ -302,7 +343,11 @@ jobs:
             registry_password: "ci-harbor-registry"
 
           harbor_config:
-            enabled: false
+            enabled: true
+            oidc:
+              enabled: true
+              endpoint: "https://keycloak.example.com/realms/homelab"
+              admin_group: "admin"
             registry_mirrors: []
 
           openbao:
@@ -315,23 +360,22 @@ jobs:
               - path: "secret"
                 type: "kv-v2"
             oidc:
-              enabled: false
+              enabled: true
+              discovery_url: "https://keycloak.example.com/realms/homelab"
+              role:
+                allowed_redirect_uris:
+                  - "https://bao.example.com/ui/vault/auth/oidc/oidc/callback"
+                bound_audiences:
+                  - "openbao"
 
           backup:
             restic_repository: "/srv/admin/backups/restic"
             restic_password: "ci-restic-pass"
           CONFIG
 
-          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
-              /tmp/ci-all.yml admin@127.0.0.1:/tmp/ci-all.yml
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null               -i .ci/ssh/id_ed25519 -P ${SSH_PORT}               /tmp/ci-all.yml admin@127.0.0.1:/tmp/ci-all.yml
 
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
-              "cp /tmp/ci-all.yml /etc/admin-config/homelab-node-admin-config/hosts/group_vars/all.yml && \
-               cd /etc/admin-config/homelab-node-admin-config && \
-               git add hosts/inventory.ini hosts/group_vars/all.yml && \
-               git -c user.name='CI Admin' -c user.email='ci@example.com' commit -m 'Initial CI admin config'"
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null               -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1               "cp /tmp/ci-all.yml /etc/admin-config/homelab-node-admin-config/hosts/group_vars/all.yml &&                cd /etc/admin-config/homelab-node-admin-config &&                git add hosts/inventory.ini hosts/group_vars/all.yml &&                git -c user.name='CI Admin' -c user.email='ci@example.com' commit -m 'Initial CI admin config'"
           echo "CI config repo populated and committed"
 
       - name: Run bootstrap user journey in VM

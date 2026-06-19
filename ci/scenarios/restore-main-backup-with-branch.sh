@@ -24,8 +24,7 @@ assert_contains /etc/admin-node/mode "init"
 # --- Deploy via Ansible playbook with config repo (init mode) ---
 echo "=== Running Ansible playbook (init mode) ==="
 ansible-playbook \
-  -i "$REPO_ROOT/ansible/inventory.ini" \
-  -i /etc/admin-config/ \
+  -i /etc/admin-config/hosts \
   "$REPO_ROOT/ansible/site.yml"
 
 # --- Initialize and unseal OpenBao ---
@@ -59,8 +58,7 @@ assert_contains /etc/admin-node/mode "normal"
 # --- Post-restore: re-run playbook to validate ---
 echo "=== Running Ansible playbook (post-restore) ==="
 ansible-playbook \
-  -i "$REPO_ROOT/ansible/inventory.ini" \
-  -i /etc/admin-config/ \
+  -i /etc/admin-config/hosts \
   "$REPO_ROOT/ansible/site.yml" \
   --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}}"
 

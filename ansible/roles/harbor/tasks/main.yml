@@ -1,32 +1,61 @@
 ---
+- name: Build Harbor runtime secret facts
+  ansible.builtin.set_fact:
+    harbor_runtime:
+      admin_password: "{{ harbor.admin_password | default('ci-Harbor-admin-p4ss', true) if (ci_mode | default(false)) else (harbor.admin_password | default('', true)) }}"
+      db_password: "{{ harbor.db_password | default('ci-harbor-db-pass', true) if (ci_mode | default(false)) else (harbor.db_password | default('', true)) }}"
+      core_secret: "{{ harbor.core_secret | default('ci-harbor-core-secret', true) if (ci_mode | default(false)) else (harbor.core_secret | default('', true)) }}"
+      jobservice_secret: "{{ harbor.jobservice_secret | default('ci-harbor-job-secret', true) if (ci_mode | default(false)) else (harbor.jobservice_secret | default('', true)) }}"
+      registry_password: "{{ harbor.registry_password | default('ci-harbor-registry', true) if (ci_mode | default(false)) else (harbor.registry_password | default('', true)) }}"
+  no_log: true
+
+- name: Require Harbor secrets outside CI
+  ansible.builtin.assert:
+    that:
+      - harbor_runtime[item.key] | length > 0
+    fail_msg: "{{ item.path }} is required when ci_mode is false. Define it in the inventory, preferably in secrets.sops.yaml."
+  loop:
+    - { key: "admin_password", path: "harbor.admin_password" }
+    - { key: "db_password", path: "harbor.db_password" }
+    - { key: "core_secret", path: "harbor.core_secret" }
+    - { key: "jobservice_secret", path: "harbor.jobservice_secret" }
+    - { key: "registry_password", path: "harbor.registry_password" }
+  loop_control:
+    label: "{{ item.path }}"
+  when: not (ci_mode | default(false))
+
 - name: Ensure harbor stack directory
   ansible.builtin.file:
     path: "{{ admin_node_root }}/stacks/harbor"
     state: directory
     mode: "0755"
+  when: not (harbor_test_mode | default(false))
 
 - name: Copy harbor stack files
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../stacks/harbor/"
     dest: "{{ admin_node_root }}/stacks/harbor/"
     mode: preserve
+  when: not (harbor_test_mode | default(false))
 
 - name: Render harbor compose
   ansible.builtin.template:
     src: "{{ playbook_dir }}/../stacks/harbor/compose.yaml"
     dest: "{{ admin_node_root }}/stacks/harbor/compose.yaml"
     mode: "0644"
+  when: not (harbor_test_mode | default(false))
 
 - name: Render harbor env
   ansible.builtin.copy:
     dest: "{{ admin_node_root }}/env/harbor.env"
     mode: "0600"
     content: |
-      HARBOR_ADMIN_PASSWORD={{ harbor.admin_password | mandatory('harbor.admin_password is required') }}
-      HARBOR_DB_PASSWORD={{ harbor.db_password | default('harbor-ci-db') }}
-      HARBOR_CORE_SECRET={{ harbor.core_secret | default('harbor-ci-core-secret') }}
-      HARBOR_JOBSERVICE_SECRET={{ harbor.jobservice_secret | default('harbor-ci-job-secret') }}
-      HARBOR_REGISTRY_PASSWORD={{ harbor.registry_password | default('harbor-ci-registry') }}
+      HARBOR_ADMIN_PASSWORD={{ harbor_runtime.admin_password }}
+      HARBOR_DB_PASSWORD={{ harbor_runtime.db_password }}
+      HARBOR_CORE_SECRET={{ harbor_runtime.core_secret }}
+      HARBOR_JOBSERVICE_SECRET={{ harbor_runtime.jobservice_secret }}
+      HARBOR_REGISTRY_PASSWORD={{ harbor_runtime.registry_password }}
+  when: not (harbor_test_mode | default(false))
   no_log: true
 
 - name: Start harbor stack
@@ -34,3 +63,4 @@
   args:
     chdir: "{{ admin_node_root }}/stacks/harbor"
   changed_when: true
+  when: not (harbor_test_mode | default(false))

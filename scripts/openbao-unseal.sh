@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AGE_KEY=/etc/sops/age/keys.txt
-SECRETS_FILE=/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml
+AGE_KEY=${AGE_KEY:-/etc/sops/age/keys.txt}
+SECRETS_FILE=${SECRETS_FILE:-/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml}
 
 if [[ ! -f "$AGE_KEY" ]]; then
   echo "Missing age private key at $AGE_KEY. Node remains locked." >&2

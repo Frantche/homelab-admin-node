@@ -38,6 +38,10 @@ ci:
   mock_cloudflare_tunnel: true
   skip_public_url_validation: true
 
+ci_mode: false
+
+oidc_clients: {}
+
 keycloak_config:
   enabled: false
   realm:
@@ -54,9 +58,7 @@ openbao_config:
   secret_engines: []
   oidc:
     enabled: false
-    discovery_url: ""
-    client_id: ""
-    client_secret: ""
+    discovery_url: "https://{{ service_domains.keycloak }}/realms/{{ keycloak_config.realm.name }}"
     default_role: "default"
     role:
       name: "default"
@@ -68,14 +70,13 @@ openbao_config:
 
 harbor_config:
   enabled: false
+  validate_certs: "{{ not (ci_mode | default(false)) }}"
   oidc:
     enabled: false
-    endpoint: ""
-    client_id: ""
-    client_secret: ""
-    verify_cert: true
+    endpoint: "https://{{ service_domains.keycloak }}/realms/{{ keycloak_config.realm.name }}"
+    verify_cert: "{{ not (ci_mode | default(false)) }}"
     auto_onboard: true
-    scope: "openid,profile,email"
+    scope: "openid,profile,email,offline_access"
     user_claim: "preferred_username"
     groups_claim: "groups"
     admin_group: ""

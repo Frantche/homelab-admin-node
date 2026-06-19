@@ -54,6 +54,7 @@ Voir `docs/pihole-dns.md` et rôle `ansible/roles/pihole_dns`.
 - Keycloak (realm/roles/users/clients): rôle `ansible/roles/keycloak_config` via `keycloak_config.*`.
 - OpenBao (secret engines + auth OIDC): rôle `ansible/roles/openbao_config` via `openbao_config.*`.
 - Harbor (OIDC + registry mirrors proxy-cache): rôle `ansible/roles/harbor_config` via `harbor_config.*`.
+- Les clients OIDC partagés (Harbor/OpenBao) sont définis une seule fois via `oidc_clients.*` dans le config repo; voir `examples/admin-config/group_vars/` et `docs/config-repo.md`.
 
 ## 14. Backup
 `scripts/backup.sh` vérifie santé APIs/DNS/tunnel puis applique rétention locale + `restic forget --keep-last 3 --prune`.

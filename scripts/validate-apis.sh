@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OPENBAO_TOKEN=${OPENBAO_TOKEN:-}
+KEYCLOAK_DOMAIN="${KEYCLOAK_DOMAIN:-$("$REPO_ROOT/ci/service-domains.py" get keycloak)}"
+HARBOR_DOMAIN="${HARBOR_DOMAIN:-$("$REPO_ROOT/ci/service-domains.py" get harbor)}"
+TRAEFIK_DOMAIN="${TRAEFIK_DOMAIN:-$("$REPO_ROOT/ci/service-domains.py" get traefik)}"
+OPENBAO_DOMAIN="${OPENBAO_DOMAIN:-$("$REPO_ROOT/ci/service-domains.py" get openbao)}"
 
 # Load Traefik dashboard credentials if available
 if [[ -f /etc/admin-node/traefik-dashboard-creds ]]; then
@@ -10,7 +16,6 @@ fi
 
 # --- OpenBao ---
 echo "[validate-apis] checking OpenBao..."
-# bao status exits 2 when sealed (expected), capture and check explicitly
 bao_rc=0
 bao_health="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null)" || bao_rc=$?
 if [[ $bao_rc -ne 0 && $bao_rc -ne 2 ]]; then
@@ -31,7 +36,7 @@ fi
 echo "[validate-apis] checking Keycloak..."
 keycloak_ok=false
 for _ in $(seq 1 20); do
-  if curl -fsS http://127.0.0.1:9000/health/ready >/dev/null 2>&1; then
+  if curl -fsS "https://${KEYCLOAK_DOMAIN}/realms/master/.well-known/openid-configuration" >/dev/null 2>&1; then
     keycloak_ok=true
     break
   fi
@@ -41,14 +46,13 @@ if [[ "$keycloak_ok" != "true" ]]; then
   echo "[validate-apis] ERROR: Keycloak health check failed" >&2
   exit 1
 fi
-curl -fsS https://keycloak.example.com/realms/master/.well-known/openid-configuration >/dev/null
+curl -fsS "https://${KEYCLOAK_DOMAIN}/realms/master/.well-known/openid-configuration" >/dev/null
 
 # --- Harbor ---
 echo "[validate-apis] checking Harbor..."
 harbor_ok=false
 for _ in $(seq 1 40); do
-  # Accept partial health (core+db healthy is sufficient)
-  health="$(curl -fsS https://harbor.example.com/api/v2.0/health 2>/dev/null)" || { sleep 3; continue; }
+  health="$(curl -fsS "https://${HARBOR_DOMAIN}/api/v2.0/health" 2>/dev/null)" || { sleep 3; continue; }
   core_ok="$(echo "$health" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(any(c["name"]=="core" and c["status"]=="healthy" for c in d.get("components",[])))' 2>/dev/null)" || { sleep 3; continue; }
   if [[ "$core_ok" == "True" ]]; then
     harbor_ok=true
@@ -62,19 +66,18 @@ if [[ "$harbor_ok" != "true" ]]; then
 fi
 
 if [[ -n "${HARBOR_ADMIN_USER:-}" && -n "${HARBOR_ADMIN_PASSWORD:-}" ]]; then
-  curl -fsS -u "${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASSWORD}" "https://harbor.example.com/api/v2.0/projects?name=admin-ci" >/dev/null
+  curl -fsS -u "${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASSWORD}" "https://${HARBOR_DOMAIN}/api/v2.0/projects?name=admin-ci" >/dev/null
 fi
 
 # --- Traefik ---
 echo "[validate-apis] checking Traefik..."
-# If dashboard credentials are available, verify routers
 if [[ -n "${TRAEFIK_DASHBOARD_USER:-}" && -n "${TRAEFIK_DASHBOARD_PASS:-}" ]]; then
-  traefik_routers="$(curl -fsS -u "${TRAEFIK_DASHBOARD_USER}:${TRAEFIK_DASHBOARD_PASS}" https://traefik.example.com/api/http/routers 2>/dev/null)"
+  traefik_routers="$(curl -fsS -u "${TRAEFIK_DASHBOARD_USER}:${TRAEFIK_DASHBOARD_PASS}" "https://${TRAEFIK_DOMAIN}/api/http/routers" 2>/dev/null)"
   if [[ -z "$traefik_routers" ]]; then
     echo "Traefik API not reachable via HTTPS" >&2
     exit 1
   fi
-  for vhost in keycloak.example.com bao.example.com harbor.example.com; do
+  for vhost in "$KEYCLOAK_DOMAIN" "$OPENBAO_DOMAIN" "$HARBOR_DOMAIN"; do
     if ! echo "$traefik_routers" | grep -q "$vhost"; then
       echo "Traefik route not configured for $vhost" >&2
       exit 1

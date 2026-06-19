@@ -38,6 +38,8 @@ creation_rules:
     age: ["age1xxxx...votre-clé-publique-age..."]
 ```
 
+Les exemples publics maintenus dans ce dépôt se trouvent dans `examples/admin-config/group_vars/`.
+
 ### `group_vars/all.yml` — exemple
 
 ```yaml
@@ -49,6 +51,14 @@ service_domains:
   openbao: "bao.mondomaine.fr"
   keycloak: "keycloak.mondomaine.fr"
   traefik: "traefik.mondomaine.fr"
+
+oidc_clients:
+  harbor:
+    client_id: "harbor"
+    client_secret: "{{ vault_oidc_harbor_client_secret }}"
+  openbao:
+    client_id: "openbao"
+    client_secret: "{{ vault_oidc_openbao_client_secret }}"
 
 traefik:
   dashboard_enabled: true
@@ -72,6 +82,8 @@ pihole:
 ### `group_vars/secrets.sops.yaml` — exemple (avant chiffrement)
 
 ```yaml
+vault_oidc_harbor_client_secret: "CHANGE_ME_IN_SOPS"
+vault_oidc_openbao_client_secret: "CHANGE_ME_IN_SOPS"
 admin:
   traefik_dashboard_basic_auth: "admin:$$apr1$$hash"
 pihole:
@@ -89,10 +101,16 @@ keycloak:
   admin_password: "mot-de-passe-admin"
 harbor:
   admin_password: "mot-de-passe-harbor"
+  db_password: "mot-de-passe-db-harbor"
+  core_secret: "secret-core-harbor"
+  jobservice_secret: "secret-jobservice-harbor"
+  registry_password: "mot-de-passe-registry-harbor"
 backup:
   restic_repository: "/srv/admin/backups/restic"
   restic_password: "mot-de-passe-restic"
 ```
+
+Définissez les `client_id` et `client_secret` OIDC une seule fois via `oidc_clients`. Hors CI, `oidc_clients.harbor.client_id`, `oidc_clients.harbor.client_secret` et, si l'OIDC OpenBao est activé, `oidc_clients.openbao.*` sont obligatoires. En CI (`ci_mode: true`), le dépôt utilise des valeurs mock déterministes distinctes de la production.
 
 ### `.gitignore`
 
