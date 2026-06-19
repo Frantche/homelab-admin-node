@@ -23,7 +23,12 @@ services:
       - "traefik.http.routers.dashboard.service=api@internal"
       - "traefik.http.routers.dashboard.middlewares=dashboard-auth@file"
     networks:
-      - admin-net
+      admin-net:
+        aliases:
+          - "{{ service_domains.keycloak }}"
+          - "{{ service_domains.openbao }}"
+          - "{{ service_domains.harbor }}"
+          - "{{ service_domains.traefik }}"
 
 networks:
   admin-net:

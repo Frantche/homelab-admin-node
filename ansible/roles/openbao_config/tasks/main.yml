@@ -1,14 +1,31 @@
 ---
+- name: Build OpenBao config token fact
+  ansible.builtin.set_fact:
+    openbao_config_token: "{{ openbao.root_token | default('', true) if (openbao.root_token | default('', true) | length > 0) else (openbao_config.root_token | default('', true)) }}"
+  no_log: true
+
 - name: Fail when OpenBao config is enabled without root token
   ansible.builtin.fail:
-    msg: "openbao_config.root_token is required when openbao_config.enabled=true"
-  when: (openbao_config.root_token | default('') | length) == 0
+    msg: "openbao.root_token or openbao_config.root_token is required when openbao_config.enabled=true"
+  when: (openbao_config_token | default('') | length) == 0
 
 - name: Build OpenBao OIDC client facts
   ansible.builtin.set_fact:
     openbao_oidc_client_id: "{{ oidc_clients.openbao.client_id | default('openbao', true) if (ci_mode | default(false)) else (oidc_clients.openbao.client_id | default('', true)) }}"
     openbao_oidc_client_secret: "{{ oidc_clients.openbao.client_secret | default('ci-oidc-openbao-client-secret', true) if (ci_mode | default(false)) else (oidc_clients.openbao.client_secret | default('', true)) }}"
     openbao_oidc_discovery_url: "{{ openbao_config.oidc.discovery_url if (openbao_config.oidc.discovery_url | default('', true) | length > 0) else ('https://' ~ service_domains.keycloak ~ '/realms/' ~ (((keycloak_config | default({})).realm | default({})).name | default('homelab'))) }}"
+    openbao_oidc_discovery_ca_pem: >-
+      {{
+        openbao_config.oidc.discovery_ca_pem
+        | default(
+            lookup(
+              'ansible.builtin.file',
+              openbao_config.oidc.discovery_ca_file | default('/srv/admin/certs/ca.pem'),
+              errors='ignore'
+            ),
+            true
+          )
+      }}
   when: openbao_config.oidc.enabled | default(false)
   no_log: true
 
@@ -35,7 +52,7 @@
     url: "{{ openbao_config_url }}/v1/sys/health"
     method: GET
     headers:
-      X-Vault-Token: "{{ openbao_config.root_token }}"
+      X-Vault-Token: "{{ openbao_config_token }}"
     validate_certs: "{{ openbao_config_validate_certs }}"
     status_code: [200, 429, 472, 473, 501, 503]
   register: openbao_health
@@ -49,7 +66,7 @@
     url: "{{ openbao_config_url }}/v1/sys/mounts"
     method: GET
     headers:
-      X-Vault-Token: "{{ openbao_config.root_token }}"
+      X-Vault-Token: "{{ openbao_config_token }}"
     validate_certs: "{{ openbao_config_validate_certs }}"
     status_code: [200, 403]
   register: openbao_secret_engines_response
@@ -67,7 +84,7 @@
     url: "{{ openbao_config_url }}/v1/sys/mounts/{{ item.path }}"
     method: POST
     headers:
-      X-Vault-Token: "{{ openbao_config.root_token }}"
+      X-Vault-Token: "{{ openbao_config_token }}"
     validate_certs: "{{ openbao_config_validate_certs }}"
     body_format: json
     body:
@@ -84,7 +101,7 @@
     url: "{{ openbao_config_url }}/v1/sys/auth"
     method: GET
     headers:
-      X-Vault-Token: "{{ openbao_config.root_token }}"
+      X-Vault-Token: "{{ openbao_config_token }}"
     validate_certs: "{{ openbao_config_validate_certs }}"
     status_code: [200, 403]
   register: openbao_auth_methods_response
@@ -104,7 +121,7 @@
     url: "{{ openbao_config_url }}/v1/sys/auth/oidc"
     method: POST
     headers:
-      X-Vault-Token: "{{ openbao_config.root_token }}"
+      X-Vault-Token: "{{ openbao_config_token }}"
     validate_certs: "{{ openbao_config_validate_certs }}"
     body_format: json
     body:
@@ -120,14 +137,23 @@
     url: "{{ openbao_config_url }}/v1/auth/oidc/config"
     method: POST
     headers:
-      X-Vault-Token: "{{ openbao_config.root_token }}"
+      X-Vault-Token: "{{ openbao_config_token }}"
     validate_certs: "{{ openbao_config_validate_certs }}"
     body_format: json
-    body:
-      oidc_discovery_url: "{{ openbao_oidc_discovery_url }}"
-      oidc_client_id: "{{ openbao_oidc_client_id }}"
-      oidc_client_secret: "{{ openbao_oidc_client_secret }}"
-      default_role: "{{ openbao_config.oidc.default_role | default(openbao_config.oidc.role.name | default('default')) }}"
+    body: >-
+      {{
+        {
+          'oidc_discovery_url': openbao_oidc_discovery_url,
+          'oidc_client_id': openbao_oidc_client_id,
+          'oidc_client_secret': openbao_oidc_client_secret,
+          'default_role': openbao_config.oidc.default_role | default(openbao_config.oidc.role.name | default('default'))
+        }
+        | combine(
+            {'oidc_discovery_ca_pem': openbao_oidc_discovery_ca_pem}
+            if (openbao_oidc_discovery_ca_pem | default('', true) | length > 0)
+            else {}
+          )
+      }}
     status_code: [200, 204]
   when: openbao_config.oidc.enabled | default(false)
   no_log: true
@@ -137,7 +163,7 @@
     url: "{{ openbao_config_url }}/v1/auth/oidc/role/{{ openbao_config.oidc.role.name | default('default') }}"
     method: POST
     headers:
-      X-Vault-Token: "{{ openbao_config.root_token }}"
+      X-Vault-Token: "{{ openbao_config_token }}"
     validate_certs: "{{ openbao_config_validate_certs }}"
     body_format: json
     body:
