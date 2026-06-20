@@ -1,8 +1,34 @@
 services:
+  harbor-log:
+    image: goharbor/harbor-log:v2.15.1
+    container_name: harbor-log
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+    volumes:
+      - /srv/admin/data/harbor/log:/var/log/docker
+      - ./config/logrotate.conf:/etc/logrotate.d/logrotate.conf:ro
+    ports:
+      - "127.0.0.1:1514:10514"
+    networks:
+      - admin-net
+
   harbor-db:
     image: pgautoupgrade/pgautoupgrade:18-trixie
     container_name: harbor-db
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
     command:
       - postgres
       - -c
@@ -24,18 +50,40 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+    depends_on:
+      - harbor-log
+    logging:
+      driver: "syslog"
+      options:
+        syslog-address: "tcp://127.0.0.1:1514"
+        tag: "postgresql"
     networks:
       - admin-net
 
   harbor-redis:
-    image: redis:8
+    image: goharbor/redis-photon:v2.15.1
     container_name: harbor-redis
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    volumes:
+      - /srv/admin/data/harbor/redis:/var/lib/redis
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 30
+    depends_on:
+      - harbor-log
+    logging:
+      driver: "syslog"
+      options:
+        syslog-address: "tcp://127.0.0.1:1514"
+        tag: "redis"
     networks:
       - admin-net
 
@@ -43,13 +91,26 @@ services:
     image: goharbor/registry-photon:v2.15.1
     container_name: harbor-registry
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
     volumes:
       - /srv/admin/data/harbor/registry:/storage
       - ./config/registry.yml:/etc/registry/config.yml:ro
       - /srv/admin/data/harbor/core/token.crt:/etc/registry/root.crt:ro
     depends_on:
+      harbor-log:
+        condition: service_started
       harbor-redis:
         condition: service_healthy
+    logging:
+      driver: "syslog"
+      options:
+        syslog-address: "tcp://127.0.0.1:1514"
+        tag: "registry"
     networks:
       - admin-net
 
@@ -57,6 +118,12 @@ services:
     image: goharbor/harbor-registryctl:v2.15.1
     container_name: harbor-registryctl
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
     environment:
       CORE_SECRET: ${HARBOR_CORE_SECRET:-harbor-ci-core-secret}
       JOBSERVICE_SECRET: ${HARBOR_JOBSERVICE_SECRET:-harbor-ci-job-secret}
@@ -66,7 +133,13 @@ services:
       - /srv/admin/data/harbor/core/token.crt:/etc/registry/root.crt:ro
       - ./config/registryctl.yml:/etc/registryctl/config.yml:ro
     depends_on:
+      - harbor-log
       - harbor-registry
+    logging:
+      driver: "syslog"
+      options:
+        syslog-address: "tcp://127.0.0.1:1514"
+        tag: "registryctl"
     networks:
       - admin-net
 
@@ -74,6 +147,11 @@ services:
     image: goharbor/harbor-core:v2.15.1
     container_name: harbor-core
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
     environment:
       PORT: 8080
       CORE_SECRET: ${HARBOR_CORE_SECRET:-harbor-ci-core-secret}
@@ -103,24 +181,38 @@ services:
       REGISTRY_CONTROLLER_URL: http://harbor-registryctl:8080
       TOKEN_SERVICE_URL: http://harbor-core:8080/service/token
       HARBOR_ADMIN_PASSWORD: ${HARBOR_ADMIN_PASSWORD}
-      WITH_TRIVY: "false"
+      WITH_TRIVY: "true"
+      TRIVY_ADAPTER_URL: http://harbor-trivy:8080
       REGISTRY_STORAGE_PROVIDER_NAME: filesystem
       PERMITTED_REGISTRY_TYPES_FOR_PROXY_CACHE: docker-hub,harbor,docker-registry,aws-ecr,azure-acr,google-gcr,quay,github-ghcr,jfrog-artifactory
       READ_ONLY: "false"
       LOG_LEVEL: info
+      METRIC_ENABLE: "true"
+      METRIC_PATH: /metrics
+      METRIC_PORT: 8001
+      METRIC_NAMESPACE: harbor
+      METRIC_SUBSYSTEM: core
     volumes:
       - ./config/core-app.conf:/etc/core/app.conf:ro
       - /srv/admin/data/harbor/core/token.key:/etc/core/private_key.pem:ro
+      - /srv/admin/data/harbor/core/secretkey:/etc/core/key:ro
       - /srv/admin/data/harbor/core:/data
     depends_on:
       harbor-db:
         condition: service_healthy
+      harbor-log:
+        condition: service_started
       harbor-redis:
         condition: service_healthy
       harbor-registry:
         condition: service_started
       harbor-registryctl:
         condition: service_started
+    logging:
+      driver: "syslog"
+      options:
+        syslog-address: "tcp://127.0.0.1:1514"
+        tag: "core"
     networks:
       - admin-net
 
@@ -128,10 +220,23 @@ services:
     image: goharbor/harbor-portal:v2.15.1
     container_name: harbor-portal
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
     volumes:
       - ./config/portal-nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - harbor-core
+      - harbor-log
+    logging:
+      driver: "syslog"
+      options:
+        syslog-address: "tcp://127.0.0.1:1514"
+        tag: "portal"
     networks:
       - admin-net
 
@@ -139,6 +244,12 @@ services:
     image: goharbor/harbor-jobservice:v2.15.1
     container_name: harbor-jobservice
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
     environment:
       CORE_SECRET: ${HARBOR_CORE_SECRET:-harbor-ci-core-secret}
       JOBSERVICE_SECRET: ${HARBOR_JOBSERVICE_SECRET:-harbor-ci-job-secret}
@@ -151,13 +262,107 @@ services:
       HTTP_PROXY: ""
       HTTPS_PROXY: ""
       NO_PROXY: harbor-core,harbor-jobservice,harbor-registry,harbor-registryctl,harbor-redis,harbor-db,127.0.0.1,localhost
+      METRIC_NAMESPACE: harbor
+      METRIC_SUBSYSTEM: jobservice
     volumes:
       - /srv/admin/data/harbor/job_logs:/var/log/jobs
       - ./config/jobservice.yml:/etc/jobservice/config.yml:ro
     depends_on:
       - harbor-core
+      - harbor-log
       - harbor-redis
       - harbor-registryctl
+    logging:
+      driver: "syslog"
+      options:
+        syslog-address: "tcp://127.0.0.1:1514"
+        tag: "jobservice"
+    networks:
+      - admin-net
+
+  harbor-trivy:
+    image: goharbor/trivy-adapter-photon:v2.15.1
+    container_name: harbor-trivy
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    environment:
+      SCANNER_LOG_LEVEL: info
+      SCANNER_REDIS_URL: redis://harbor-redis:6379/5
+      SCANNER_STORE_REDIS_URL: redis://harbor-redis:6379/5
+      SCANNER_STORE_REDIS_NAMESPACE: harbor.scanner.trivy:store
+      SCANNER_JOB_QUEUE_REDIS_URL: redis://harbor-redis:6379/5
+      SCANNER_JOB_QUEUE_REDIS_NAMESPACE: harbor.scanner.trivy:job-queue
+      SCANNER_TRIVY_CACHE_DIR: /home/scanner/.cache/trivy
+      SCANNER_TRIVY_REPORTS_DIR: /home/scanner/.cache/reports
+      SCANNER_TRIVY_VULN_TYPE: os,library
+      SCANNER_TRIVY_SEVERITY: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+      SCANNER_TRIVY_IGNORE_UNFIXED: "false"
+      SCANNER_TRIVY_SKIP_UPDATE: "false"
+      SCANNER_TRIVY_SKIP_JAVA_DB_UPDATE: "false"
+      SCANNER_TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db
+      SCANNER_TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db
+      SCANNER_TRIVY_OFFLINE_SCAN: "false"
+      SCANNER_TRIVY_SECURITY_CHECKS: vuln
+      SCANNER_TRIVY_GITHUB_TOKEN: ""
+      SCANNER_TRIVY_INSECURE: "false"
+      SCANNER_TRIVY_TIMEOUT: 5m0s
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      NO_PROXY: harbor-core,harbor-jobservice,harbor-registry,harbor-registryctl,harbor-redis,harbor-db,127.0.0.1,localhost
+    volumes:
+      - /srv/admin/data/harbor/trivy-adapter/trivy:/home/scanner/.cache/trivy
+      - /srv/admin/data/harbor/trivy-adapter/reports:/home/scanner/.cache/reports
+    depends_on:
+      - harbor-log
+      - harbor-redis
+    logging:
+      driver: "syslog"
+      options:
+        syslog-address: "tcp://127.0.0.1:1514"
+        tag: "trivy-adapter"
+    networks:
+      - admin-net
+
+  harbor-exporter:
+    image: goharbor/harbor-exporter:v2.15.1
+    container_name: harbor-exporter
+    restart: unless-stopped
+    environment:
+      LOG_LEVEL: info
+      HARBOR_EXPORTER_PORT: 8080
+      HARBOR_EXPORTER_METRICS_PATH: /metrics
+      HARBOR_EXPORTER_METRICS_ENABLED: "true"
+      HARBOR_EXPORTER_MAX_REQUESTS: 30
+      HARBOR_EXPORTER_CACHE_TIME: 23
+      HARBOR_EXPORTER_CACHE_CLEAN_INTERVAL: 14400
+      HARBOR_METRIC_NAMESPACE: harbor
+      HARBOR_METRIC_SUBSYSTEM: exporter
+      HARBOR_SERVICE_HOST: harbor-core
+      HARBOR_SERVICE_PORT: 8080
+      HARBOR_SERVICE_SCHEME: http
+      HARBOR_REDIS_URL: redis://harbor-redis:6379/2
+      HARBOR_REDIS_NAMESPACE: harbor_job_service_namespace
+      HARBOR_REDIS_TIMEOUT: 3600
+      HARBOR_DATABASE_HOST: harbor-db
+      HARBOR_DATABASE_PORT: 5432
+      HARBOR_DATABASE_USERNAME: postgres
+      HARBOR_DATABASE_PASSWORD: ${HARBOR_DB_PASSWORD}
+      HARBOR_DATABASE_DBNAME: registry
+      HARBOR_DATABASE_SSLMODE: disable
+      HARBOR_DATABASE_MAX_IDLE_CONNS: 50
+      HARBOR_DATABASE_MAX_OPEN_CONNS: 100
+      HARBOR_DATABASE_CONN_MAX_LIFETIME: 5m
+      HARBOR_DATABASE_CONN_MAX_IDLE_TIME: 0
+    depends_on:
+      - harbor-core
+      - harbor-db
+      - harbor-log
+    logging:
+      driver: "syslog"
+      options:
+        syslog-address: "tcp://127.0.0.1:1514"
+        tag: "exporter"
     networks:
       - admin-net
 
@@ -165,12 +370,25 @@ services:
     image: goharbor/nginx-photon:v2.15.1
     container_name: harbor-nginx
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
     volumes:
       - ./config/harbor-nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - harbor-core
+      - harbor-log
       - harbor-portal
       - harbor-registry
+    logging:
+      driver: "syslog"
+      options:
+        syslog-address: "tcp://127.0.0.1:1514"
+        tag: "proxy"
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=admin-net"
