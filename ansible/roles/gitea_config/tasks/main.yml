@@ -151,7 +151,7 @@
 - name: Validate Gitea repository and issue sentinel
   ansible.builtin.command: /opt/homelab-admin-node/scripts/validate-gitea-data.sh
   environment:
-    GITEA_DOMAIN: "{{ service_domains.gitea }}"
+    GITEA_DOMAIN: "{{ service_domains.gitea | default('git.example.com') }}"
     GITEA_ADMIN_USER: "{{ gitea_runtime.admin_user }}"
     GITEA_ADMIN_PASSWORD: "{{ gitea_runtime.admin_password }}"
     GITEA_VALIDATION_REPO: "{{ gitea_validation_repo }}"

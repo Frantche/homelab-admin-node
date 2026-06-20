@@ -1,2 +1,2 @@
 ---
-gitea_config_url: "https://{{ service_domains.gitea }}"
+gitea_config_url: "https://{{ service_domains.gitea | default('git.example.com') }}"

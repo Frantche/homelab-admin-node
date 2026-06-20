@@ -28,7 +28,7 @@ services:
           - "{{ service_domains.keycloak }}"
           - "{{ service_domains.openbao }}"
           - "{{ service_domains.harbor }}"
-          - "{{ service_domains.gitea }}"
+          - "{{ service_domains.gitea | default('git.example.com') }}"
           - "{{ service_domains.traefik }}"
 
 networks:
