@@ -16,7 +16,7 @@ services:
       POSTGRES_USER: gitea
       POSTGRES_PASSWORD: ${GITEA_DB_PASSWORD}
     volumes:
-      - /srv/admin/data/gitea-postgres:/var/lib/postgresql/data
+      - /srv/admin/data/gitea-postgres:/var/lib/postgresql
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "gitea"]
       interval: 5s
@@ -52,10 +52,16 @@ services:
       GITEA__openid__ENABLE_OPENID_SIGNIN: "false"
       GITEA__openid__ENABLE_OPENID_SIGNUP: "true"
       GITEA__openid__WHITELISTED_URIS: "{{ service_domains.keycloak }}"
+{% if ci_mode | default(false) %}
+      SSL_CERT_FILE: /etc/ssl/certs/admin-node-ca.pem
+{% endif %}
     volumes:
       - /srv/admin/data/gitea:/data
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
+{% if ci_mode | default(false) %}
+      - /srv/admin/certs/ca.pem:/etc/ssl/certs/admin-node-ca.pem:ro
+{% endif %}
     depends_on:
       gitea-db:
         condition: service_healthy

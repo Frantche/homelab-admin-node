@@ -88,6 +88,7 @@
       - "{{ gitea_runtime.admin_user }}"
       - --password
       - "{{ gitea_runtime.admin_password }}"
+      - --must-change-password=false
       - --config
       - /data/gitea/conf/app.ini
   changed_when: false

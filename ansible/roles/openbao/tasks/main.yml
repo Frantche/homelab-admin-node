@@ -11,6 +11,13 @@
     dest: "{{ admin_node_root }}/stacks/openbao/"
     mode: preserve
 
+- name: Ensure openbao config is readable by the container user
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/stacks/openbao/openbao.hcl"
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Render openbao compose
   ansible.builtin.template:
     src: "{{ playbook_dir }}/../stacks/openbao/compose.yaml"

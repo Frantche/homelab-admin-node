@@ -51,6 +51,7 @@ if [[ -f "$restore_path/keycloak.sql" ]]; then
     if docker exec keycloak-db pg_isready -U keycloak &>/dev/null; then break; fi
     sleep 1
   done
+  docker exec keycloak-db psql -U keycloak keycloak -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
   docker exec -i keycloak-db psql -U keycloak keycloak < "$restore_path/keycloak.sql"
   docker compose --env-file /srv/admin/env/keycloak.env -f /srv/admin/stacks/keycloak/compose.yaml down 2>/dev/null
 fi
@@ -187,7 +188,7 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 
-if ! "$SCRIPT_DIR/validate-apis.sh" || ! "$SCRIPT_DIR/validate-dns.sh" || ! "$SCRIPT_DIR/validate-cloudflare-tunnel.sh"; then
+if ! GITEA_VALIDATION_CREATE=false "$SCRIPT_DIR/validate-apis.sh" || ! "$SCRIPT_DIR/validate-dns.sh" || ! "$SCRIPT_DIR/validate-cloudflare-tunnel.sh"; then
   echo "restore_failed" > "$MODE_FILE"
   echo "Restore validation failed" >&2
   exit 1

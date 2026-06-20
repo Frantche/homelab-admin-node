@@ -75,6 +75,7 @@ openssl x509 -req -days 3650   -in "$_cert_dir/server.csr"   -CA "$_cert_dir/ca.
 cp "$_cert_dir/server.crt" /srv/admin/certs/cert.pem
 cp "$_cert_dir/server.key" /srv/admin/certs/key.pem
 cp "$_cert_dir/ca.crt" /srv/admin/certs/ca.pem
+chmod 0644 /srv/admin/certs/cert.pem /srv/admin/certs/ca.pem
 chmod 0600 /srv/admin/certs/key.pem
 
 # Add CA to the system trust store
