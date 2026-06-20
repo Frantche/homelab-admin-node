@@ -13,6 +13,12 @@ storage:
 http:
   addr: :5000
   secret: registry-secret
+auth:
+  token:
+    issuer: harbor-token-issuer
+    realm: https://{{ service_domains.harbor }}/service/token
+    rootcertbundle: /etc/registry/root.crt
+    service: harbor-registry
 redis:
   addr: harbor-redis:6379
   db: 1

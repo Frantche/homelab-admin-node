@@ -1,7 +1,7 @@
 ---
 - name: Lookup registry mirror
   ansible.builtin.uri:
-    url: "https://{{ service_domains.harbor }}/api/v2.0/registries?name={{ harbor_mirror_item.name | urlencode }}"
+    url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/registries?name={{ harbor_mirror_item.name | urlencode }}"
     method: GET
     user: admin
     password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
@@ -11,16 +11,9 @@
   register: harbor_registry_lookup
   no_log: true
 
-- name: Create registry mirror when missing
-  ansible.builtin.uri:
-    url: "https://{{ service_domains.harbor }}/api/v2.0/registries"
-    method: POST
-    user: admin
-    password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
-    force_basic_auth: true
-    validate_certs: "{{ harbor_api_validate_certs }}"
-    body_format: json
-    body:
+- name: Build registry mirror payload
+  ansible.builtin.set_fact:
+    harbor_registry_payload:
       name: "{{ harbor_mirror_item.name }}"
       description: "{{ harbor_mirror_item.description | default('Managed by Ansible') }}"
       type: "{{ harbor_mirror_item.type | default('docker-hub') }}"
@@ -30,13 +23,72 @@
         type: basic
         access_key: "{{ harbor_mirror_item.username | default('') }}"
         access_secret: "{{ harbor_mirror_item.password | default('') }}"
+  no_log: true
+
+- name: Capture existing registry mirror
+  ansible.builtin.set_fact:
+    harbor_existing_registry: "{{ (harbor_registry_lookup.json | first) if (harbor_registry_lookup.json | length) > 0 else {} }}"
+  no_log: true
+
+- name: Recreate registry mirror when immutable type changed
+  ansible.builtin.uri:
+    url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/registries/{{ harbor_existing_registry.id }}"
+    method: DELETE
+    user: admin
+    password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
+    force_basic_auth: true
+    validate_certs: "{{ harbor_api_validate_certs }}"
+    status_code: 200
+  when:
+    - harbor_existing_registry | length > 0
+    - harbor_existing_registry.type != harbor_registry_payload.type
+  no_log: true
+
+- name: Refresh registry mirror lookup after immutable recreation
+  ansible.builtin.uri:
+    url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/registries?name={{ harbor_mirror_item.name | urlencode }}"
+    method: GET
+    user: admin
+    password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
+    force_basic_auth: true
+    validate_certs: "{{ harbor_api_validate_certs }}"
+    status_code: 200
+  register: harbor_registry_recreated_lookup
+  when:
+    - harbor_existing_registry | length > 0
+    - harbor_existing_registry.type != harbor_registry_payload.type
+  no_log: true
+
+- name: Select current registry mirror lookup
+  ansible.builtin.set_fact:
+    harbor_registry_lookup_current: >-
+      {{
+        harbor_registry_recreated_lookup
+        if (
+          harbor_registry_recreated_lookup is defined
+          and not (harbor_registry_recreated_lookup.skipped | default(false))
+        )
+        else harbor_registry_lookup
+      }}
+  no_log: true
+
+- name: Create registry mirror when missing
+  ansible.builtin.uri:
+    url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/registries"
+    method: POST
+    user: admin
+    password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
+    force_basic_auth: true
+    validate_certs: "{{ harbor_api_validate_certs }}"
+    body_format: json
+    body: "{{ harbor_registry_payload }}"
     status_code: 201
-  when: (harbor_registry_lookup.json | length) == 0
+  when: (harbor_registry_lookup_current.json | length) == 0
   no_log: true
 
 - name: Refresh registry mirror lookup
   ansible.builtin.uri:
-    url: "https://{{ service_domains.harbor }}/api/v2.0/registries?name={{ harbor_mirror_item.name | urlencode }}"
+    url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/registries?name={{ harbor_mirror_item.name | urlencode }}"
     method: GET
     user: admin
     password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
@@ -46,9 +98,32 @@
   register: harbor_registry_lookup_final
   no_log: true
 
+- name: Capture registry mirror id
+  ansible.builtin.set_fact:
+    harbor_registry_id: "{{ (harbor_registry_lookup_final.json | first).id }}"
+  when: (harbor_registry_lookup_final.json | length) > 0
+  no_log: true
+
+- name: Update registry mirror when it already exists
+  ansible.builtin.uri:
+    url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/registries/{{ harbor_registry_id }}"
+    method: PUT
+    user: admin
+    password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
+    force_basic_auth: true
+    validate_certs: "{{ harbor_api_validate_certs }}"
+    body_format: json
+    body: "{{ harbor_registry_payload }}"
+    status_code: 200
+  when:
+    - (harbor_registry_lookup_current.json | length) > 0
+    - harbor_registry_id is defined
+    - harbor_existing_registry | length == 0 or harbor_existing_registry.type == harbor_registry_payload.type
+  no_log: true
+
 - name: Lookup proxy cache project
   ansible.builtin.uri:
-    url: "https://{{ service_domains.harbor }}/api/v2.0/projects?name={{ (harbor_mirror_item.project_name | default(harbor_mirror_item.name)) | urlencode }}"
+    url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/projects?name={{ (harbor_mirror_item.project_name | default(harbor_mirror_item.name)) | urlencode }}"
     method: GET
     user: admin
     password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
@@ -60,7 +135,7 @@
 
 - name: Create proxy cache project when missing
   ansible.builtin.uri:
-    url: "https://{{ service_domains.harbor }}/api/v2.0/projects"
+    url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/projects"
     method: POST
     user: admin
     password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
@@ -69,11 +144,88 @@
     body_format: json
     body:
       project_name: "{{ harbor_mirror_item.project_name | default(harbor_mirror_item.name) }}"
-      registry_id: "{{ (harbor_registry_lookup_final.json | first).id }}"
+      registry_id: "{{ harbor_registry_id | int }}"
+      storage_limit: -1
       metadata:
         public: "{{ (harbor_mirror_item.public | default(false)) | ternary('true', 'false') }}"
     status_code: [201, 409]
   when:
-    - (harbor_registry_lookup_final.json | length) > 0
+    - harbor_registry_id is defined
     - (harbor_project_lookup.json | length) == 0
+  no_log: true
+
+- name: Refresh proxy cache project lookup
+  ansible.builtin.uri:
+    url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/projects?name={{ (harbor_mirror_item.project_name | default(harbor_mirror_item.name)) | urlencode }}"
+    method: GET
+    user: admin
+    password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
+    force_basic_auth: true
+    validate_certs: "{{ harbor_api_validate_certs }}"
+    status_code: 200
+  register: harbor_project_lookup_final
+  no_log: true
+
+- name: Update proxy cache project metadata
+  ansible.builtin.uri:
+    url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/projects/{{ (harbor_project_lookup_final.json | first).project_id }}"
+    method: PUT
+    user: admin
+    password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
+    force_basic_auth: true
+    validate_certs: "{{ harbor_api_validate_certs }}"
+    body_format: json
+    body:
+      metadata:
+        public: "{{ (harbor_mirror_item.public | default(false)) | ternary('true', 'false') }}"
+    status_code: 200
+  when: (harbor_project_lookup_final.json | length) > 0
+  no_log: true
+
+- name: Create temporary Docker auth config for private mirror validation
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: harbor-mirror-auth-
+  register: harbor_mirror_auth_config
+  when:
+    - harbor_mirror_item.validation.enabled | default(harbor_config.validate_registry_mirrors | default(false))
+    - not (harbor_mirror_item.public | default(false))
+  no_log: true
+
+- name: Write temporary Docker auth config for private mirror validation
+  ansible.builtin.copy:
+    dest: "{{ harbor_mirror_auth_config.path }}/config.json"
+    mode: "0600"
+    content: |
+      {
+        "auths": {
+          "{{ service_domains.harbor }}": {
+            "auth": "{{ ((harbor_mirror_item.validation.username | default('admin')) ~ ':' ~ (harbor_mirror_item.validation.password | default(harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor registry validation'))))) | b64encode }}"
+          }
+        }
+      }
+  when:
+    - harbor_mirror_auth_config.path is defined
+  no_log: true
+
+- name: Pull image through Harbor registry mirror
+  ansible.builtin.command:
+    argv:
+      - docker
+      - pull
+      - "{{ service_domains.harbor }}/{{ harbor_mirror_item.project_name | default(harbor_mirror_item.name) }}/{{ harbor_mirror_item.validation.image }}"
+  environment: "{{ {'DOCKER_CONFIG': harbor_mirror_auth_config.path} if (harbor_mirror_auth_config.path is defined) else {} }}"
+  register: harbor_mirror_pull
+  changed_when: "'Downloaded newer image' in (harbor_mirror_pull.stdout | default(''))"
+  when:
+    - harbor_mirror_item.validation.enabled | default(harbor_config.validate_registry_mirrors | default(false))
+    - harbor_mirror_item.validation.image | default('', true) | length > 0
+  no_log: true
+
+- name: Remove temporary Docker auth config
+  ansible.builtin.file:
+    path: "{{ harbor_mirror_auth_config.path }}"
+    state: absent
+  when:
+    - harbor_mirror_auth_config.path is defined
   no_log: true
