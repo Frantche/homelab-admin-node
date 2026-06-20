@@ -4,6 +4,7 @@
     keycloak_realm_cfg: "{{ keycloak_config.realm }}"
     keycloak_manage_harbor_oidc_client: "{{ (harbor_config.enabled | default(false)) and (harbor_config.oidc.enabled | default(false)) }}"
     keycloak_manage_openbao_oidc_client: "{{ (openbao_config.enabled | default(false)) and (openbao_config.oidc.enabled | default(false)) }}"
+    keycloak_manage_gitea_oidc_client: "{{ (gitea_config.enabled | default(false)) and (gitea_config.oidc.enabled | default(false)) }}"
 
 - name: Build Keycloak-managed OIDC client facts
   ansible.builtin.set_fact:
@@ -11,6 +12,8 @@
     keycloak_harbor_client_secret: "{{ oidc_clients.harbor.client_secret | default('ci-oidc-harbor-client-secret', true) if (ci_mode | default(false)) else (oidc_clients.harbor.client_secret | default('', true)) }}"
     keycloak_openbao_client_id: "{{ oidc_clients.openbao.client_id | default('openbao', true) if (ci_mode | default(false)) else (oidc_clients.openbao.client_id | default('', true)) }}"
     keycloak_openbao_client_secret: "{{ oidc_clients.openbao.client_secret | default('ci-oidc-openbao-client-secret', true) if (ci_mode | default(false)) else (oidc_clients.openbao.client_secret | default('', true)) }}"
+    keycloak_gitea_client_id: "{{ oidc_clients.gitea.client_id | default('gitea', true) if (ci_mode | default(false)) else (oidc_clients.gitea.client_id | default('', true)) }}"
+    keycloak_gitea_client_secret: "{{ oidc_clients.gitea.client_secret | default('ci-oidc-gitea-client-secret', true) if (ci_mode | default(false)) else (oidc_clients.gitea.client_secret | default('', true)) }}"
   no_log: true
 
 - name: Validate required Harbor OIDC client settings
@@ -47,6 +50,24 @@
     label: "{{ item.path }}"
   when:
     - keycloak_manage_openbao_oidc_client
+    - not (ci_mode | default(false))
+
+- name: Validate required Gitea OIDC client settings
+  ansible.builtin.assert:
+    that:
+      - keycloak_required_gitea_oidc_values[item.key] | length > 0
+    fail_msg: "{{ item.path }} is required when ci_mode is false. Define it in the inventory, preferably in secrets.sops.yaml."
+  vars:
+    keycloak_required_gitea_oidc_values:
+      gitea_client_id: "{{ keycloak_gitea_client_id }}"
+      gitea_client_secret: "{{ keycloak_gitea_client_secret }}"
+  loop:
+    - { path: "oidc_clients.gitea.client_id", key: "gitea_client_id" }
+    - { path: "oidc_clients.gitea.client_secret", key: "gitea_client_secret" }
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - keycloak_manage_gitea_oidc_client
     - not (ci_mode | default(false))
 
 - name: Build Harbor Keycloak client definition
@@ -127,6 +148,38 @@
   when: keycloak_manage_openbao_oidc_client
   no_log: true
 
+- name: Build Gitea Keycloak client definition
+  ansible.builtin.set_fact:
+    keycloak_gitea_client_definition: >-
+      {{
+        {
+          'client_id': keycloak_gitea_client_id,
+          'name': keycloak_gitea_client_id,
+          'enabled': true,
+          'public': false,
+          'client_authenticator_type': 'client-secret',
+          'standard_flow_enabled': true,
+          'direct_access_grants_enabled': false,
+          'service_accounts_enabled': false,
+          'secret': keycloak_gitea_client_secret
+        }
+        | combine(
+            (
+              (
+                (keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_gitea_client_id) | list | first)
+                | default({})
+              )
+              | dict2items
+              | rejectattr('key', 'equalto', 'client_id')
+              | rejectattr('key', 'equalto', 'secret')
+              | items2dict
+            ),
+            recursive=True
+          )
+      }}
+  when: keycloak_manage_gitea_oidc_client
+  no_log: true
+
 - name: Build effective Keycloak client list
   ansible.builtin.set_fact:
     keycloak_effective_clients: >-
@@ -134,9 +187,11 @@
         (keycloak_config.clients | default([]))
         | rejectattr('client_id', 'equalto', keycloak_harbor_client_id)
         | rejectattr('client_id', 'equalto', keycloak_openbao_client_id)
+        | rejectattr('client_id', 'equalto', keycloak_gitea_client_id)
         | list
         + ([keycloak_harbor_client_definition] if keycloak_manage_harbor_oidc_client else [])
         + ([keycloak_openbao_client_definition] if keycloak_manage_openbao_oidc_client else [])
+        + ([keycloak_gitea_client_definition] if keycloak_manage_gitea_oidc_client else [])
       }}
   no_log: true
 

@@ -13,6 +13,10 @@ ingress:
     service: "https://traefik:443"
     originRequest:
       noTLSVerify: true
+  - hostname: "{{ service_domains.gitea }}"
+    service: "https://traefik:443"
+    originRequest:
+      noTLSVerify: true
   - hostname: "{{ service_domains.traefik }}"
     service: "https://traefik:443"
     originRequest:

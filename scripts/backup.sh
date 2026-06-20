@@ -20,6 +20,11 @@ fi
 mkdir -p "$TARGET"
 
 docker exec keycloak-db pg_dump -U keycloak keycloak > "$TARGET/keycloak.sql"
+if docker ps --format '{{.Names}}' | grep -qx gitea-db; then
+  docker exec gitea-db pg_dump -U gitea gitea > "$TARGET/gitea.sql"
+else
+  echo "[backup] WARNING: gitea-db is not running, skipping Gitea database dump" >&2
+fi
 
 # OpenBao raft snapshot requires authentication
 BAO_TOKEN="${OPENBAO_TOKEN:-}"
@@ -44,6 +49,9 @@ fi
 
 cp -a /srv/admin/stacks "$TARGET/stacks"
 cp -a /srv/admin/env "$TARGET/env"
+if [[ -d /srv/admin/data/gitea ]]; then
+  cp -a /srv/admin/data/gitea "$TARGET/gitea-data"
+fi
 
 if command -v restic &>/dev/null && [[ -n "${RESTIC_REPOSITORY:-}" ]]; then
   restic backup /srv/admin/stacks /srv/admin/env /srv/admin/data

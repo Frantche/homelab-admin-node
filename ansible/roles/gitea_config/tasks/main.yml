@@ -1,0 +1,161 @@
+---
+- name: Build Gitea OIDC facts
+  ansible.builtin.set_fact:
+    gitea_api_validate_certs: "{{ gitea_config.validate_certs | default(not (ci_mode | default(false))) }}"
+    gitea_oidc_client_id: "{{ oidc_clients.gitea.client_id | default('gitea', true) if (ci_mode | default(false)) else (oidc_clients.gitea.client_id | default('', true)) }}"
+    gitea_oidc_client_secret: "{{ oidc_clients.gitea.client_secret | default('ci-oidc-gitea-client-secret', true) if (ci_mode | default(false)) else (oidc_clients.gitea.client_secret | default('', true)) }}"
+    gitea_oidc_name: "{{ (gitea_config.oidc | default({})).name | default('keycloak') }}"
+    gitea_oidc_discovery_url: "{{ (gitea_config.oidc | default({})).discovery_url if ((gitea_config.oidc | default({})).discovery_url | default('', true) | length > 0) else ('https://' ~ service_domains.keycloak ~ '/realms/' ~ (((keycloak_config | default({})).realm | default({})).name | default('homelab')) ~ '/.well-known/openid-configuration') }}"
+    gitea_oidc_scopes: "{{ (gitea_config.oidc | default({})).scopes | default('openid email profile') }}"
+    gitea_validation_repo: "{{ (gitea_config.validation | default({})).repo | default('admin-node-validation') }}"
+    gitea_validation_issue_title: "{{ (gitea_config.validation | default({})).issue_title | default('Backup restore sentinel') }}"
+  no_log: true
+
+- name: Validate required Gitea OIDC client settings
+  ansible.builtin.assert:
+    that:
+      - gitea_required_oidc_values[item.key] | length > 0
+    fail_msg: "{{ item.path }} is required when ci_mode is false. Define it in the inventory, preferably in secrets.sops.yaml."
+  vars:
+    gitea_required_oidc_values:
+      gitea_client_id: "{{ gitea_oidc_client_id }}"
+      gitea_client_secret: "{{ gitea_oidc_client_secret }}"
+  loop:
+    - { path: "oidc_clients.gitea.client_id", key: "gitea_client_id" }
+    - { path: "oidc_clients.gitea.client_secret", key: "gitea_client_secret" }
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - gitea_config.oidc.enabled | default(false)
+    - not (ci_mode | default(false))
+
+- name: Wait for Gitea API readiness
+  ansible.builtin.uri:
+    url: "{{ gitea_config_url }}/api/v1/version"
+    method: GET
+    validate_certs: "{{ gitea_api_validate_certs }}"
+    status_code: 200
+  register: gitea_ready
+  until: gitea_ready.status == 200
+  retries: 40
+  delay: 5
+  when: not (gitea_config_test_mode | default(false))
+
+- name: Ensure Gitea admin user exists
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - --user
+      - git
+      - gitea
+      - gitea
+      - admin
+      - user
+      - create
+      - --admin
+      - --must-change-password=false
+      - --username
+      - "{{ gitea_runtime.admin_user }}"
+      - --password
+      - "{{ gitea_runtime.admin_password }}"
+      - --email
+      - "{{ gitea.admin_email | default('admin@example.com') }}"
+      - --config
+      - /data/gitea/conf/app.ini
+  register: gitea_admin_create
+  changed_when: gitea_admin_create.rc == 0
+  failed_when:
+    - gitea_admin_create.rc != 0
+    - "'already exists' not in (gitea_admin_create.stderr | default(''))"
+    - "'already exists' not in (gitea_admin_create.stdout | default(''))"
+  when: not (gitea_config_test_mode | default(false))
+  no_log: true
+
+- name: Update Gitea admin password
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - --user
+      - git
+      - gitea
+      - gitea
+      - admin
+      - user
+      - change-password
+      - --username
+      - "{{ gitea_runtime.admin_user }}"
+      - --password
+      - "{{ gitea_runtime.admin_password }}"
+      - --config
+      - /data/gitea/conf/app.ini
+  changed_when: false
+  when: not (gitea_config_test_mode | default(false))
+  no_log: true
+
+- name: Check Gitea OAuth source list
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - --user
+      - git
+      - gitea
+      - gitea
+      - admin
+      - auth
+      - list
+      - --config
+      - /data/gitea/conf/app.ini
+  register: gitea_auth_sources
+  changed_when: false
+  when:
+    - gitea_config.oidc.enabled | default(false)
+    - not (gitea_config_test_mode | default(false))
+  no_log: true
+
+- name: Configure Gitea Keycloak OIDC source
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - --user
+      - git
+      - gitea
+      - gitea
+      - admin
+      - auth
+      - add-oauth
+      - --provider
+      - openidConnect
+      - --name
+      - "{{ gitea_oidc_name }}"
+      - --key
+      - "{{ gitea_oidc_client_id }}"
+      - --secret
+      - "{{ gitea_oidc_client_secret }}"
+      - --auto-discover-url
+      - "{{ gitea_oidc_discovery_url }}"
+      - --scopes
+      - "{{ gitea_oidc_scopes }}"
+      - --config
+      - /data/gitea/conf/app.ini
+  changed_when: true
+  when:
+    - gitea_config.oidc.enabled | default(false)
+    - not (gitea_config_test_mode | default(false))
+    - gitea_oidc_name not in (gitea_auth_sources.stdout | default(''))
+  no_log: true
+
+- name: Validate Gitea repository and issue sentinel
+  ansible.builtin.command: /opt/homelab-admin-node/scripts/validate-gitea-data.sh
+  environment:
+    GITEA_DOMAIN: "{{ service_domains.gitea }}"
+    GITEA_ADMIN_USER: "{{ gitea_runtime.admin_user }}"
+    GITEA_ADMIN_PASSWORD: "{{ gitea_runtime.admin_password }}"
+    GITEA_VALIDATION_REPO: "{{ gitea_validation_repo }}"
+    GITEA_VALIDATION_ISSUE_TITLE: "{{ gitea_validation_issue_title }}"
+  changed_when: false
+  when: not (gitea_config_test_mode | default(false))
+  no_log: true

@@ -30,6 +30,9 @@ docker compose --env-file /srv/admin/env/traefik.env -f /srv/admin/stacks/traefi
 docker compose --env-file /srv/admin/env/keycloak.env -f /srv/admin/stacks/keycloak/compose.yaml down 2>/dev/null
 docker compose -f /srv/admin/stacks/openbao/compose.yaml down 2>/dev/null
 docker compose --env-file /srv/admin/env/harbor.env -f /srv/admin/stacks/harbor/compose.yaml down 2>/dev/null
+if [[ -f /srv/admin/env/gitea.env && -f /srv/admin/stacks/gitea/compose.yaml ]]; then
+  docker compose --env-file /srv/admin/env/gitea.env -f /srv/admin/stacks/gitea/compose.yaml down 2>/dev/null
+fi
 if [[ "${CI_MOCK_CLOUDFLARE_TUNNEL:-false}" != "true" ]]; then
   docker compose --env-file /srv/admin/env/cloudflared.env -f /srv/admin/stacks/cloudflared/compose.yaml down 2>/dev/null
 fi
@@ -50,6 +53,23 @@ if [[ -f "$restore_path/keycloak.sql" ]]; then
   done
   docker exec -i keycloak-db psql -U keycloak keycloak < "$restore_path/keycloak.sql"
   docker compose --env-file /srv/admin/env/keycloak.env -f /srv/admin/stacks/keycloak/compose.yaml down 2>/dev/null
+fi
+
+if [[ -d "$restore_path/gitea-data" ]]; then
+  rm -rf /srv/admin/data/gitea
+  cp -a "$restore_path/gitea-data" /srv/admin/data/gitea
+fi
+
+if [[ -f "$restore_path/gitea.sql" && -f /srv/admin/env/gitea.env && -f /srv/admin/stacks/gitea/compose.yaml ]]; then
+  docker compose --env-file /srv/admin/env/gitea.env -f /srv/admin/stacks/gitea/compose.yaml up -d gitea-db
+  echo "[restore] waiting for gitea-db..."
+  for _ in $(seq 1 30); do
+    if docker exec gitea-db pg_isready -U gitea &>/dev/null; then break; fi
+    sleep 1
+  done
+  docker exec gitea-db psql -U gitea gitea -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
+  docker exec -i gitea-db psql -U gitea gitea < "$restore_path/gitea.sql"
+  docker compose --env-file /srv/admin/env/gitea.env -f /srv/admin/stacks/gitea/compose.yaml down 2>/dev/null
 fi
 
 if [[ -f "$restore_path/openbao.snap" ]]; then
@@ -101,6 +121,9 @@ docker compose -f /srv/admin/stacks/openbao/compose.yaml up -d
 docker compose --env-file /srv/admin/env/traefik.env -f /srv/admin/stacks/traefik/compose.yaml up -d
 docker compose --env-file /srv/admin/env/keycloak.env -f /srv/admin/stacks/keycloak/compose.yaml up -d
 docker compose --env-file /srv/admin/env/harbor.env -f /srv/admin/stacks/harbor/compose.yaml up -d
+if [[ -f /srv/admin/env/gitea.env && -f /srv/admin/stacks/gitea/compose.yaml ]]; then
+  docker compose --env-file /srv/admin/env/gitea.env -f /srv/admin/stacks/gitea/compose.yaml up -d
+fi
 if [[ "${CI_MOCK_CLOUDFLARE_TUNNEL:-false}" != "true" ]]; then
   docker compose --env-file /srv/admin/env/cloudflared.env -f /srv/admin/stacks/cloudflared/compose.yaml up -d
 fi

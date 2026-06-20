@@ -48,7 +48,7 @@ assert_contains /etc/admin-node/mode "normal"
 
 # --- Verify Docker Compose services ---
 echo "=== Verifying Docker Compose services ==="
-for svc in traefik keycloak openbao harbor-core; do
+for svc in traefik keycloak openbao harbor-core gitea; do
   if ! docker ps --filter "name=^${svc}$" --filter "status=running" --format '{{.Names}}' | grep -q "^${svc}$"; then
     echo "ERROR: Service ${svc} is not running" >&2
     docker ps -a
