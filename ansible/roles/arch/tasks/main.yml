@@ -17,4 +17,5 @@
       - fail2ban
       - audit
       - lynis
+      - arch-audit
     state: present

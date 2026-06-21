@@ -4,4 +4,11 @@ KbdInteractiveAuthentication no
 PubkeyAuthentication yes
 AuthenticationMethods publickey
 X11Forwarding no
+AllowTcpForwarding no
+AllowAgentForwarding no
+ClientAliveCountMax 2
+LogLevel VERBOSE
+MaxAuthTries 3
+MaxSessions 2
+TCPKeepAlive no
 AllowUsers {{ hardening.ssh.allow_users | default(['admin']) | join(' ') }}

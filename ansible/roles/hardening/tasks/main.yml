@@ -60,6 +60,85 @@
     mode: "0644"
   notify: Reload sysctl
 
+- name: Ensure limits drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/security/limits.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Disable core dumps via limits.d
+  ansible.builtin.copy:
+    src: limits-core-dumps.conf
+    dest: /etc/security/limits.d/90-admin-core-dumps.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Harden login defaults
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: "^#?\\s*{{ item.key }}\\s+"
+    line: "{{ item.key }}\t{{ item.value }}"
+    create: false
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - key: UMASK
+      value: "027"
+    - key: PASS_MIN_DAYS
+      value: "1"
+    - key: PASS_MAX_DAYS
+      value: "365"
+    - key: SHA_CRYPT_MIN_ROUNDS
+      value: "5000"
+    - key: SHA_CRYPT_MAX_ROUNDS
+      value: "500000"
+
+- name: Ensure modprobe drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/modprobe.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Disable unused storage and network protocol modules
+  ansible.builtin.copy:
+    src: modprobe-hardening.conf
+    dest: /etc/modprobe.d/90-admin-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure local hostname resolution
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} ANSIBLE MANAGED ADMIN NODE HOSTNAME"
+    block: "{{ admin_node_lan_ip }} {{ (([admin_node_fqdn] if ((admin_node_fqdn | default('')) | length > 0) else []) + [ansible_facts['hostname']]) | join(' ') }}"
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Deploy local login banner
+  ansible.builtin.copy:
+    src: issue
+    dest: /etc/issue
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Deploy remote login banner
+  ansible.builtin.copy:
+    src: issue.net
+    dest: /etc/issue.net
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Ensure audited admin directories exist
   ansible.builtin.file:
     path: "{{ item.path }}"

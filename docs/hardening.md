@@ -10,6 +10,7 @@ Le hardening est appliqué par Ansible sur la VM Arch `admin-01`. Il reste compa
 - Logs: journald persistant dans `/var/log/journal`.
 - Audit: `auditd` surveille SSH, sudoers, `/etc/sops/age`, `/etc/admin-node` et `/srv/admin/env`.
 - Anti-bruteforce: `fail2ban` activé pour `sshd`.
+- Lynis: les options SSH, sysctl, core dumps, defaults de login, bannieres et modules/protocoles inutiles sont durcis sans changer le port SSH.
 - Analyse CI: Lynis est lancé dans la VM Arch et publié comme artifact `hardening-audit`.
 
 ## Ports attendus
@@ -59,9 +60,13 @@ La validation vérifie la configuration effective SSH, l'état de `nftables`, le
 
 En CI, `ci/run-hardening-audit.sh` lance d'abord cette validation puis exécute Lynis. La première version ne bloque pas sur le score Lynis; le rapport sert de baseline pour durcir progressivement.
 
+Le profil CI `ci/lynis-ci.prf` ignore `DBS-1882`, car Redis est détecté via le conteneur Harbor et n'a pas de fichier de configuration Redis hôte à auditer.
+
 ## Hors v1
 
 - AppArmor/SELinux: non activé par défaut, car cela dépend du kernel et du boot de la VM Arch.
 - OpenSCAP: non intégré tant qu'un profil Arch cible n'est pas choisi.
 - Suppression automatique de services: non appliquée pour éviter de casser le bootstrap cloud-init ou Docker sans inventaire précis.
+- `kernel.modules_disabled=1` et `net.ipv4.conf.all.forwarding=0`: non appliqués pour préserver la maintenance et Docker.
+- Changement du port SSH: non appliqué pour éviter de casser les accès et scénarios CI.
 - Seuil Lynis bloquant: non activé; la CI publie d'abord une baseline.
