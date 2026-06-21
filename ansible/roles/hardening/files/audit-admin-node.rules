@@ -1,0 +1,7 @@
+-w /etc/ssh/sshd_config -p wa -k admin_ssh
+-w /etc/ssh/sshd_config.d -p wa -k admin_ssh
+-w /etc/sudoers -p wa -k admin_sudo
+-w /etc/sudoers.d -p wa -k admin_sudo
+-w /etc/sops/age -p wa -k admin_secret_zero
+-w /etc/admin-node -p wa -k admin_node_state
+-w /srv/admin/env -p wa -k admin_env

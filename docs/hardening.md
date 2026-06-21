@@ -1,0 +1,67 @@
+# Hardening
+
+Le hardening est appliqué par Ansible sur la VM Arch `admin-01`. Il reste compatible avec les modes `locked`, `init`, `normal`, `restore` et avec les scénarios CI.
+
+## Choix retenus
+
+- Firewall: `nftables`, avec politique entrante par défaut `drop`.
+- Accès SSH: clé publique uniquement, `root` interdit, mots de passe SSH interdits.
+- sudo: `NOPASSWD` conservé pour le groupe `wheel`, mais déclaré dans `/etc/sudoers.d/admin-node` et validé par `visudo`.
+- Logs: journald persistant dans `/var/log/journal`.
+- Audit: `auditd` surveille SSH, sudoers, `/etc/sops/age`, `/etc/admin-node` et `/srv/admin/env`.
+- Anti-bruteforce: `fail2ban` activé pour `sshd`.
+- Analyse CI: Lynis est lancé dans la VM Arch et publié comme artifact `hardening-audit`.
+
+## Ports attendus
+
+- `22/tcp`: accès SSH administrateur.
+- `443/tcp`: entrée Traefik pour Keycloak, OpenBao, Harbor, Gitea et dashboard.
+- `127.0.0.1:1514/tcp`: syslog local Harbor, non exposé hors loopback.
+
+Aucun autre port public ne doit être exposé directement par les stacks. Les services applicatifs passent par Traefik ou par le réseau Docker `admin-net`.
+
+## Variables
+
+Les valeurs par défaut sont dans `ansible/group_vars/all.yml`:
+
+```yaml
+hardening:
+  enabled: true
+  ssh:
+    allow_users:
+      - admin
+  sudo:
+    nopasswd: true
+  firewall:
+    ssh_allowed_cidrs:
+      - "0.0.0.0/0"
+      - "::/0"
+    https_allowed_cidrs:
+      - "0.0.0.0/0"
+      - "::/0"
+  fail2ban:
+    enabled: true
+  auditd:
+    enabled: true
+  lynis:
+    enabled: true
+```
+
+Pour limiter SSH au LAN, surchargez `hardening.firewall.ssh_allowed_cidrs` dans le config repo privé.
+
+## Validation
+
+```bash
+make validate-hardening
+```
+
+La validation vérifie la configuration effective SSH, l'état de `nftables`, les ports écoutés attendus, journald persistant, `auditd`, `fail2ban` et les permissions sensibles.
+
+En CI, `ci/run-hardening-audit.sh` lance d'abord cette validation puis exécute Lynis. La première version ne bloque pas sur le score Lynis; le rapport sert de baseline pour durcir progressivement.
+
+## Hors v1
+
+- AppArmor/SELinux: non activé par défaut, car cela dépend du kernel et du boot de la VM Arch.
+- OpenSCAP: non intégré tant qu'un profil Arch cible n'est pas choisi.
+- Suppression automatique de services: non appliquée pour éviter de casser le bootstrap cloud-init ou Docker sans inventaire précis.
+- Seuil Lynis bloquant: non activé; la CI publie d'abord une baseline.

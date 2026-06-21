@@ -66,25 +66,57 @@ Voir `docs/pihole-dns.md` et rôle `ansible/roles/pihole_dns`.
 ## 16. Validation API
 `scripts/validate-apis.sh`, `scripts/validate-dns.sh`, `scripts/validate-cloudflare-tunnel.sh`.
 
-## 17. Fonctionnement Renovate
+## 17. Hardening
+Le socle de durcissement est appliqué par Ansible: SSH par clé, root SSH désactivé, sudoers dédié, nftables en default deny entrant, journald persistant, auditd, fail2ban, sysctl et permissions sensibles.
+
+Validation locale:
+
+```bash
+make validate-hardening
+```
+
+La CI exécute aussi Lynis dans la VM Arch et publie le rapport en artifact `hardening-audit`.
+Voir `docs/hardening.md`.
+
+## 18. Fonctionnement Renovate
 Renovate externe uniquement. Fichier local: `renovate.json`.
 
-## 18. Scénarios CI
+## 19. Scénarios CI
 `fresh-branch`, `upgrade-main-to-branch`, `restore-main-backup-with-branch` (voir `ci/scenarios`).
 
-## 19. Procédure disaster recovery
+## 20. Procédure disaster recovery
 Voir `docs/restore-runbook.md`.
 
-## 20. Limitations connues
+## 21. Limitations connues
 Mocks CI par défaut pour Pi-hole et Cloudflare Tunnel si infra absente.
 
-## 21. Checklist finale
+## 22. Checklist finale
 - cloud-init minimal sans secret
 - modes `locked/init/normal/restore/restore_failed`
 - stacks Docker Compose et validations API/DNS/Tunnel
 - backup + restore + rétention 3 snapshots
+- hardening système validé par script + rapport Lynis CI
 
-## 22. Dépôt de configuration séparé (config repo)
+## 23. Checklist hardening adaptée
+- OS Arch maintenu via paquets Ansible/cloud-init
+- Compte `admin` nominatif géré par cloud-init
+- Connexion root SSH désactivée
+- SSH par clé uniquement
+- sudo configuré via `/etc/sudoers.d/admin-node`
+- firewall nftables default deny entrant
+- ports attendus vérifiés: SSH `22/tcp`, HTTPS `443/tcp`, syslog Harbor local `127.0.0.1:1514`
+- fail2ban activé pour SSH
+- sysctl hardening appliqué
+- logs journald persistants
+- auditd installé et actif
+- backups/restores déjà couverts par les scénarios existants
+- secrets hors Git ou chiffrés SOPS/age
+- permissions fichiers sensibles vérifiées
+- timers systemd opérés par Ansible
+- scan Lynis exécuté en CI
+- documentation restore maintenue
+
+## 24. Dépôt de configuration séparé (config repo)
 Gérez votre configuration et vos secrets dans un dépôt Git **privé** séparé.
 Voir `docs/config-repo.md` pour la structure, la mise en place et l'utilisation avec `admin-converge.sh`.
 
@@ -100,6 +132,7 @@ make lint
 make ansible-syntax
 make shellcheck
 make validate
+make validate-hardening
 make validate-apis
 make validate-dns
 make validate-cloudflare-tunnel

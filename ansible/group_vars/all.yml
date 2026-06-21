@@ -43,6 +43,27 @@ ci:
 
 ci_mode: false
 
+hardening:
+  enabled: true
+  ssh:
+    allow_users:
+      - admin
+  sudo:
+    nopasswd: true
+  firewall:
+    ssh_allowed_cidrs:
+      - "0.0.0.0/0"
+      - "::/0"
+    https_allowed_cidrs:
+      - "0.0.0.0/0"
+      - "::/0"
+  fail2ban:
+    enabled: true
+  auditd:
+    enabled: true
+  lynis:
+    enabled: true
+
 oidc_clients: {}
 
 keycloak_config:

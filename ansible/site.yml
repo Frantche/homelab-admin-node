@@ -68,6 +68,8 @@
     - arch
     - docker
     - storage
+    - role: hardening
+      when: hardening.enabled | default(true)
     - firewall
     - role: locked
       when: admin_mode == 'locked'

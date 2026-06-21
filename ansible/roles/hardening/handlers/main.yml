@@ -1,0 +1,41 @@
+---
+- name: Restart sshd
+  ansible.builtin.systemd:
+    name: sshd
+    state: restarted
+
+- name: Restart systemd-journald
+  ansible.builtin.systemd:
+    name: systemd-journald
+    state: restarted
+
+- name: Reload sysctl
+  ansible.builtin.command: sysctl --system
+  changed_when: true
+
+- name: Load audit rules
+  ansible.builtin.shell: |
+    set -o pipefail
+    output="$(augenrules --load 2>&1)" && {
+      printf '%s\n' "$output"
+      exit 0
+    }
+    rc=$?
+    printf '%s\n' "$output"
+    if grep -q "Rule exists" <<<"$output"; then
+      loaded_rules="$(auditctl -l)"
+      for key in admin_ssh admin_sudo admin_secret_zero admin_node_state admin_env; do
+        grep -q "$key" <<<"$loaded_rules" || exit "$rc"
+      done
+      exit 0
+    fi
+    exit "$rc"
+  args:
+    executable: /bin/bash
+  register: hardening_audit_rules_load
+  changed_when: "'No change' not in hardening_audit_rules_load.stdout"
+
+- name: Restart fail2ban
+  ansible.builtin.systemd:
+    name: fail2ban
+    state: restarted

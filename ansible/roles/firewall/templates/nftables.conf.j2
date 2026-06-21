@@ -1,0 +1,42 @@
+#!/usr/sbin/nft -f
+
+destroy table inet admin_filter
+
+table inet admin_filter {
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    iif "lo" accept
+    ct state established,related accept
+    ct state invalid drop
+
+    ip protocol icmp accept
+    ip6 nexthdr ipv6-icmp accept
+
+{% for cidr in hardening.firewall.ssh_allowed_cidrs | default(['0.0.0.0/0', '::/0']) %}
+{% if ':' in cidr %}
+    ip6 saddr {{ cidr }} tcp dport 22 accept
+{% else %}
+    ip saddr {{ cidr }} tcp dport 22 accept
+{% endif %}
+{% endfor %}
+
+{% for cidr in hardening.firewall.https_allowed_cidrs | default(['0.0.0.0/0', '::/0']) %}
+{% if ':' in cidr %}
+    ip6 saddr {{ cidr }} tcp dport 443 accept
+{% else %}
+    ip saddr {{ cidr }} tcp dport 443 accept
+{% endif %}
+{% endfor %}
+
+    counter drop
+  }
+
+  chain forward {
+    type filter hook forward priority filter; policy accept;
+  }
+
+  chain output {
+    type filter hook output priority filter; policy accept;
+  }
+}

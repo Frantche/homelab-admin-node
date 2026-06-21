@@ -11,4 +11,10 @@
       - sops
       - age
       - python
+      - sudo
+      - openssh
+      - nftables
+      - fail2ban
+      - audit
+      - lynis
     state: present
