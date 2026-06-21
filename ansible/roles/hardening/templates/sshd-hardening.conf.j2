@@ -1,0 +1,7 @@
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+X11Forwarding no
+AllowUsers {{ hardening.ssh.allow_users | default(['admin']) | join(' ') }}

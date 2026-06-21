@@ -1,0 +1,175 @@
+---
+- name: Ensure SSH drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy SSH hardening drop-in
+  ansible.builtin.template:
+    src: sshd-hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-admin-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: sshd -t -f %s
+  notify: Restart sshd
+
+- name: Deploy sudoers policy
+  ansible.builtin.template:
+    src: sudoers-admin-node.j2
+    dest: /etc/sudoers.d/admin-node
+    owner: root
+    group: root
+    mode: "0440"
+    validate: visudo -cf %s
+
+- name: Ensure persistent journal directory exists
+  ansible.builtin.file:
+    path: /var/log/journal
+    state: directory
+    owner: root
+    group: systemd-journal
+    mode: "2755"
+
+- name: Ensure journald drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Configure persistent journald storage
+  ansible.builtin.copy:
+    src: journald-hardening.conf
+    dest: /etc/systemd/journald.conf.d/10-admin-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart systemd-journald
+
+- name: Deploy sysctl hardening
+  ansible.builtin.copy:
+    src: sysctl-hardening.conf
+    dest: /etc/sysctl.d/90-admin-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload sysctl
+
+- name: Ensure audited admin directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - path: /etc/admin-node
+      mode: "0755"
+    - path: /etc/sops/age
+      mode: "0700"
+    - path: "{{ admin_node_root }}/env"
+      mode: "0700"
+
+- name: Ensure audit rules directory exists
+  ansible.builtin.file:
+    path: /etc/audit/rules.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  when: hardening.auditd.enabled | default(true)
+
+- name: Deploy auditd hardening rules
+  ansible.builtin.copy:
+    src: audit-admin-node.rules
+    dest: /etc/audit/rules.d/90-admin-node.rules
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart auditd
+  when: hardening.auditd.enabled | default(true)
+
+- name: Enable and start auditd
+  ansible.builtin.systemd:
+    name: auditd
+    enabled: true
+    state: started
+  when: hardening.auditd.enabled | default(true)
+
+- name: Ensure fail2ban jail directory exists
+  ansible.builtin.file:
+    path: /etc/fail2ban/jail.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: hardening.fail2ban.enabled | default(true)
+
+- name: Configure fail2ban sshd jail
+  ansible.builtin.copy:
+    src: fail2ban-sshd.local
+    dest: /etc/fail2ban/jail.d/sshd.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart fail2ban
+  when: hardening.fail2ban.enabled | default(true)
+
+- name: Enable and start fail2ban
+  ansible.builtin.systemd:
+    name: fail2ban
+    enabled: true
+    state: started
+  when: hardening.fail2ban.enabled | default(true)
+
+- name: Check age key file
+  ansible.builtin.stat:
+    path: /etc/sops/age/keys.txt
+  register: hardening_age_key
+  no_log: true
+
+- name: Enforce age key permissions
+  ansible.builtin.file:
+    path: /etc/sops/age/keys.txt
+    owner: root
+    group: root
+    mode: "0400"
+  when: hardening_age_key.stat.exists
+  no_log: true
+
+- name: Check admin env directory
+  ansible.builtin.stat:
+    path: "{{ admin_node_root }}/env"
+  register: hardening_env_dir
+
+- name: Enforce admin env directory permissions
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/env"
+    owner: root
+    group: root
+    mode: "0700"
+  when: hardening_env_dir.stat.exists
+
+- name: Find admin env files
+  ansible.builtin.find:
+    paths: "{{ admin_node_root }}/env"
+    file_type: file
+    patterns: "*.env"
+  register: hardening_env_files
+  when: hardening_env_dir.stat.exists
+  no_log: true
+
+- name: Enforce admin env file permissions
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ hardening_env_files.files | default([]) }}"
+  when: hardening_env_dir.stat.exists
+  no_log: true

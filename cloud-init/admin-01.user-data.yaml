@@ -21,6 +21,11 @@ packages:
   - jq
   - curl
   - python
+  - sudo
+  - nftables
+  - fail2ban
+  - audit
+  - lynis
 
 write_files:
   - path: /etc/admin-node/mode

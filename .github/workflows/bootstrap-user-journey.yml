@@ -417,6 +417,32 @@ jobs:
                     SKIP_PUBLIC_URL_VALIDATION=true \
                     /opt/homelab-admin-node/ci/scenarios/bootstrap-user-journey.sh"
 
+      - name: Run hardening audit in VM
+        timeout-minutes: 10
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
+              "sudo /opt/homelab-admin-node/ci/run-hardening-audit.sh"
+
+      - name: Collect hardening audit reports
+        if: always()
+        run: |
+          mkdir -p .ci/artifacts
+          if ! scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
+              admin@127.0.0.1:/opt/homelab-admin-node/ci/lynis \
+              .ci/artifacts/; then
+            echo "Hardening audit reports were not available"
+          fi
+
+      - name: Upload hardening audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardening-audit
+          path: .ci/artifacts/lynis
+          if-no-files-found: ignore
+
       - name: Show VM logs on failure
         if: failure()
         run: |
