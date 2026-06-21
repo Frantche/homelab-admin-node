@@ -60,6 +60,14 @@
     mode: "0644"
   notify: Reload sysctl
 
+- name: Ensure limits drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/security/limits.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Disable core dumps via limits.d
   ansible.builtin.copy:
     src: limits-core-dumps.conf
@@ -109,7 +117,7 @@
   ansible.builtin.blockinfile:
     path: /etc/hosts
     marker: "# {mark} ANSIBLE MANAGED ADMIN NODE HOSTNAME"
-    block: "{{ admin_node_lan_ip }} {{ (([admin_node_fqdn] if ((admin_node_fqdn | default('')) | length > 0) else []) + [ansible_hostname]) | join(' ') }}"
+    block: "{{ admin_node_lan_ip }} {{ (([admin_node_fqdn] if ((admin_node_fqdn | default('')) | length > 0) else []) + [ansible_facts['hostname']]) | join(' ') }}"
     create: true
     owner: root
     group: root
