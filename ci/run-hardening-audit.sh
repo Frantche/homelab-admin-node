@@ -16,6 +16,7 @@ echo "[hardening-audit] running Lynis"
 lynis audit system \
   --quick \
   --no-colors \
+  --profile "$REPO_ROOT/ci/lynis-ci.prf" \
   --auditor "homelab-admin-node-ci" \
   --report-file "$REPORT_DIR/lynis-report.dat" \
   --log-file "$REPORT_DIR/lynis.log" \
