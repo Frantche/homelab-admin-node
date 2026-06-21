@@ -74,7 +74,7 @@ print(f'  root_token: "{root_token}"')
 PY
 
 age_public_key="$(age-keygen -y "$AGE_KEY")"
-sops --encrypt --age "$age_public_key" --filename-override "$SECRETS_FILE" "$tmp_plain" > "$SECRETS_FILE"
+sops --config /dev/null --encrypt --age "$age_public_key" --filename-override "$SECRETS_FILE" "$tmp_plain" > "$SECRETS_FILE"
 chmod 0600 "$SECRETS_FILE"
 
 echo "[openbao-init] wrote encrypted unseal secrets to $SECRETS_FILE"

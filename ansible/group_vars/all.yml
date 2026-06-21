@@ -16,6 +16,7 @@ service_domains:
   harbor: "harbor.example.com"
   openbao: "bao.example.com"
   keycloak: "keycloak.example.com"
+  gitea: "git.example.com"
   traefik: "traefik.example.com"
 
 pihole:
@@ -29,6 +30,8 @@ pihole:
     - name: "bao.example.com"
       ip: "{{ admin_node_lan_ip }}"
     - name: "keycloak.example.com"
+      ip: "{{ admin_node_lan_ip }}"
+    - name: "git.example.com"
       ip: "{{ admin_node_lan_ip }}"
     - name: "traefik.example.com"
       ip: "{{ admin_node_lan_ip }}"
@@ -81,3 +84,15 @@ harbor_config:
     groups_claim: "groups"
     admin_group: ""
   registry_mirrors: []
+
+gitea_config:
+  enabled: false
+  validate_certs: "{{ not (ci_mode | default(false)) }}"
+  oidc:
+    enabled: false
+    name: "keycloak"
+    discovery_url: "https://{{ service_domains.keycloak }}/realms/{{ keycloak_config.realm.name }}/.well-known/openid-configuration"
+    scopes: "openid email profile"
+  validation:
+    repo: "admin-node-validation"
+    issue_title: "Backup restore sentinel"

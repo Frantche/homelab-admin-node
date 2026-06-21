@@ -7,6 +7,7 @@ DEFAULT_DOMAINS = {
     "keycloak": "keycloak.example.com",
     "openbao": "bao.example.com",
     "harbor": "harbor.example.com",
+    "gitea": "git.example.com",
     "traefik": "traefik.example.com",
 }
 CONFIG_PATH = Path(
@@ -50,7 +51,7 @@ def main() -> int:
     domains = load_domains()
 
     if args.command == "list":
-        for key in ("keycloak", "openbao", "harbor", "traefik"):
+        for key in ("keycloak", "openbao", "harbor", "gitea", "traefik"):
             value = domains.get(key)
             if value:
                 print(value)

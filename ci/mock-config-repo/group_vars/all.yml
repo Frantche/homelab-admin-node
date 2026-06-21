@@ -8,6 +8,7 @@ service_domains:
   harbor: "harbor.example.com"
   openbao: "bao.example.com"
   keycloak: "keycloak.example.com"
+  gitea: "git.example.com"
   traefik: "traefik.example.com"
 
 oidc_clients:
@@ -17,6 +18,9 @@ oidc_clients:
   openbao:
     client_id: "openbao"
     client_secret: "ci-oidc-openbao-client-secret"
+  gitea:
+    client_id: "gitea"
+    client_secret: "ci-oidc-gitea-client-secret"
 
 admin:
   traefik_dashboard_basic_auth: "admin:$$apr1$$ci$$fakehash"
@@ -40,6 +44,14 @@ harbor:
   jobservice_secret: "ci-harbor-job-secret"
   registry_password: "ci-harbor-registry"
 
+gitea:
+  admin_user: "admin"
+  admin_password: "ci-Gitea-admin-p4ss"
+  db_password: "ci-gitea-db-pass"
+  secret_key: "ci-gitea-secret-key-change-me-32chars"
+  internal_token: "ci-gitea-internal-token-change-me-32chars"
+  jwt_secret: "ci-gitea-jwt-secret-change-me-32chars"
+
 openbao:
   root_token: ""
 
@@ -59,6 +71,11 @@ keycloak_config:
     - client_id: "openbao"
       redirect_uris:
         - "https://bao.example.com/ui/vault/auth/oidc/oidc/callback"
+    - client_id: "gitea"
+      redirect_uris:
+        - "https://git.example.com/user/oauth2/keycloak/callback"
+      web_origins:
+        - "https://git.example.com"
 
 harbor_config:
   enabled: true
@@ -78,6 +95,15 @@ openbao_config:
         - "https://bao.example.com/ui/vault/auth/oidc/oidc/callback"
       bound_audiences:
         - "openbao"
+
+gitea_config:
+  enabled: true
+  oidc:
+    enabled: true
+    discovery_url: "https://keycloak.example.com/realms/homelab/.well-known/openid-configuration"
+  validation:
+    repo: "admin-node-validation"
+    issue_title: "Backup restore sentinel"
 
 backup:
   restic_repository: "/srv/admin/backups/restic"

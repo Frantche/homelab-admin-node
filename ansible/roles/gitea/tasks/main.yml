@@ -1,0 +1,71 @@
+---
+- name: Build Gitea runtime secret facts
+  ansible.builtin.set_fact:
+    gitea_runtime:
+      admin_user: "{{ gitea.admin_user | default('admin', true) }}"
+      admin_password: "{{ gitea.admin_password | default('ci-Gitea-admin-p4ss', true) if (ci_mode | default(false)) else (gitea.admin_password | default('', true)) }}"
+      db_password: "{{ gitea.db_password | default('ci-gitea-db-pass', true) if (ci_mode | default(false)) else (gitea.db_password | default('', true)) }}"
+      secret_key: "{{ gitea.secret_key | default('ci-gitea-secret-key-change-me-32chars', true) if (ci_mode | default(false)) else (gitea.secret_key | default('', true)) }}"
+      internal_token: "{{ gitea.internal_token | default('ci-gitea-internal-token-change-me-32chars', true) if (ci_mode | default(false)) else (gitea.internal_token | default('', true)) }}"
+      jwt_secret: "{{ gitea.jwt_secret | default('ci-gitea-jwt-secret-change-me-32chars', true) if (ci_mode | default(false)) else (gitea.jwt_secret | default('', true)) }}"
+  no_log: true
+
+- name: Require Gitea secrets outside CI
+  ansible.builtin.assert:
+    that:
+      - gitea_runtime[item.key] | length > 0
+    fail_msg: "{{ item.path }} is required when ci_mode is false. Define it in the inventory, preferably in secrets.sops.yaml."
+  loop:
+    - { key: "admin_password", path: "gitea.admin_password" }
+    - { key: "db_password", path: "gitea.db_password" }
+    - { key: "secret_key", path: "gitea.secret_key" }
+    - { key: "internal_token", path: "gitea.internal_token" }
+    - { key: "jwt_secret", path: "gitea.jwt_secret" }
+  loop_control:
+    label: "{{ item.path }}"
+  when: not (ci_mode | default(false))
+
+- name: Ensure gitea stack directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/stacks/gitea"
+    state: directory
+    mode: "0755"
+  when: not (gitea_test_mode | default(false))
+
+- name: Ensure Gitea data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ admin_node_root }}/data/gitea"
+    - "{{ admin_node_root }}/data/gitea-postgres"
+  when: not (gitea_test_mode | default(false))
+
+- name: Render gitea compose
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../stacks/gitea/compose.yaml"
+    dest: "{{ admin_node_root }}/stacks/gitea/compose.yaml"
+    mode: "0644"
+  when: not (gitea_test_mode | default(false))
+
+- name: Render gitea env
+  ansible.builtin.copy:
+    dest: "{{ admin_node_root }}/env/gitea.env"
+    mode: "0600"
+    content: |
+      GITEA_ADMIN_USER={{ gitea_runtime.admin_user }}
+      GITEA_ADMIN_PASSWORD={{ gitea_runtime.admin_password }}
+      GITEA_DB_PASSWORD={{ gitea_runtime.db_password }}
+      GITEA_SECRET_KEY={{ gitea_runtime.secret_key }}
+      GITEA_INTERNAL_TOKEN={{ gitea_runtime.internal_token }}
+      GITEA_JWT_SECRET={{ gitea_runtime.jwt_secret }}
+  when: not (gitea_test_mode | default(false))
+  no_log: true
+
+- name: Start gitea stack
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/gitea.env -f compose.yaml up -d
+  args:
+    chdir: "{{ admin_node_root }}/stacks/gitea"
+  changed_when: true
+  when: not (gitea_test_mode | default(false))

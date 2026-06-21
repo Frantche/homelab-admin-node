@@ -8,8 +8,10 @@
       harbor: "harbor.example.com"
       openbao: "bao.example.com"
       keycloak: "keycloak.example.com"
+      gitea: "git.example.com"
       traefik: "traefik.example.com"
     harbor: {}
+    gitea: {}
     oidc_clients: {}
     keycloak_config:
       enabled: true
@@ -19,6 +21,9 @@
         - client_id: "harbor"
           redirect_uris:
             - "https://harbor.example.com/c/oidc/callback"
+        - client_id: "gitea"
+          redirect_uris:
+            - "https://git.example.com/user/oauth2/keycloak/callback"
     openbao_config:
       enabled: false
       oidc:
@@ -28,12 +33,23 @@
       oidc:
         enabled: true
         endpoint: "https://keycloak.example.com/realms/homelab"
+    gitea_config:
+      enabled: true
+      oidc:
+        enabled: true
+        discovery_url: "https://keycloak.example.com/realms/homelab/.well-known/openid-configuration"
   tasks:
     - name: Build Harbor secrets in CI test mode
       ansible.builtin.include_role:
         name: harbor
       vars:
         harbor_test_mode: true
+
+    - name: Build Gitea secrets in CI test mode
+      ansible.builtin.include_role:
+        name: gitea
+      vars:
+        gitea_test_mode: true
 
     - name: Build Keycloak client definitions in CI test mode
       ansible.builtin.include_role:
@@ -47,9 +63,19 @@
       vars:
         harbor_config_test_mode: true
 
+    - name: Build Gitea OIDC facts in CI test mode
+      ansible.builtin.include_role:
+        name: gitea_config
+      vars:
+        gitea_config_test_mode: true
+
     - name: Capture Harbor CI Keycloak client
       ansible.builtin.set_fact:
         harbor_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', (oidc_clients.harbor.client_id | default('harbor'))) | list | first | default({}) }}"
+
+    - name: Capture Gitea CI Keycloak client
+      ansible.builtin.set_fact:
+        gitea_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', (oidc_clients.gitea.client_id | default('gitea'))) | list | first | default({}) }}"
 
     - name: Assert CI mock contracts
       ansible.builtin.assert:
@@ -62,3 +88,8 @@
           - harbor_oidc_configuration_payload.oidc_client_secret == 'ci-oidc-harbor-client-secret'
           - harbor_oidc_configuration_payload.oidc_verify_cert == false
           - harbor_keycloak_client.secret == 'ci-oidc-harbor-client-secret'
+          - gitea_runtime.db_password == 'ci-gitea-db-pass'
+          - gitea_keycloak_client | length > 0
+          - gitea_keycloak_client.secret == 'ci-oidc-gitea-client-secret'
+          - gitea_oidc_client_id == 'gitea'
+          - gitea_oidc_client_secret == 'ci-oidc-gitea-client-secret'

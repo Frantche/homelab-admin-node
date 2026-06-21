@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OPENBAO_TOKEN=${OPENBAO_TOKEN:-}
 KEYCLOAK_DOMAIN="${KEYCLOAK_DOMAIN:-$("$REPO_ROOT/ci/service-domains.py" get keycloak)}"
 HARBOR_DOMAIN="${HARBOR_DOMAIN:-$("$REPO_ROOT/ci/service-domains.py" get harbor)}"
+GITEA_DOMAIN="${GITEA_DOMAIN:-$("$REPO_ROOT/ci/service-domains.py" get gitea)}"
 TRAEFIK_DOMAIN="${TRAEFIK_DOMAIN:-$("$REPO_ROOT/ci/service-domains.py" get traefik)}"
 OPENBAO_DOMAIN="${OPENBAO_DOMAIN:-$("$REPO_ROOT/ci/service-domains.py" get openbao)}"
 
@@ -69,6 +70,10 @@ if [[ -n "${HARBOR_ADMIN_USER:-}" && -n "${HARBOR_ADMIN_PASSWORD:-}" ]]; then
   curl -fsS -u "${HARBOR_ADMIN_USER}:${HARBOR_ADMIN_PASSWORD}" "https://${HARBOR_DOMAIN}/api/v2.0/projects?name=admin-ci" >/dev/null
 fi
 
+# --- Gitea ---
+echo "[validate-apis] checking Gitea..."
+"$SCRIPT_DIR/validate-gitea-data.sh"
+
 # --- Traefik ---
 echo "[validate-apis] checking Traefik..."
 if [[ -n "${TRAEFIK_DASHBOARD_USER:-}" && -n "${TRAEFIK_DASHBOARD_PASS:-}" ]]; then
@@ -77,7 +82,7 @@ if [[ -n "${TRAEFIK_DASHBOARD_USER:-}" && -n "${TRAEFIK_DASHBOARD_PASS:-}" ]]; t
     echo "Traefik API not reachable via HTTPS" >&2
     exit 1
   fi
-  for vhost in "$KEYCLOAK_DOMAIN" "$OPENBAO_DOMAIN" "$HARBOR_DOMAIN"; do
+  for vhost in "$KEYCLOAK_DOMAIN" "$OPENBAO_DOMAIN" "$HARBOR_DOMAIN" "$GITEA_DOMAIN"; do
     if ! echo "$traefik_routers" | grep -q "$vhost"; then
       echo "Traefik route not configured for $vhost" >&2
       exit 1

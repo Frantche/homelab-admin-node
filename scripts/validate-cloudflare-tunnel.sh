@@ -27,6 +27,7 @@ if docker ps --format '{{.Names}}' | grep -qx cloudflared; then
     curl -fsS https://keycloak.example.com >/dev/null
     curl -fsS https://bao.example.com >/dev/null
     curl -fsS https://harbor.example.com >/dev/null
+    curl -fsS https://git.example.com >/dev/null
     curl -fsS https://traefik.example.com >/dev/null
   fi
 else

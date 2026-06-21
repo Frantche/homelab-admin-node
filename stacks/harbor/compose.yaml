@@ -44,7 +44,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${HARBOR_DB_PASSWORD}
     volumes:
-      - /srv/admin/data/harbor/postgres:/var/lib/postgresql/data
+      - /srv/admin/data/harbor/postgres:/var/lib/postgresql
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 5s

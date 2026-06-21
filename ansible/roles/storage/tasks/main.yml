@@ -10,6 +10,8 @@
     - "{{ admin_node_root }}/data/keycloak"
     - "{{ admin_node_root }}/data/openbao"
     - "{{ admin_node_root }}/data/harbor"
+    - "{{ admin_node_root }}/data/gitea"
+    - "{{ admin_node_root }}/data/gitea-postgres"
     - "{{ admin_node_root }}/data/traefik"
     - "{{ admin_node_root }}/data/cloudflared"
 

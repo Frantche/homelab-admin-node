@@ -1,0 +1,80 @@
+services:
+  gitea-db:
+    image: pgautoupgrade/pgautoupgrade:18-trixie
+    container_name: gitea-db
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - max_wal_size=1GB
+      - -c
+      - min_wal_size=128MB
+      - -c
+      - wal_keep_size=128MB
+    environment:
+      POSTGRES_DB: gitea
+      POSTGRES_USER: gitea
+      POSTGRES_PASSWORD: ${GITEA_DB_PASSWORD}
+    volumes:
+      - /srv/admin/data/gitea-postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "gitea"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - admin-net
+
+  gitea:
+    image: docker.gitea.com/gitea:1.26.2
+    container_name: gitea
+    restart: unless-stopped
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: gitea-db:5432
+      GITEA__database__NAME: gitea
+      GITEA__database__USER: gitea
+      GITEA__database__PASSWD: ${GITEA_DB_PASSWORD}
+      GITEA__server__DOMAIN: "{{ service_domains.gitea | default('git.example.com') }}"
+      GITEA__server__ROOT_URL: "https://{{ service_domains.gitea | default('git.example.com') }}/"
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__server__DISABLE_SSH: "true"
+      GITEA__server__LFS_START_SERVER: "true"
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__security__SECRET_KEY: ${GITEA_SECRET_KEY}
+      GITEA__security__INTERNAL_TOKEN: ${GITEA_INTERNAL_TOKEN}
+      GITEA__oauth2__JWT_SECRET: ${GITEA_JWT_SECRET}
+      GITEA__service__DISABLE_REGISTRATION: "false"
+      GITEA__service__ALLOW_ONLY_EXTERNAL_REGISTRATION: "true"
+      GITEA__service__SHOW_REGISTRATION_BUTTON: "false"
+      GITEA__openid__ENABLE_OPENID_SIGNIN: "false"
+      GITEA__openid__ENABLE_OPENID_SIGNUP: "true"
+      GITEA__openid__WHITELISTED_URIS: "{{ service_domains.keycloak }}"
+{% if ci_mode | default(false) %}
+      SSL_CERT_FILE: /etc/ssl/certs/admin-node-ca.pem
+{% endif %}
+    volumes:
+      - /srv/admin/data/gitea:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+{% if ci_mode | default(false) %}
+      - /srv/admin/certs/ca.pem:/etc/ssl/certs/admin-node-ca.pem:ro
+{% endif %}
+    depends_on:
+      gitea-db:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=admin-net"
+      - "traefik.http.routers.gitea.rule=Host(`{{ service_domains.gitea | default('git.example.com') }}`)"
+      - "traefik.http.routers.gitea.entrypoints=websecure"
+      - "traefik.http.routers.gitea.tls=true"
+      - "traefik.http.services.gitea.loadbalancer.server.port=3000"
+    networks:
+      - admin-net
+
+networks:
+  admin-net:
+    external: true

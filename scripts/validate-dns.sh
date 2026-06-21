@@ -10,7 +10,7 @@ if [[ "${CI_MOCK_PIHOLE:-false}" == "true" ]]; then
 fi
 
 dns_failures=0
-for host in harbor.example.com bao.example.com keycloak.example.com traefik.example.com; do
+for host in harbor.example.com bao.example.com keycloak.example.com git.example.com traefik.example.com; do
   resolved="$(getent ahostsv4 "$host" 2>/dev/null | awk '{print $1; exit}')"
   if [[ -z "$resolved" ]]; then
     echo "DNS validation: cannot resolve $host (no DNS record found)" >&2
