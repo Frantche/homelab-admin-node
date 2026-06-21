@@ -4,6 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OPENBAO_TOKEN=${OPENBAO_TOKEN:-}
+OPENBAO_STATUS_TIMEOUT="${OPENBAO_STATUS_TIMEOUT:-10s}"
+OPENBAO_UNSEAL_TIMEOUT="${OPENBAO_UNSEAL_TIMEOUT:-30s}"
 KEYCLOAK_DOMAIN="${KEYCLOAK_DOMAIN:-$("$REPO_ROOT/ci/service-domains.py" get keycloak)}"
 HARBOR_DOMAIN="${HARBOR_DOMAIN:-$("$REPO_ROOT/ci/service-domains.py" get harbor)}"
 GITEA_DOMAIN="${GITEA_DOMAIN:-$("$REPO_ROOT/ci/service-domains.py" get gitea)}"
@@ -17,13 +19,35 @@ fi
 
 # --- OpenBao ---
 echo "[validate-apis] checking OpenBao..."
-bao_rc=0
-bao_health="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null)" || bao_rc=$?
-if [[ $bao_rc -ne 0 && $bao_rc -ne 2 ]]; then
-  echo "[validate-apis] ERROR: OpenBao unreachable (exit code $bao_rc)" >&2
+bao_health=""
+bao_unseal_attempted=false
+bao_ok=false
+for _ in $(seq 1 60); do
+  bao_rc=0
+  bao_health="$(timeout "$OPENBAO_STATUS_TIMEOUT" docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null)" || bao_rc=$?
+  if [[ $bao_rc -ne 0 && $bao_rc -ne 2 ]]; then
+    sleep 2
+    continue
+  fi
+
+  bao_state="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print("{} {}".format(d.get("initialized", False), d.get("sealed", True)))' "$bao_health" 2>/dev/null || true)"
+  if [[ "$bao_state" == "True False" ]]; then
+    bao_ok=true
+    break
+  fi
+
+  if [[ "$bao_state" == "True True" && "$bao_unseal_attempted" != "true" ]]; then
+    bao_unseal_attempted=true
+    timeout "$OPENBAO_UNSEAL_TIMEOUT" "$SCRIPT_DIR/openbao-unseal.sh" >/dev/null 2>&1 || true
+  fi
+
+  sleep 2
+done
+
+if [[ "$bao_ok" != "true" ]]; then
+  echo "[validate-apis] ERROR: OpenBao is not ready or still sealed: ${bao_health:-unreachable}" >&2
   exit 1
 fi
-python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d.get("initialized") is True, f"not initialized: {d}"; assert d.get("sealed") is False, f"still sealed: {d}"' "$bao_health"
 
 if [[ -n "$OPENBAO_TOKEN" ]]; then
   if ! docker exec -e BAO_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN="$OPENBAO_TOKEN" openbao bao kv put secret/admin-node-sentinel value=ok >/dev/null 2>&1; then
