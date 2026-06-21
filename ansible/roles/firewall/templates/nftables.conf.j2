@@ -1,6 +1,6 @@
 #!/usr/sbin/nft -f
 
-flush ruleset
+destroy table inet admin_filter
 
 table inet admin_filter {
   chain input {
