@@ -16,6 +16,7 @@
       - nftables
       - fail2ban
       - audit
+      - apparmor
       - lynis
       - arch-audit
     state: present

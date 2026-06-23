@@ -57,9 +57,21 @@
     name: admin-converge.timer
     enabled: true
     state: started
+  when: not (admin_ci_disable_auto_converge | default(false) | bool)
 
 - name: Enable admin-unlock.path
   ansible.builtin.systemd:
     name: admin-unlock.path
     enabled: true
     state: started
+  when: not (admin_ci_disable_auto_converge | default(false) | bool)
+
+- name: Disable automatic convergence triggers when requested
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop:
+    - admin-converge.timer
+    - admin-unlock.path
+  when: admin_ci_disable_auto_converge | default(false) | bool

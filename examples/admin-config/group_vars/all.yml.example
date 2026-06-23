@@ -8,6 +8,16 @@ service_domains:
   gitea: "git.example.com"
   traefik: "traefik.example.com"
 
+hardening:
+  apparmor:
+    enabled: true
+    enforce: true
+    auto_reboot: true
+    profiles:
+      traefik: true
+      cloudflared: true
+      openbao: true
+
 oidc_clients:
   harbor:
     client_id: "harbor"

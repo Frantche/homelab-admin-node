@@ -5,6 +5,10 @@ services:
     restart: unless-stopped
     command:
       - --configFile=/etc/traefik/traefik.yml
+{% if (hardening.apparmor.enabled | default(true) | bool) and (admin_apparmor_runtime_active | default(false) | bool) and ((hardening.apparmor.profiles | default({})).traefik | default(true) | bool) %}
+    security_opt:
+      - "apparmor=admin-node-traefik"
+{% endif %}
     ports:
       - "443:443"
     volumes:

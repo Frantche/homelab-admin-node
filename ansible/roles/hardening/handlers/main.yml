@@ -39,3 +39,25 @@
   ansible.builtin.systemd:
     name: fail2ban
     state: restarted
+
+- name: Regenerate GRUB config
+  ansible.builtin.command:
+    argv:
+      - grub-mkconfig
+      - -o
+      - /boot/grub/grub.cfg
+  changed_when: true
+
+- name: Reload AppArmor profiles
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if [[ ! -r /sys/module/apparmor/parameters/enabled ]] || [[ "$(cat /sys/module/apparmor/parameters/enabled)" != "Y" ]]; then
+      exit 0
+    fi
+    for profile in /etc/apparmor.d/admin-node-*; do
+      [[ -e "$profile" ]] || continue
+      apparmor_parser -r "$profile"
+    done
+  args:
+    executable: /bin/bash
+  changed_when: true

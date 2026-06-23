@@ -139,6 +139,232 @@
     group: root
     mode: "0644"
 
+- name: Configure AppArmor confinement
+  when: hardening.apparmor.enabled | default(true) | bool
+  block:
+    - name: Compute AppArmor runtime management mode
+      ansible.builtin.set_fact:
+        hardening_apparmor_manage_runtime: "{{ (not (ci_mode | default(false) | bool)) or (admin_apparmor_ci_manage_runtime | default(false) | bool) }}"
+
+    - name: Ensure GRUB drop-in directory exists for AppArmor
+      ansible.builtin.file:
+        path: /etc/default/grub.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      when: hardening_apparmor_manage_runtime | bool
+
+    - name: Configure GRUB kernel parameters for AppArmor
+      ansible.builtin.copy:
+        dest: /etc/default/grub.d/90-admin-apparmor.cfg
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX apparmor=1 security=apparmor lsm=landlock,lockdown,yama,integrity,apparmor,bpf"
+      notify: Regenerate GRUB config
+      when: hardening_apparmor_manage_runtime | bool
+
+    - name: Check AppArmor reboot marker
+      ansible.builtin.stat:
+        path: /etc/admin-node/apparmor-reboot-requested
+      register: hardening_apparmor_reboot_marker
+      when: hardening_apparmor_manage_runtime | bool
+
+    - name: Check AppArmor kernel module
+      ansible.builtin.stat:
+        path: /sys/module/apparmor/parameters/enabled
+      register: hardening_apparmor_kernel
+      when: hardening_apparmor_manage_runtime | bool
+
+    - name: Read AppArmor kernel state
+      ansible.builtin.slurp:
+        path: /sys/module/apparmor/parameters/enabled
+      register: hardening_apparmor_kernel_state
+      when:
+        - hardening_apparmor_manage_runtime | bool
+        - hardening_apparmor_kernel.stat.exists
+
+    - name: Mark AppArmor runtime state
+      ansible.builtin.set_fact:
+        hardening_apparmor_runtime_active: >-
+          {{
+            (hardening_apparmor_manage_runtime | bool) and
+            (hardening_apparmor_kernel.stat.exists | default(false)) and
+            ((hardening_apparmor_kernel_state.content | default('') | b64decode | trim) == 'Y')
+          }}
+        admin_apparmor_runtime_active: >-
+          {{
+            (hardening_apparmor_manage_runtime | bool) and
+            (hardening_apparmor_kernel.stat.exists | default(false)) and
+            ((hardening_apparmor_kernel_state.content | default('') | b64decode | trim) == 'Y')
+          }}
+
+    - name: Explain pending AppArmor reboot
+      ansible.builtin.debug:
+        msg: >-
+          AppArmor boot parameters have been configured. Reboot the VM, then rerun
+          admin-converge to load and enforce the admin-node AppArmor profiles.
+      when:
+        - hardening_apparmor_manage_runtime | bool
+        - not (hardening_apparmor_runtime_active | bool)
+
+    - name: Flush GRUB config before AppArmor reboot
+      ansible.builtin.meta: flush_handlers
+      when:
+        - hardening_apparmor_manage_runtime | bool
+        - not (hardening_apparmor_runtime_active | bool)
+        - hardening.apparmor.auto_reboot | default(true) | bool
+        - not (hardening_apparmor_reboot_marker.stat.exists | default(false))
+
+    - name: Regenerate GRUB config before AppArmor reboot
+      ansible.builtin.command:
+        argv:
+          - grub-mkconfig
+          - -o
+          - /boot/grub/grub.cfg
+      changed_when: true
+      when:
+        - hardening_apparmor_manage_runtime | bool
+        - not (hardening_apparmor_runtime_active | bool)
+        - hardening.apparmor.auto_reboot | default(true) | bool
+        - not (hardening_apparmor_reboot_marker.stat.exists | default(false))
+
+    - name: Record AppArmor reboot request
+      ansible.builtin.file:
+        path: /etc/admin-node/apparmor-reboot-requested
+        state: touch
+        owner: root
+        group: root
+        mode: "0644"
+      when:
+        - hardening_apparmor_manage_runtime | bool
+        - not (hardening_apparmor_runtime_active | bool)
+        - hardening.apparmor.auto_reboot | default(true) | bool
+        - not (hardening_apparmor_reboot_marker.stat.exists | default(false))
+
+    - name: Schedule reboot for AppArmor activation
+      ansible.builtin.command:
+        argv:
+          - shutdown
+          - -r
+          - "+1"
+          - "admin-node AppArmor activation"
+      changed_when: true
+      when:
+        - hardening_apparmor_manage_runtime | bool
+        - not (hardening_apparmor_runtime_active | bool)
+        - hardening.apparmor.auto_reboot | default(true) | bool
+        - not (admin_apparmor_ci_defer_reboot | default(false) | bool)
+        - not (hardening_apparmor_reboot_marker.stat.exists | default(false))
+
+    - name: Stop convergence after scheduling AppArmor reboot
+      ansible.builtin.meta: end_host
+      when:
+        - hardening_apparmor_manage_runtime | bool
+        - not (hardening_apparmor_runtime_active | bool)
+        - hardening.apparmor.auto_reboot | default(true) | bool
+        - not (hardening_apparmor_reboot_marker.stat.exists | default(false))
+
+    - name: Fail when AppArmor is still inactive after requested reboot
+      ansible.builtin.fail:
+        msg: >-
+          AppArmor is still inactive after a previous automatic reboot request.
+          Check the bootloader configuration, the generated GRUB config, and
+          /proc/cmdline before rerunning admin-converge.
+      when:
+        - hardening_apparmor_manage_runtime | bool
+        - not (hardening_apparmor_runtime_active | bool)
+        - hardening.apparmor.auto_reboot | default(true) | bool
+        - hardening_apparmor_reboot_marker.stat.exists | default(false)
+
+    - name: Remove AppArmor reboot marker after successful activation
+      ansible.builtin.file:
+        path: /etc/admin-node/apparmor-reboot-requested
+        state: absent
+      when:
+        - hardening_apparmor_manage_runtime | bool
+        - hardening_apparmor_runtime_active | bool
+
+    - name: Ensure AppArmor profile directory exists
+      ansible.builtin.file:
+        path: /etc/apparmor.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Compute AppArmor profiles
+      ansible.builtin.set_fact:
+        hardening_apparmor_profiles:
+          - file: admin-node-traefik
+            enabled: "{{ (hardening.apparmor.profiles | default({})).traefik | default(true) }}"
+          - file: admin-node-cloudflared
+            enabled: "{{ (hardening.apparmor.profiles | default({})).cloudflared | default(true) }}"
+          - file: admin-node-openbao
+            enabled: "{{ (hardening.apparmor.profiles | default({})).openbao | default(true) }}"
+
+    - name: Remove disabled admin-node AppArmor profiles
+      ansible.builtin.file:
+        path: "/etc/apparmor.d/{{ item.file }}"
+        state: absent
+      loop: "{{ hardening_apparmor_profiles }}"
+      when: not (item.enabled | bool)
+      notify: Reload AppArmor profiles
+
+    - name: Deploy admin-node AppArmor profiles
+      ansible.builtin.copy:
+        src: "apparmor/{{ item.file }}"
+        dest: "/etc/apparmor.d/{{ item.file }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ hardening_apparmor_profiles }}"
+      when: item.enabled | bool
+      notify: Reload AppArmor profiles
+
+    - name: Enable and start AppArmor
+      ansible.builtin.systemd:
+        name: apparmor
+        enabled: true
+        state: started
+      when:
+        - hardening_apparmor_manage_runtime | bool
+        - hardening_apparmor_runtime_active | bool
+
+    - name: Flush AppArmor profile reload before containers start
+      ansible.builtin.meta: flush_handlers
+      when:
+        - hardening_apparmor_manage_runtime | bool
+        - hardening_apparmor_runtime_active | bool
+
+    - name: Load admin-node AppArmor profiles
+      ansible.builtin.command:
+        argv:
+          - apparmor_parser
+          - -r
+          - "/etc/apparmor.d/{{ item.file }}"
+      loop: "{{ hardening_apparmor_profiles }}"
+      when:
+        - hardening_apparmor_manage_runtime | bool
+        - hardening_apparmor_runtime_active | bool
+        - item.enabled | bool
+      changed_when: false
+
+    - name: Enforce admin-node AppArmor profiles
+      ansible.builtin.command:
+        argv:
+          - aa-enforce
+          - "/etc/apparmor.d/{{ item.file }}"
+      loop: "{{ hardening_apparmor_profiles }}"
+      when:
+        - hardening_apparmor_manage_runtime | bool
+        - hardening_apparmor_runtime_active | bool
+        - hardening.apparmor.enforce | default(true) | bool
+        - item.enabled | bool
+      changed_when: false
+
 - name: Ensure audited admin directories exist
   ansible.builtin.file:
     path: "{{ item.path }}"

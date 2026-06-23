@@ -101,6 +101,50 @@ else
   warn "fail2ban.service not installed; skipping fail2ban checks"
 fi
 
+apparmor_profiles=(
+  admin-node-traefik
+  admin-node-cloudflared
+  admin-node-openbao
+)
+
+apparmor_expected=false
+for apparmor_profile in "${apparmor_profiles[@]}"; do
+  if [[ -f "/etc/apparmor.d/${apparmor_profile}" ]]; then
+    apparmor_expected=true
+  fi
+done
+
+if [[ "$apparmor_expected" == true ]]; then
+  if [[ -f /etc/default/grub.d/90-admin-apparmor.cfg ]] && ! grep -qw "apparmor=1" /proc/cmdline; then
+    warn "AppArmor boot parameters are configured but not active yet; reboot is required"
+  else
+    require_cmd aa-status
+    aa-status --enabled >/dev/null 2>&1 || fail "AppArmor is not enabled"
+    apparmor_status="$(aa-status 2>&1)"
+    for apparmor_profile in "${apparmor_profiles[@]}"; do
+      [[ -f "/etc/apparmor.d/${apparmor_profile}" ]] || continue
+      grep -Eq "(^|[[:space:]])${apparmor_profile}($|[[:space:]])" <<<"$apparmor_status" || fail "AppArmor profile is not loaded: ${apparmor_profile}"
+      if aa-status --complaining 2>/dev/null | grep -Eq "^[[:space:]]*${apparmor_profile}$"; then
+        fail "AppArmor profile is in complain mode: ${apparmor_profile}"
+      fi
+    done
+    if command -v docker >/dev/null 2>&1; then
+      while read -r container profile; do
+        if docker inspect "$container" >/dev/null 2>&1; then
+          security_opt="$(docker inspect -f '{{json .HostConfig.SecurityOpt}}' "$container")"
+          grep -q "apparmor=${profile}" <<<"$security_opt" || fail "container $container does not use AppArmor profile $profile"
+        fi
+      done <<'APPARMOR_CONTAINERS'
+traefik admin-node-traefik
+cloudflared admin-node-cloudflared
+openbao admin-node-openbao
+APPARMOR_CONTAINERS
+    fi
+  fi
+else
+  warn "admin-node AppArmor profiles are not installed; skipping AppArmor checks"
+fi
+
 if [[ -f /etc/sops/age/keys.txt ]]; then
   age_mode="$(stat -c '%a %U %G' /etc/sops/age/keys.txt)"
   [[ "$age_mode" == "400 root root" ]] || fail "/etc/sops/age/keys.txt permissions are $age_mode, expected 400 root root"

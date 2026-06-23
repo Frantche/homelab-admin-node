@@ -417,6 +417,80 @@ jobs:
                     SKIP_PUBLIC_URL_VALIDATION=true \
                     /opt/homelab-admin-node/ci/scenarios/bootstrap-user-journey.sh"
 
+      - name: Ensure AppArmor convergence after reboot
+        timeout-minutes: 25
+        run: |
+          SSH_OPTS=(
+            -o StrictHostKeyChecking=no
+            -o UserKnownHostsFile=/dev/null
+            -i .ci/ssh/id_ed25519
+            -p ${SSH_PORT}
+          )
+
+          run_ssh() {
+            ssh "${SSH_OPTS[@]}" admin@127.0.0.1 "$@"
+          }
+
+          wait_for_ssh_up() {
+            for i in $(seq 1 120); do
+              if run_ssh "echo ready" >/dev/null 2>&1; then
+                echo "VM SSH is ready after reboot"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "ERROR: VM did not come back over SSH after reboot" >&2
+            return 1
+          }
+
+          wait_for_ssh_down() {
+            for i in $(seq 1 60); do
+              if ! run_ssh "echo ready" >/dev/null 2>&1; then
+                echo "VM SSH went down for reboot"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "WARNING: VM SSH did not go down while waiting for reboot"
+            return 0
+          }
+
+          stop_auto_converge() {
+            run_ssh "sudo systemctl disable --now admin-converge.timer admin-unlock.path 2>/dev/null || true; sudo systemctl stop admin-converge.service 2>/dev/null || true"
+          }
+
+          run_apparmor_converge() {
+            run_ssh "sudo CI_MOCK_PIHOLE=${CI_MOCK_PIHOLE} \
+                           CI_MOCK_CLOUDFLARE_TUNNEL=${CI_MOCK_CLOUDFLARE_TUNNEL} \
+                           CI_SKIP_PUBLIC_URL_VALIDATION=${CI_SKIP_PUBLIC_URL_VALIDATION} \
+                           SKIP_PUBLIC_URL_VALIDATION=true \
+                           ansible-playbook \
+                           -i /etc/admin-config/homelab-node-admin-config/hosts/inventory.ini \
+                           /opt/homelab-admin-node/ansible/site.yml \
+                           -e admin_apparmor_ci_manage_runtime=true \
+                           -e admin_apparmor_ci_defer_reboot=true \
+                           -e admin_ci_disable_auto_converge=true"
+          }
+
+          stop_auto_converge
+          echo "Running convergence before AppArmor audit"
+          run_apparmor_converge
+
+          if run_ssh '[[ -f /etc/admin-node/apparmor-reboot-requested ]] || [[ "$(cat /sys/module/apparmor/parameters/enabled 2>/dev/null || echo N)" != "Y" ]]'; then
+            echo "AppArmor requires a VM reboot before hardening validation"
+            run_ssh "sudo shutdown -r now" || true
+            wait_for_ssh_down
+            wait_for_ssh_up
+
+            stop_auto_converge
+            echo "Running post-reboot convergence"
+            run_apparmor_converge
+          else
+            echo "AppArmor is already active; no reboot required"
+          fi
+
+          run_ssh 'test "$(cat /sys/module/apparmor/parameters/enabled 2>/dev/null)" = "Y"'
+
       - name: Run hardening audit in VM
         timeout-minutes: 10
         run: |
