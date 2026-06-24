@@ -2,6 +2,7 @@
 - name: Compute Traefik TLS mode
   ansible.builtin.set_fact:
     traefik_letsencrypt_enabled: "{{ (not (ci_mode | default(false))) and (not (traefik.local_tls_enabled | default(false))) and ((cloudflare.dns_api_token | default('') | length) > 0) and ((acme_email | default('') | length) > 0) }}"
+    traefik_local_ca_enabled: "{{ (ci_mode | default(false)) or (traefik.local_tls_enabled | default(false)) or ((cloudflare.dns_api_token | default('') | length) == 0) or ((acme_email | default('') | length) == 0) }}"
 
 - name: Ensure traefik stack directory
   ansible.builtin.file:
@@ -33,36 +34,142 @@
     group: root
     mode: "0644"
 
-- name: Generate fallback self-signed TLS certificate
-  ansible.builtin.command:
-    argv:
-      - openssl
-      - req
-      - -x509
-      - -nodes
-      - -sha256
-      - -days
-      - "825"
-      - -newkey
-      - rsa:2048
-      - -keyout
-      - "{{ admin_node_root }}/certs/key.pem"
-      - -out
-      - "{{ admin_node_root }}/certs/cert.pem"
-      - -subj
-      - "/CN={{ service_domains.traefik }}"
-      - -addext
-      - "subjectAltName={{ (((service_domains | dict2items | map(attribute='value') | list) + ['localhost']) | unique | map('regex_replace', '^(.*)$', 'DNS:\\1') | list + ['IP:127.0.0.1', 'IP:' ~ admin_node_lan_ip]) | join(',') }}"
-    creates: "{{ admin_node_root }}/certs/cert.pem"
+- name: Check local TLS certificate files
+  ansible.builtin.stat:
+    path: "{{ admin_node_root }}/certs/{{ item }}"
+  loop:
+    - ca-key.pem
+    - ca.pem
+    - root-ca.pem
+    - key.pem
+    - cert.pem
+  register: traefik_local_tls_files
   when: not traefik_letsencrypt_enabled
 
-- name: Lock down fallback self-signed TLS private key
+- name: Compute local TLS certificate renewal need
+  ansible.builtin.set_fact:
+    traefik_local_tls_missing: "{{ traefik_local_tls_files.results | selectattr('stat.exists', 'equalto', false) | list | length > 0 }}"
+  when: not traefik_letsencrypt_enabled
+
+- name: Generate local CA and fallback TLS certificate
+  ansible.builtin.shell: |
+    set -euo pipefail
+    work_dir="$(mktemp -d)"
+    trap 'rm -rf "$work_dir"' EXIT
+
+    openssl genrsa -out "$work_dir/ca-key.pem" 4096
+    openssl req -new -key "$work_dir/ca-key.pem" -out "$work_dir/ca.csr" -subj "/CN=Admin Node Local CA"
+    cat > "$work_dir/ca.ext" <<'EOF'
+    [v3_ca]
+    basicConstraints=critical,CA:TRUE
+    keyUsage=critical,keyCertSign,cRLSign
+    subjectKeyIdentifier=hash
+    authorityKeyIdentifier=keyid,issuer
+    EOF
+    openssl x509 -req -days 3650 -in "$work_dir/ca.csr" -signkey "$work_dir/ca-key.pem" -out "$work_dir/ca.pem" -extfile "$work_dir/ca.ext" -extensions v3_ca
+
+    openssl genrsa -out "$work_dir/key.pem" 2048
+    openssl req -new -key "$work_dir/key.pem" -out "$work_dir/server.csr" -subj "/CN={{ service_domains.traefik }}"
+    cat > "$work_dir/server.ext" <<'EOF'
+    [server_cert]
+    basicConstraints=critical,CA:FALSE
+    keyUsage=critical,digitalSignature,keyEncipherment
+    extendedKeyUsage=serverAuth
+    subjectAltName={{ (((service_domains | dict2items | map(attribute='value') | list) + ['localhost']) | unique | map('regex_replace', '^(.*)$', 'DNS:\1') | list + ['IP:127.0.0.1', 'IP:' ~ admin_node_lan_ip]) | join(',') }}
+    EOF
+    openssl x509 -req -days 825 -in "$work_dir/server.csr" -CA "$work_dir/ca.pem" -CAkey "$work_dir/ca-key.pem" -CAcreateserial -out "$work_dir/cert.pem" -extfile "$work_dir/server.ext" -extensions server_cert
+
+    install -m 0600 -o root -g root "$work_dir/ca-key.pem" "{{ admin_node_root }}/certs/ca-key.pem"
+    install -m 0600 -o root -g root "$work_dir/key.pem" "{{ admin_node_root }}/certs/key.pem"
+    install -m 0644 -o root -g root "$work_dir/ca.pem" "{{ admin_node_root }}/certs/ca.pem"
+    install -m 0644 -o root -g root "$work_dir/ca.pem" "{{ admin_node_root }}/certs/root-ca.pem"
+    install -m 0644 -o root -g root "$work_dir/cert.pem" "{{ admin_node_root }}/certs/cert.pem"
+  args:
+    executable: /bin/bash
+  when:
+    - not traefik_letsencrypt_enabled
+    - traefik_local_tls_missing | bool
+
+- name: Lock down local TLS private keys
   ansible.builtin.file:
-    path: "{{ admin_node_root }}/certs/key.pem"
+    path: "{{ admin_node_root }}/certs/{{ item }}"
     owner: root
     group: root
     mode: "0600"
+  loop:
+    - ca-key.pem
+    - key.pem
   when: not traefik_letsencrypt_enabled
+
+- name: Ensure local TLS public certificates are readable
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/certs/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - ca.pem
+    - root-ca.pem
+    - cert.pem
+  when: not traefik_letsencrypt_enabled
+
+- name: Check update-ca-trust support
+  ansible.builtin.shell: command -v update-ca-trust
+  register: traefik_update_ca_trust
+  changed_when: false
+  failed_when: false
+  when: not traefik_letsencrypt_enabled
+
+- name: Check update-ca-certificates support
+  ansible.builtin.shell: command -v update-ca-certificates
+  register: traefik_update_ca_certificates
+  changed_when: false
+  failed_when: false
+  when: not traefik_letsencrypt_enabled
+
+- name: Install local CA in update-ca-trust anchors
+  ansible.builtin.copy:
+    src: "{{ admin_node_root }}/certs/ca.pem"
+    dest: /etc/ca-certificates/trust-source/anchors/admin-node-local-ca.crt
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  register: traefik_local_ca_trust_anchor
+  when:
+    - not traefik_letsencrypt_enabled
+    - traefik_update_ca_trust.rc == 0
+
+- name: Update CA trust
+  ansible.builtin.command: update-ca-trust
+  changed_when: traefik_local_ca_trust_anchor.changed
+  when:
+    - not traefik_letsencrypt_enabled
+    - traefik_update_ca_trust.rc == 0
+    - traefik_local_ca_trust_anchor.changed
+
+- name: Install local CA in update-ca-certificates anchors
+  ansible.builtin.copy:
+    src: "{{ admin_node_root }}/certs/ca.pem"
+    dest: /usr/local/share/ca-certificates/admin-node-local-ca.crt
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  register: traefik_local_ca_certificate_anchor
+  when:
+    - not traefik_letsencrypt_enabled
+    - traefik_update_ca_trust.rc != 0
+    - traefik_update_ca_certificates.rc == 0
+
+- name: Update CA certificates
+  ansible.builtin.command: update-ca-certificates
+  changed_when: traefik_local_ca_certificate_anchor.changed
+  when:
+    - not traefik_letsencrypt_enabled
+    - traefik_update_ca_trust.rc != 0
+    - traefik_update_ca_certificates.rc == 0
+    - traefik_local_ca_certificate_anchor.changed
 
 - name: Render traefik static config (production)
   ansible.builtin.template:

@@ -7,7 +7,7 @@ Ce dossier contient les scripts exécutés **à l'intérieur de la VM Arch Linux
 | Fichier | Rôle |
 |---|---|
 | `run-admin-lifecycle.sh` | Point d'entrée principal. Reçoit le nom d'un scénario en argument et le délègue au script correspondant dans `scenarios/`. Appelé par le workflow CI et par `make test-ci-fast` / `make test-ci-full`. |
-| `setup-ci-env.sh` | Prérequis CI : génère un certificat TLS auto-signé, ajoute les entrées `/etc/hosts` pour les domaines de service, installe les collections Ansible requises. Exécuté en premier dans chaque scénario. |
+| `setup-ci-env.sh` | Prérequis CI : ajoute les entrées `/etc/hosts` pour les domaines de service, installe les collections Ansible requises. Exécuté en premier dans chaque scénario. Les certificats TLS de fallback sont générés par le rôle Traefik pendant la convergence. |
 | `init-openbao-ci.sh` | Initialise et descelle OpenBao dans le conteneur Docker. Stocke le root token dans `/opt/homelab-admin-node/secrets/openbao-root-token` et crée le fichier de secrets SOPS (non chiffré) pour les tests. |
 | `create-sentinel-data.sh` | Crée un fichier sentinelle dans `/srv/admin/data/sentinel/value.txt` pour vérifier que la sauvegarde/restauration conserve bien les données. |
 | `assertions.sh` | Fonctions d'assertion shell (`assert_file_exists`, `assert_contains`) sourcées par tous les scénarios pour valider les étapes intermédiaires. |
