@@ -4,6 +4,10 @@ services:
     container_name: cloudflared
     restart: unless-stopped
     command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+{% if (hardening.apparmor.enabled | default(true) | bool) and (admin_apparmor_runtime_active | default(false) | bool) and ((hardening.apparmor.profiles | default({})).cloudflared | default(true) | bool) %}
+    security_opt:
+      - "apparmor=admin-node-cloudflared"
+{% endif %}
     networks:
       - admin-net
 

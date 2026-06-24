@@ -62,6 +62,14 @@ hardening:
     enabled: true
   auditd:
     enabled: true
+  apparmor:
+    enabled: true
+    enforce: true
+    auto_reboot: true
+    profiles:
+      traefik: true
+      cloudflared: true
+      openbao: true
   lynis:
     enabled: true
 

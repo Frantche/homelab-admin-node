@@ -13,6 +13,14 @@
     group: root
     mode: preserve
 
+- name: Render cloudflared compose
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../stacks/cloudflared/compose.yaml"
+    dest: "{{ admin_node_root }}/stacks/cloudflared/compose.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Render cloudflared env
   ansible.builtin.copy:
     dest: "{{ admin_node_root }}/env/cloudflared.env"
@@ -21,9 +29,25 @@
       CLOUDFLARE_TUNNEL_TOKEN={{ cloudflare.tunnel_token | mandatory('cloudflare.tunnel_token is required') }}
   no_log: true
 
+- name: Recreate cloudflared mock container when AppArmor becomes active
+  ansible.builtin.command: docker rm -f cloudflared
+  when:
+    - ci_mode | default(false) | bool
+    - hardening.apparmor.enabled | default(true) | bool
+    - admin_apparmor_runtime_active | default(false) | bool
+    - (hardening.apparmor.profiles | default({})).cloudflared | default(true) | bool
+  register: remove_mock_cloudflared
+  failed_when: false
+  changed_when: remove_mock_cloudflared.rc == 0
+
 - name: Start cloudflared mock container (CI mode)
-  ansible.builtin.command: docker run -d --name cloudflared --network admin-net --restart no alpine sleep 3600
-  when: ci_mode | default(false)
+  ansible.builtin.command: >-
+    docker run -d --name cloudflared --network admin-net --restart no
+    {% if (hardening.apparmor.enabled | default(true) | bool) and (admin_apparmor_runtime_active | default(false) | bool) and ((hardening.apparmor.profiles | default({})).cloudflared | default(true) | bool) %}
+    --security-opt apparmor=admin-node-cloudflared
+    {% endif %}
+    alpine sleep 3600
+  when: ci_mode | default(false) | bool
   register: mock_cloudflared
   failed_when: false
   changed_when: mock_cloudflared.rc == 0

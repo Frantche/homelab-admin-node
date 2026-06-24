@@ -1,0 +1,24 @@
+#include <tunables/global>
+
+profile admin-node-traefik flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  network,
+  capability,
+  file,
+  umount,
+
+  deny @{PROC}/* w,
+  deny @{PROC}/{sysrq-trigger,kcore,mem,kmem} rwklx,
+  deny @{PROC}/sys/** wklx,
+  deny @{PROC}/irq/** wklx,
+  deny @{PROC}/bus/** wklx,
+
+  deny /sys/[^f]*/** wklx,
+  deny /sys/fs/** wklx,
+  deny /sys/kernel/security/** rwklx,
+  deny /sys/kernel/debug/** rwklx,
+  deny /sys/module/** wklx,
+
+  deny mount,
+}
