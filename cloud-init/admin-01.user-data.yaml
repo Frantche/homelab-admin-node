@@ -34,18 +34,22 @@ write_files:
     permissions: '0644'
     content: |
       locked
-  - path: /usr/local/bin/admin-converge.sh
+  - path: /usr/local/bin/admin-node-converge
     owner: root:root
     permissions: '0755'
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
       REPO_DIR="${REPO_DIR:-/opt/homelab-admin-node}"
-      SCRIPT_PATH="$REPO_DIR/scripts/admin-converge.sh"
-      if [[ -x "$SCRIPT_PATH" ]]; then
-        exec "$SCRIPT_PATH"
+      BUILD_PATH="$REPO_DIR/scripts/build-admin-node.sh"
+      BIN_PATH="$REPO_DIR/bin/admin-node"
+      if [[ -x "$BUILD_PATH" ]]; then
+        "$BUILD_PATH"
       fi
-      echo "[admin-converge] $SCRIPT_PATH not found"
+      if [[ -x "$BIN_PATH" ]]; then
+        exec "$BIN_PATH" converge run
+      fi
+      echo "[admin-converge] $BIN_PATH not found"
       echo "[admin-converge] initial clone should be done by cloud-init into $REPO_DIR"
       exit 1
   - path: /etc/systemd/system/admin-converge.service
@@ -59,7 +63,7 @@ write_files:
 
       [Service]
       Type=oneshot
-      ExecStart=/usr/local/bin/admin-converge.sh
+      ExecStart=/usr/local/bin/admin-node-converge
   - path: /etc/systemd/system/admin-converge.timer
     owner: root:root
     permissions: '0644'

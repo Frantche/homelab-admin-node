@@ -22,16 +22,20 @@ sops-check:
 validate: validate-apis validate-dns validate-cloudflare-tunnel validate-hardening
 
 validate-apis:
-	@./scripts/validate-apis.sh
+	@./scripts/build-admin-node.sh >/dev/null
+	@./bin/admin-node validate apis
 
 validate-dns:
-	@./scripts/validate-dns.sh
+	@./scripts/build-admin-node.sh >/dev/null
+	@./bin/admin-node validate dns
 
 validate-cloudflare-tunnel:
-	@./scripts/validate-cloudflare-tunnel.sh
+	@./scripts/build-admin-node.sh >/dev/null
+	@./bin/admin-node validate tunnel
 
 validate-hardening:
-	@./scripts/validate-hardening.sh
+	@./scripts/build-admin-node.sh >/dev/null
+	@./bin/admin-node validate hardening
 
 test-oidc-contracts:
 	@./ci/test-oidc-contracts.sh
@@ -58,7 +62,7 @@ docs:
 
 shellcheck:
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck -e SC1091 scripts/*.sh scripts/adminctl ci/*.sh ci/scenarios/*.sh; \
+		shellcheck -e SC1091 scripts/*.sh ci/*.sh ci/scenarios/*.sh; \
 	else \
 		echo "shellcheck not installed"; \
 	fi

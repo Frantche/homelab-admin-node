@@ -20,10 +20,10 @@ Conservez la clé privée hors du dépôt Git.
 Copiez ensuite la clé privée sur le nœud d'administration :
 
 ```bash
-sudo ./scripts/unlock.sh /path/to/age-key.txt
+sudo ./bin/admin-node secret install-age-key /path/to/age-key.txt
 ```
 
-Le script crée `/etc/sops/age/keys.txt` avec les bons droits.
+La commande crée `/etc/sops/age/keys.txt` avec les bons droits.
 Le même résultat peut être obtenu manuellement avec :
 
 ```bash

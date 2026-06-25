@@ -5,4 +5,4 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/homelab-admin-node/scripts/admin-converge.sh
+ExecStart=/opt/homelab-admin-node/bin/admin-node converge run

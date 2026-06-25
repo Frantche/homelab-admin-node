@@ -16,6 +16,8 @@ require_cmd ssh
 require_cmd sshd
 require_cmd ssh-keygen
 
+"$REPO_ROOT/scripts/build-admin-node.sh" >/dev/null
+
 tmp_dir="$(mktemp -d /tmp/admin-restic-ci.XXXXXX)"
 sshd_pid_file="$tmp_dir/sshd.pid"
 sshd_log="$tmp_dir/sshd.log"
@@ -103,7 +105,7 @@ fi
 HOME="$tmp_dir/home" \
 RESTIC_BACKUP_ENV_FILE="$tmp_dir/backup.env" \
 RESTIC_BACKUP_PATHS="$tmp_dir/source" \
-  "$REPO_ROOT/scripts/restic-backup-repositories.sh"
+  "$REPO_ROOT/bin/admin-node" backup restic
 
 RESTIC_REPOSITORY="$tmp_dir/local-repo" RESTIC_PASSWORD="ci-local-restic-password" restic snapshots >/dev/null
 if [[ "$sftp_enabled" == "true" ]]; then
@@ -116,7 +118,7 @@ RESTIC_REPOSITORY_BAD="ftp://127.0.0.1/restic"
 RESTIC_PASSWORD_BAD="ci-password"
 EOF
 
-if RESTIC_BACKUP_ENV_FILE="$tmp_dir/insecure.env" RESTIC_BACKUP_PATHS="$tmp_dir/source" "$REPO_ROOT/scripts/restic-backup-repositories.sh" >/dev/null 2>&1; then
+if RESTIC_BACKUP_ENV_FILE="$tmp_dir/insecure.env" RESTIC_BACKUP_PATHS="$tmp_dir/source" "$REPO_ROOT/bin/admin-node" backup restic >/dev/null 2>&1; then
   echo "[restic-config] expected ftp:// repository to be rejected" >&2
   exit 1
 fi

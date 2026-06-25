@@ -28,8 +28,8 @@
     mode: "0600"
   no_log: true
 
-- name: Trigger backup script
-  ansible.builtin.command: /opt/homelab-admin-node/scripts/backup.sh
+- name: Trigger backup
+  ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node backup run
   environment:
     OPENBAO_TOKEN: "{{ openbao.root_token | default('') }}"
     CI_MOCK_PIHOLE: "{{ 'true' if ((ci_mode | default(false)) or (ci.mock_pihole | default(false))) else 'false' }}"

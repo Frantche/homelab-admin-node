@@ -11,8 +11,7 @@ L'objectif d'un agent de developpement est de faire des changements petits, veri
 - `ansible/group_vars/all.yml`: valeurs par defaut non secretes.
 - `examples/admin-config/`: structure attendue du depot de configuration prive.
 - `secrets/*.sops.yaml.example` et `ansible/group_vars/secrets.sops.yaml.example`: exemples uniquement, sans secrets reels.
-- `scripts/admin-converge.sh`: point d'entree d'application Ansible en production.
-- `scripts/backup.sh` et `scripts/restore.sh`: chemins critiques de sauvegarde/restauration.
+- `cmd/admin-node` et `internal/`: CLI Go d'exploitation, point d'entree runtime pour converge, backup, restore, validation et OpenBao.
 - `ci/run-admin-lifecycle.sh` et `ci/scenarios/`: tests d'integration du cycle de vie.
 - `stacks/*/compose.yaml`: definition des services Docker Compose.
 - `systemd/`: unites et timers deployes sur la VM.
@@ -25,7 +24,7 @@ L'objectif d'un agent de developpement est de faire des changements petits, veri
 - Les secrets de configuration utilisateur appartiennent au config repo prive sous `/etc/admin-config/homelab-node-admin-config`, pas a ce depot.
 - Les taches qui manipulent des secrets doivent utiliser `no_log: true` lorsque des valeurs sensibles peuvent apparaitre.
 - Le mode CI peut fournir des valeurs factices, mais hors CI les secrets requis doivent echouer explicitement avec un message clair.
-- `admin-converge.sh` doit rester idempotent, verbeux sur les erreurs et compatible avec un `git pull --ff-only`.
+- `admin-node converge run` doit rester idempotent, verbeux sur les erreurs et compatible avec un `git pull --ff-only`.
 - Les backups ne doivent pas s'executer en mode `locked`.
 - La restauration doit rester defensive: valider les services apres restore et basculer vers un etat explicite en cas d'echec.
 
@@ -103,7 +102,7 @@ Si une commande ne peut pas etre lancee localement faute de dependance ou de con
 - Casser la compatibilite avec une VM Arch Linux fraiche.
 - Introduire une dependance lourde sans l'ajouter au cloud-init, a la doc et au flux CI concerne.
 - Changer les chemins systeme critiques sans migration documentee: `/opt/homelab-admin-node`, `/srv/admin`, `/etc/admin-node`, `/etc/admin-config`, `/etc/sops/age/keys.txt`.
-- Modifier backup/restore, OpenBao unseal/init ou `admin-converge.sh` sans validation explicite.
+- Modifier backup/restore, OpenBao unseal/init ou `admin-node converge run` sans validation explicite.
 - Supprimer les mocks CI pour Pi-hole ou Cloudflare Tunnel.
 - Faire des refactors larges non lies au changement demande.
 

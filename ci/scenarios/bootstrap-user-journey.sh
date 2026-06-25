@@ -42,7 +42,7 @@ run_converge() {
   set +e
   ADMIN_CONVERGE_SKIP_GIT_PULL=true \
     ANSIBLE_EXTRA_ARGS="-e admin_ci_disable_auto_converge=true" \
-    "$REPO_ROOT/scripts/adminctl" converge 2>&1 | tee "$output_file"
+    "$REPO_ROOT/bin/admin-node" converge run 2>&1 | tee "$output_file"
   status="${PIPESTATUS[0]}"
   set -e
   if [[ "$status" -ne 0 ]]; then
@@ -61,16 +61,17 @@ trap dump_debug ERR
 
 # --- CI prerequisites (TLS certs, /etc/hosts, ansible collections) ---
 "$REPO_ROOT/ci/setup-ci-env.sh"
+"$REPO_ROOT/scripts/build-admin-node.sh"
 
 # Prevent the auto-converge timer from interfering with our manual operations
 stop_auto_converge
 
-# --- Set mode to init via adminctl ---
-"$REPO_ROOT/scripts/adminctl" set-mode init
+# --- Set mode to init via admin-node ---
+"$REPO_ROOT/bin/admin-node" mode set init
 assert_contains /etc/admin-node/mode "init"
 
-# --- Run convergence via adminctl converge (init mode: starts services) ---
-echo "=== Running convergence (init mode) via adminctl ==="
+# --- Run convergence via admin-node (init mode: starts services) ---
+echo "=== Running convergence (init mode) via admin-node ==="
 run_converge
 stop_auto_converge
 
@@ -82,14 +83,14 @@ export OPENBAO_TOKEN
 # Inject the root token into the mock config repo so the normal-mode playbook can use it
 "$REPO_ROOT/ci/update-openbao-token.py"
 
-# --- Set mode to normal via adminctl ---
+# --- Set mode to normal via admin-node ---
 stop_auto_converge
-"$REPO_ROOT/scripts/adminctl" set-mode normal
+"$REPO_ROOT/bin/admin-node" mode set normal
 assert_contains /etc/admin-node/mode "normal"
 stop_auto_converge
 
-# --- Run convergence via adminctl converge (normal mode: validate + backup) ---
-echo "=== Running convergence (normal mode) via adminctl ==="
+# --- Run convergence via admin-node (normal mode: validate + backup) ---
+echo "=== Running convergence (normal mode) via admin-node ==="
 run_converge
 stop_auto_converge
 
@@ -112,7 +113,7 @@ echo "=== Running backup ==="
 "$REPO_ROOT/ci/create-sentinel-data.sh"
 assert_file_exists /srv/admin/data/sentinel/value.txt
 
-"$REPO_ROOT/scripts/backup.sh"
+"$REPO_ROOT/bin/admin-node" backup run
 BACKUP_COUNT="$(find /srv/admin/backups/local -mindepth 1 -maxdepth 1 -type d | wc -l)"
 if [[ "$BACKUP_COUNT" -lt 1 ]]; then
   echo "ERROR: Expected at least 1 backup directory, found $BACKUP_COUNT" >&2
@@ -121,11 +122,11 @@ fi
 
 echo "=== Running restore ==="
 stop_auto_converge
-"$REPO_ROOT/scripts/adminctl" set-mode restore
+"$REPO_ROOT/bin/admin-node" mode set restore
 assert_contains /etc/admin-node/mode "restore"
 stop_auto_converge
 
-"$REPO_ROOT/scripts/restore.sh"
+"$REPO_ROOT/bin/admin-node" restore run
 assert_contains /etc/admin-node/mode "normal"
 
 echo "=== bootstrap-user-journey scenario PASSED ==="

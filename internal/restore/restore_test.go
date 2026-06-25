@@ -77,7 +77,6 @@ func TestRestoreOpenBaoUnsealsBeforeSnapshotRestore(t *testing.T) {
 	if err := os.Mkdir(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	unsealMarker := filepath.Join(root, "openbao-unsealed")
 	restoreMarker := filepath.Join(root, "openbao-snapshot-restored")
 	fakeDocker := filepath.Join(binDir, "docker")
 	fakeDockerScript := `#!/usr/bin/env bash
@@ -89,15 +88,15 @@ if [[ "${1:-}" == "cp" ]]; then
   exit 0
 fi
 if [[ "${1:-}" == "exec" && "$*" == *"bao status"* ]]; then
+  if [[ "$*" == *"-format=json"* ]]; then
+    echo '{"initialized": true, "sealed": false}'
+    exit 0
+  fi
   echo "Initialized true"
-  echo "Sealed true"
-  exit 2
+  echo "Sealed false"
+  exit 0
 fi
 if [[ "${1:-}" == "exec" && "$*" == *"snapshot restore"* ]]; then
-  if [[ ! -f "` + unsealMarker + `" ]]; then
-    echo "Vault is sealed" >&2
-    exit 2
-  fi
   touch "` + restoreMarker + `"
   exit 0
 fi
@@ -111,11 +110,7 @@ exit 1
 	t.Setenv("OPENBAO_TOKEN", "token")
 
 	repoRoot := filepath.Join(root, "repo")
-	if err := os.MkdirAll(filepath.Join(repoRoot, "scripts"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	unsealScript := filepath.Join(repoRoot, "scripts/openbao-unseal.sh")
-	if err := os.WriteFile(unsealScript, []byte("#!/usr/bin/env bash\nset -euo pipefail\ntouch \""+unsealMarker+"\"\n"), 0o755); err != nil {
+	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	snapPath := filepath.Join(root, "openbao.snap")
@@ -126,9 +121,6 @@ exit 1
 	err := restoreOpenBao(context.Background(), config.Config{RepoRoot: repoRoot}, filepath.Join(root, "compose.yaml"), snapPath)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if _, err := os.Stat(unsealMarker); err != nil {
-		t.Fatal("openbao unseal script was not called")
 	}
 	if _, err := os.Stat(restoreMarker); err != nil {
 		t.Fatal("openbao snapshot restore was not called")

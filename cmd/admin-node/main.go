@@ -12,8 +12,12 @@ import (
 
 	"github.com/Frantche/homelab-admin-node/internal/backup"
 	"github.com/Frantche/homelab-admin-node/internal/config"
+	"github.com/Frantche/homelab-admin-node/internal/converge"
+	"github.com/Frantche/homelab-admin-node/internal/mode"
+	"github.com/Frantche/homelab-admin-node/internal/openbao"
 	"github.com/Frantche/homelab-admin-node/internal/restore"
 	"github.com/Frantche/homelab-admin-node/internal/runner"
+	"github.com/Frantche/homelab-admin-node/internal/secret"
 	"github.com/Frantche/homelab-admin-node/internal/validate"
 )
 
@@ -50,6 +54,14 @@ func (a app) run(ctx context.Context, args []string) int {
 		return a.runBackup(ctx, args[1:])
 	case "restore":
 		return a.runRestore(ctx, args[1:])
+	case "mode":
+		return a.runMode(ctx, args[1:])
+	case "converge":
+		return a.runConverge(ctx, args[1:])
+	case "secret":
+		return a.runSecret(ctx, args[1:])
+	case "openbao":
+		return a.runOpenBao(ctx, args[1:])
 	default:
 		fmt.Fprintf(a.errOut, "unknown command: %s\n\n", args[0])
 		a.printRootUsage()
@@ -64,6 +76,10 @@ func (a app) printRootUsage() {
 	fmt.Fprintln(a.out, "  validate   Validate admin-node services")
 	fmt.Fprintln(a.out, "  backup     Manage backups")
 	fmt.Fprintln(a.out, "  restore    Restore backups")
+	fmt.Fprintln(a.out, "  mode       Manage admin-node mode")
+	fmt.Fprintln(a.out, "  converge   Run Ansible convergence")
+	fmt.Fprintln(a.out, "  secret     Manage local secret material")
+	fmt.Fprintln(a.out, "  openbao    Initialize and unseal OpenBao")
 }
 
 func (a app) runValidate(_ context.Context, args []string) int {
@@ -89,6 +105,8 @@ func (a app) runValidate(_ context.Context, args []string) int {
 		results = []validate.CheckResult{validator.DNS(ctx)}
 	case "tunnel":
 		results = []validate.CheckResult{validator.Tunnel(ctx)}
+	case "hardening":
+		results = []validate.CheckResult{validator.Hardening(ctx)}
 	default:
 		fmt.Fprintf(a.errOut, "unknown validate command: %s\n", subcommand)
 		return 2
@@ -113,7 +131,115 @@ func (a app) runValidate(_ context.Context, args []string) int {
 	return 0
 }
 
-func (a app) runBackup(_ context.Context, args []string) int {
+func (a app) runMode(_ context.Context, args []string) int {
+	subcommand, rest := splitSubcommand(args, "")
+	if subcommand != "set" || len(rest) != 1 {
+		fmt.Fprintln(a.errOut, "usage: admin-node mode set <locked|init|normal|restore|restore_failed>")
+		return 2
+	}
+	if err := mode.Set(a.cfg.ModeFile, rest[0]); err != nil {
+		fmt.Fprintf(a.errOut, "mode set: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(a.out, "Mode set to %s\n", rest[0])
+	return 0
+}
+
+func (a app) runConverge(ctx context.Context, args []string) int {
+	subcommand, rest := splitSubcommand(args, "run")
+	if subcommand != "run" {
+		fmt.Fprintf(a.errOut, "unknown converge command: %s\n", subcommand)
+		return 2
+	}
+	fs := flag.NewFlagSet("converge", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	skipGitPull := fs.Bool("skip-git-pull", envBool("ADMIN_CONVERGE_SKIP_GIT_PULL"), "skip git pull before convergence")
+	extraVars := fs.String("extra-vars", "", "extra ansible-playbook arguments")
+	if err := fs.Parse(rest); err != nil {
+		return 2
+	}
+	extraArgs := converge.SplitExtraArgs(os.Getenv("ANSIBLE_EXTRA_ARGS"))
+	if *extraVars != "" {
+		extraArgs = append(extraArgs, converge.SplitExtraArgs(*extraVars)...)
+	}
+	fmt.Fprintln(a.out, "[admin-converge] starting")
+	playbook := getenv("PLAYBOOK_PATH", a.cfg.RepoRoot+"/ansible/site.yml")
+	inventory := getenv("INVENTORY_PATH", "/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini")
+	fmt.Fprintf(a.out, "[admin-converge] playbook=%s inventory=%s\n", playbook, inventory)
+	if err := converge.Run(ctx, converge.Options{
+		RepoDir:       a.cfg.RepoRoot,
+		InventoryPath: inventory,
+		PlaybookPath:  playbook,
+		SkipGitPull:   *skipGitPull,
+		ExtraArgs:     extraArgs,
+	}); err != nil {
+		fmt.Fprintf(a.errOut, "converge run: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func (a app) runSecret(_ context.Context, args []string) int {
+	subcommand, rest := splitSubcommand(args, "")
+	if subcommand != "install-age-key" || len(rest) != 1 {
+		fmt.Fprintln(a.errOut, "usage: admin-node secret install-age-key <path>")
+		return 2
+	}
+	dst := getenv("SOPS_AGE_KEY_FILE", "/etc/sops/age/keys.txt")
+	if err := secret.InstallAgeKey(rest[0], dst); err != nil {
+		fmt.Fprintf(a.errOut, "install age key: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(a.out, "Age key installed at %s with 0400 permissions\n", dst)
+	return 0
+}
+
+func (a app) runOpenBao(ctx context.Context, args []string) int {
+	subcommand, rest := splitSubcommand(args, "")
+	fs := flag.NewFlagSet("openbao", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	ageKey := fs.String("age-key", getenv("AGE_KEY", "/etc/sops/age/keys.txt"), "SOPS age private key")
+	secretsDir := fs.String("secrets-dir", getenv("SECRETS_DIR", a.cfg.RepoRoot+"/secrets"), "secrets directory")
+	secretsFile := fs.String("secrets-file", getenv("SECRETS_FILE", ""), "OpenBao encrypted unseal secrets file")
+	keysetName := fs.String("keyset-name", getenv("KEYSET_NAME", ""), "OpenBao keyset name")
+	container := fs.String("container", getenv("OPENBAO_CONTAINER", "openbao"), "OpenBao container name")
+	rootTokenOut := fs.String("root-token-out", getenv("OPENBAO_ROOT_TOKEN_OUT", ""), "optional root token output path")
+	token := fs.String("token", getenv("OPENBAO_TOKEN", ""), "OpenBao root token")
+	tokenFile := fs.String("token-file", getenv("OPENBAO_TOKEN_FILE", ""), "OpenBao root token file")
+	kvPath := fs.String("path", getenv("OPENBAO_KV_PATH", "secret"), "OpenBao KV engine path")
+	if err := fs.Parse(rest); err != nil {
+		return 2
+	}
+	opts := openbao.Options{
+		AgeKey:        *ageKey,
+		SecretsDir:    *secretsDir,
+		SecretsFile:   *secretsFile,
+		KeysetName:    *keysetName,
+		Container:     *container,
+		RootTokenOut:  *rootTokenOut,
+		RootToken:     *token,
+		RootTokenFile: *tokenFile,
+	}
+	var err error
+	switch subcommand {
+	case "init-if-needed":
+		err = openbao.InitIfNeeded(ctx, opts)
+	case "unseal":
+		err = openbao.Unseal(ctx, opts)
+	case "enable-kv":
+		err = openbao.EnableKV(ctx, opts, *kvPath)
+	default:
+		fmt.Fprintf(a.errOut, "unknown openbao command: %s\n", subcommand)
+		return 2
+	}
+	if err != nil {
+		fmt.Fprintf(a.errOut, "openbao %s: %v\n", subcommand, err)
+		return 1
+	}
+	return 0
+}
+
+func (a app) runBackup(ctx context.Context, args []string) int {
 	subcommand, rest := splitSubcommand(args, "run")
 	fs := flag.NewFlagSet("backup", flag.ContinueOnError)
 	fs.SetOutput(a.errOut)
@@ -166,6 +292,13 @@ func (a app) runBackup(_ context.Context, args []string) int {
 			fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n", item.ID, item.CreatedAt.Format(time.RFC3339), backup.FormatSize(item.SizeBytes), manifest, dumps, offline)
 		}
 		writer.Flush()
+		return 0
+	case "restic":
+		paths := fs.Args()
+		if err := backup.RunRestic(ctx, a.cfg.BackupEnvFile, paths); err != nil {
+			fmt.Fprintf(a.errOut, "backup restic: %v\n", err)
+			return 1
+		}
 		return 0
 	default:
 		fmt.Fprintf(a.errOut, "unknown backup command: %s\n", subcommand)
@@ -252,4 +385,16 @@ func splitSubcommand(args []string, fallback string) (string, []string) {
 		return fallback, args
 	}
 	return args[0], args[1:]
+}
+
+func getenv(key, fallback string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func envBool(key string) bool {
+	return strings.EqualFold(os.Getenv(key), "true")
 }

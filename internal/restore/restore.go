@@ -14,6 +14,7 @@ import (
 
 	"github.com/Frantche/homelab-admin-node/internal/backup"
 	"github.com/Frantche/homelab-admin-node/internal/config"
+	"github.com/Frantche/homelab-admin-node/internal/openbao"
 )
 
 type Options struct {
@@ -305,18 +306,8 @@ func waitOpenBaoInitialized(ctx context.Context) error {
 }
 
 func unsealOpenBao(ctx context.Context, cfg config.Config) error {
-	script := filepath.Join(cfg.RepoRoot, "scripts/openbao-unseal.sh")
-	if !fileExists(script) {
-		return fmt.Errorf("openbao unseal script not found: %s", script)
-	}
 	secretsFile := filepath.Join(cfg.RepoRoot, "secrets/openbao-unseal.sops.yaml")
-	cmd := exec.CommandContext(ctx, script)
-	cmd.Env = append(os.Environ(), "SECRETS_FILE="+secretsFile)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("openbao unseal: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
+	return openbao.Unseal(ctx, openbao.Options{SecretsFile: secretsFile})
 }
 
 func dockerCompose(ctx context.Context, command stackCommand, args ...string) error {

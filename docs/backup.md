@@ -1,6 +1,6 @@
 # Backup
 
-`scripts/backup.sh` est un wrapper strict vers `bin/admin-node backup run`. Le binaire cree une sauvegarde locale sous `/srv/admin/backups/local`, puis delegue les sauvegardes restic a `scripts/restic-backup-repositories.sh`.
+`bin/admin-node backup run` cree une sauvegarde locale sous `/srv/admin/backups/local`, puis exécute les sauvegardes restic depuis le même binaire.
 
 Ansible construit `bin/admin-node` pendant le converge. En execution manuelle depuis le depot, lancer `make build-admin-node` si le binaire est absent.
 

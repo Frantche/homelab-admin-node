@@ -102,15 +102,8 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		return Info{}, fmt.Errorf("write manifest: %w", err)
 	}
 
-	resticScript := filepath.Join(cfg.RepoRoot, "scripts/restic-backup-repositories.sh")
-	if fileExists(resticScript) {
-		cmd := exec.CommandContext(ctx, resticScript)
-		cmd.Env = append(os.Environ(), "RESTIC_BACKUP_PATHS="+filepath.Join(cfg.AdminRoot, "stacks")+" "+filepath.Join(cfg.AdminRoot, "env")+" "+filepath.Join(cfg.AdminRoot, "data"))
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return Info{}, fmt.Errorf("restic backup: %w", err)
-		}
+	if err := RunRestic(ctx, cfg.BackupEnvFile, defaultBackupPaths(cfg.AdminRoot)); err != nil {
+		return Info{}, fmt.Errorf("restic backup: %w", err)
 	}
 
 	if err := rotateLocal(cfg.BackupRoot, 3); err != nil {

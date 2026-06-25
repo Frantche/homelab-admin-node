@@ -1,6 +1,6 @@
 # admin-node CLI
 
-`admin-node` est le binaire Go d'exploitation du noeud admin. Les scripts Bash migrés (`backup.sh`, `restore.sh`, `validate-*.sh`) sont maintenant des wrappers stricts vers ce binaire. Si `bin/admin-node` est absent, ils echouent avec un message demandant `make build-admin-node`.
+`admin-node` est le binaire Go d'exploitation du noeud admin. Les entrypoints runtime systemd, Ansible et CI appellent directement ce binaire pour la convergence, les modes, la validation, le backup et le restore.
 
 ## Build
 
@@ -20,6 +20,7 @@ Le remplacement du binaire est atomique: le nouveau binaire est compile dans un 
 bin/admin-node validate apis
 bin/admin-node validate dns
 bin/admin-node validate tunnel
+bin/admin-node validate hardening
 bin/admin-node validate all --output json
 ```
 
@@ -31,6 +32,7 @@ Les statuts possibles sont `ok`, `warn`, `fail` et `skipped`. Le code de sortie 
 bin/admin-node backup list
 bin/admin-node backup run
 bin/admin-node backup run --include-images
+bin/admin-node backup restic
 ```
 
 `backup run` reprend le comportement historique: validation pre-backup, dumps Keycloak/Gitea, snapshot OpenBao si un token est disponible, copie des fichiers applicatifs, restic et retention locale. Un `manifest.json` est ecrit dans chaque nouveau backup.
@@ -46,3 +48,24 @@ bin/admin-node restore select
 ```
 
 Le restore charge automatiquement `offline-images.tar` s'il est present, restaure les donnees disponibles, redemarre les stacks et lance la validation post-restore avec creation de sentinelle Gitea desactivee.
+
+## Mode, Converge Et Secrets
+
+```bash
+bin/admin-node mode set init
+bin/admin-node mode set normal
+bin/admin-node converge run
+bin/admin-node converge run --skip-git-pull --extra-vars "-e admin_ci_disable_auto_converge=true"
+bin/admin-node secret install-age-key /path/to/age-key.txt
+```
+
+`converge run` prend le lock `/run/admin-converge.lock`, exécute `git pull --ff-only` sauf option contraire, puis lance `ansible-playbook`.
+
+## OpenBao
+
+```bash
+bin/admin-node openbao init-if-needed
+bin/admin-node openbao unseal
+```
+
+Ces commandes remplacent les anciens scripts d'initialisation et d'unseal OpenBao. Elles utilisent `docker exec bao`, `sops` et la clé age locale.

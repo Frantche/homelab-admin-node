@@ -6,8 +6,6 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BIN_DIR="$REPO_DIR/bin"
 BIN_PATH="$BIN_DIR/admin-node"
 HASH_PATH="$BIN_DIR/admin-node.source.sha256"
-TMP_BIN="$BIN_DIR/admin-node.tmp"
-TMP_HASH="$BIN_DIR/admin-node.source.sha256.tmp"
 GO_BIN="${GO_BIN:-go}"
 
 if ! command -v "$GO_BIN" >/dev/null 2>&1; then
@@ -17,6 +15,8 @@ fi
 
 cd "$REPO_DIR"
 mkdir -p "$BIN_DIR"
+TMP_BIN="$(mktemp "$BIN_DIR/admin-node.tmp.XXXXXX")"
+TMP_HASH="$(mktemp "$BIN_DIR/admin-node.source.sha256.tmp.XXXXXX")"
 
 cleanup() {
   rm -f "$TMP_BIN" "$TMP_HASH"

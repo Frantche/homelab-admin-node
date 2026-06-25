@@ -195,10 +195,10 @@ git commit -m "initial config"
 git push -u origin main
 ```
 
-## Utilisation avec admin-converge.sh
+## Utilisation avec admin-node converge
 
 Le premier `git clone` du dépôt `homelab-admin-node` est réalisé par cloud-init dans `/opt/homelab-admin-node`.  
-Le script `admin-converge.sh` exécute ensuite `git pull --ff-only` sur ce dépôt avant chaque convergence. Apres la synchronisation Ansible, le role `base` appelle `scripts/build-admin-node.sh`: le binaire Go est reconstruit uniquement si les sources Go ont change.
+`bin/admin-node converge run` exécute ensuite `git pull --ff-only` sur ce dépôt avant chaque convergence. Apres la synchronisation Ansible, le role `base` appelle `scripts/build-admin-node.sh`: le binaire Go est reconstruit uniquement si les sources Go ont change.
 
 ### 1. Mettre à jour le config repo via git CLI (optionnel)
 
@@ -208,7 +208,7 @@ git -C /etc/admin-config/homelab-node-admin-config pull --ff-only
 
 ### 2. Déposer l'inventaire Ansible utilisateur
 
-Par défaut, `admin-converge.sh` lit l'inventaire depuis `/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini`.  
+Par défaut, `admin-node converge run` lit l'inventaire depuis `/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini`.
 Un exemple minimal est disponible dans ce dépôt: `ansible/inventory.ini`.
 
 ```bash
@@ -218,10 +218,10 @@ sudo install -D -m 0644 /opt/homelab-admin-node/ansible/inventory.ini /etc/admin
 ### 3. Lancer la convergence
 
 ```bash
-sudo ./scripts/admin-converge.sh
+sudo ./bin/admin-node converge run
 ```
 
-`admin-converge.sh` :
+`admin-node converge run` :
 
 1. Met à jour `/opt/homelab-admin-node` via `git pull --ff-only`
 2. Vérifie la présence du playbook local `/opt/homelab-admin-node/ansible/site.yml`

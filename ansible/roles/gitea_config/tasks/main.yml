@@ -150,7 +150,7 @@
   no_log: true
 
 - name: Validate Gitea repository and issue sentinel
-  ansible.builtin.command: /opt/homelab-admin-node/scripts/validate-gitea-data.sh
+  ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node validate gitea
   environment:
     GITEA_DOMAIN: "{{ service_domains.gitea | default('git.example.com') }}"
     GITEA_ADMIN_USER: "{{ gitea_runtime.admin_user }}"

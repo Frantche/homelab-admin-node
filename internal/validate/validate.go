@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Frantche/homelab-admin-node/internal/config"
+	"github.com/Frantche/homelab-admin-node/internal/openbao"
 	"github.com/Frantche/homelab-admin-node/internal/runner"
 )
 
@@ -136,13 +137,142 @@ func (v Validator) OpenBao(ctx context.Context) CheckResult {
 					return StatusOK, "initialized=true sealed=false"
 				}
 				if status.Initialized && status.Sealed {
-					v.Runner.Run(ctx, filepath.Join(v.Config.RepoRoot, "scripts/openbao-unseal.sh"))
+					_ = openbao.Unseal(ctx, openbao.Options{})
 				}
 			}
 			time.Sleep(2 * time.Second)
 		}
 		return StatusFail, "not ready or still sealed"
 	})
+}
+
+func (v Validator) Hardening(ctx context.Context) CheckResult {
+	return timed("Hardening", func() (Status, string) {
+		if result := v.Runner.Run(ctx, "sshd", "-T"); result.Code == 0 {
+			expectedSSH := []string{
+				"permitrootlogin no",
+				"passwordauthentication no",
+				"kbdinteractiveauthentication no",
+				"pubkeyauthentication yes",
+				"allowtcpforwarding no",
+				"allowagentforwarding no",
+				"clientalivecountmax 2",
+				"loglevel VERBOSE",
+				"maxauthtries 3",
+				"maxsessions 2",
+				"tcpkeepalive no",
+			}
+			for _, expected := range expectedSSH {
+				if !containsLine(result.Stdout, expected) {
+					return StatusFail, "sshd option mismatch: expected " + expected
+				}
+			}
+		}
+		expectedSysctls := map[string]string{
+			"dev.tty.ldisc_autoload":             "0",
+			"fs.protected_fifos":                 "2",
+			"fs.protected_regular":               "2",
+			"fs.suid_dumpable":                   "0",
+			"kernel.sysrq":                       "0",
+			"kernel.kptr_restrict":               "2",
+			"kernel.dmesg_restrict":              "1",
+			"kernel.unprivileged_bpf_disabled":   "1",
+			"net.core.bpf_jit_harden":            "2",
+			"net.ipv4.conf.all.log_martians":     "1",
+			"net.ipv4.conf.default.log_martians": "1",
+		}
+		for key, expected := range expectedSysctls {
+			result := v.Runner.Run(ctx, "sysctl", "-n", key)
+			if result.Code != 0 {
+				return StatusFail, "sysctl command failed for " + key
+			}
+			if strings.TrimSpace(result.Stdout) != expected {
+				return StatusFail, fmt.Sprintf("sysctl mismatch: %s expected %s", key, expected)
+			}
+		}
+		if result := v.Runner.Run(ctx, "systemctl", "is-active", "--quiet", "systemd-journald"); result.Code != 0 {
+			return StatusFail, "systemd-journald is not active"
+		}
+		for _, path := range []string{
+			"/etc/security/limits.d/90-admin-core-dumps.conf",
+			"/etc/modprobe.d/90-admin-hardening.conf",
+			"/etc/issue.net",
+		} {
+			if _, err := os.Stat(path); err != nil {
+				return StatusFail, path + " is missing"
+			}
+		}
+		if result := v.Runner.Run(ctx, "nft", "list", "table", "inet", "admin_filter"); result.Code != 0 {
+			return StatusFail, "nftables admin_filter table is unavailable"
+		} else if !strings.Contains(result.Stdout, "policy drop") || !strings.Contains(result.Stdout, "tcp dport 22 accept") || !strings.Contains(result.Stdout, "tcp dport 443 accept") {
+			return StatusFail, "nftables policy is incomplete"
+		}
+		loginDefs, err := os.ReadFile("/etc/login.defs")
+		if err != nil {
+			return StatusFail, "/etc/login.defs is unreadable"
+		}
+		for _, expected := range []string{"UMASK 027", "PASS_MIN_DAYS 1", "PASS_MAX_DAYS 365"} {
+			if !containsFieldsLine(string(loginDefs), expected) {
+				return StatusFail, "/etc/login.defs mismatch: expected " + expected
+			}
+		}
+		modprobe, err := os.ReadFile("/etc/modprobe.d/90-admin-hardening.conf")
+		if err != nil {
+			return StatusFail, "modprobe hardening drop-in is unreadable"
+		}
+		for _, module := range []string{"usb-storage", "firewire-ohci", "dccp", "sctp", "rds", "tipc"} {
+			if !containsLine(string(modprobe), "install "+module+" /bin/false") {
+				return StatusFail, "module is not disabled: " + module
+			}
+		}
+		for _, unit := range []string{"auditd", "fail2ban"} {
+			if list := v.Runner.Run(ctx, "systemctl", "list-unit-files", unit+".service"); list.Code == 0 {
+				active := v.Runner.Run(ctx, "systemctl", "is-active", "--quiet", unit)
+				if active.Code != 0 {
+					return StatusFail, unit + " is not active"
+				}
+			}
+		}
+		if _, err := os.Stat("/var/log/journal"); err != nil {
+			return StatusFail, "persistent journal directory is missing"
+		}
+		if _, err := os.Stat("/etc/sops/age/keys.txt"); err == nil {
+			if info, err := os.Stat("/etc/sops/age/keys.txt"); err == nil && info.Mode().Perm() != 0o400 {
+				return StatusFail, "/etc/sops/age/keys.txt permissions are not 0400"
+			}
+		}
+		return StatusOK, "system hardening checks passed"
+	})
+}
+
+func containsLine(text string, expected string) bool {
+	for _, line := range strings.Split(text, "\n") {
+		if strings.TrimSpace(line) == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func containsFieldsLine(text string, expected string) bool {
+	expectedFields := strings.Fields(expected)
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != len(expectedFields) {
+			continue
+		}
+		matched := true
+		for i := range fields {
+			if fields[i] != expectedFields[i] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
 }
 
 func (v Validator) Gitea(ctx context.Context) CheckResult {

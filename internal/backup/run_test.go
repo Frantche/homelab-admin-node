@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,21 +93,33 @@ exit 1
 		t.Fatal(err)
 	}
 
+	resticLog := filepath.Join(root, "restic.log")
+	fakeRestic := filepath.Join(binDir, "restic")
+	if err := os.WriteFile(fakeRestic, []byte(`#!/usr/bin/env bash
+set -euo pipefail
+echo "$*" >> "`+resticLog+`"
+if [[ "$*" == "cat config" ]]; then
+  exit 1
+fi
+exit 0
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backupEnv := filepath.Join(root, "backup.env")
+	if err := os.WriteFile(backupEnv, []byte(`RESTIC_REPOSITORY="/tmp/restic-repo"
+RESTIC_PASSWORD="secret"
+RESTIC_INIT_REPOSITORIES="true"
+RESTIC_DEFAULT_FORGET_ARGS="--keep-last 2 --prune"
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	validateCalled := false
-	repoRoot := filepath.Join(root, "repo")
-	if err := os.MkdirAll(filepath.Join(repoRoot, "scripts"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	resticMarker := filepath.Join(root, "restic-called")
-	if err := os.WriteFile(filepath.Join(repoRoot, "scripts/restic-backup-repositories.sh"), []byte("#!/usr/bin/env bash\nset -euo pipefail\ntouch \""+resticMarker+"\"\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 
 	cfg := config.Config{
-		RepoRoot:   repoRoot,
-		AdminRoot:  adminRoot,
-		ModeFile:   modeFile,
-		BackupRoot: filepath.Join(root, "backups"),
+		AdminRoot:     adminRoot,
+		ModeFile:      modeFile,
+		BackupRoot:    filepath.Join(root, "backups"),
+		BackupEnvFile: backupEnv,
 	}
 	info, err := Run(context.Background(), cfg, RunOptions{
 		Validate: func(context.Context) error {
@@ -132,8 +145,12 @@ exit 1
 			t.Fatalf("expected %s in backup", name)
 		}
 	}
-	if !fileExists(resticMarker) {
-		t.Fatal("restic helper was not called")
+	resticCalls, err := os.ReadFile(resticLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(resticCalls) == "" || !strings.Contains(string(resticCalls), "backup") {
+		t.Fatalf("restic was not called correctly: %q", string(resticCalls))
 	}
 	manifest, ok, err := ReadManifest(info.Path)
 	if err != nil {
