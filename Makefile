@@ -1,5 +1,8 @@
 SHELL := /usr/bin/env bash
 
+build-admin-node:
+	@./scripts/build-admin-node.sh
+
 lint: shellcheck ansible-syntax sops-check
 
 ansible-syntax:
@@ -32,6 +35,12 @@ validate-hardening:
 
 test-oidc-contracts:
 	@./ci/test-oidc-contracts.sh
+
+test-restic-config:
+	@./ci/test-restic-config.sh
+
+test-offline-images:
+	@./ci/test-offline-images.sh
 
 test-ci-fast:
 	@./ci/run-admin-lifecycle.sh fresh-branch

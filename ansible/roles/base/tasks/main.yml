@@ -23,6 +23,13 @@
       - "--exclude=secrets/*.sops.yaml"
       - "--exclude=ansible/group_vars/secrets.sops.yaml"
 
+- name: Build admin-node Go CLI
+  ansible.builtin.command: ./scripts/build-admin-node.sh
+  args:
+    chdir: /opt/homelab-admin-node
+  register: admin_node_build
+  changed_when: "'changed=true' in admin_node_build.stdout"
+
 - name: Deploy systemd unit files
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../systemd/{{ item }}"

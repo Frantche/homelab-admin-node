@@ -58,13 +58,15 @@ Voir `docs/pihole-dns.md` et rôle `ansible/roles/pihole_dns`.
 - Les clients OIDC partagés (Harbor/OpenBao/Gitea) sont définis une seule fois via `oidc_clients.*` dans le config repo; voir `examples/admin-config/group_vars/` et `docs/config-repo.md`.
 
 ## 14. Backup
-`scripts/backup.sh` vérifie santé APIs/DNS/tunnel puis applique rétention locale + `restic forget --keep-last 3 --prune`.
+`scripts/backup.sh` appelle `bin/admin-node backup run`, vérifie santé APIs/DNS/tunnel puis applique rétention locale + restic.
+La configuration restic multi-destinations est documentée dans `docs/backup.md`.
+La CLI Go `admin-node` est documentée dans `docs/admin-node.md`.
 
 ## 15. Restore
-`scripts/restore.sh` restaure fichiers + services, valide, bascule `mode` vers `normal` ou `restore_failed`.
+`scripts/restore.sh` appelle `bin/admin-node restore run`, restaure fichiers + services, valide, bascule `mode` vers `normal` ou `restore_failed`.
 
 ## 16. Validation API
-`scripts/validate-apis.sh`, `scripts/validate-dns.sh`, `scripts/validate-cloudflare-tunnel.sh`.
+`scripts/validate-apis.sh`, `scripts/validate-dns.sh`, `scripts/validate-cloudflare-tunnel.sh` appellent respectivement `bin/admin-node validate apis|dns|tunnel`.
 
 ## 17. Hardening
 Le socle de durcissement est appliqué par Ansible: SSH par clé, root SSH désactivé, sudoers dédié, nftables en default deny entrant, journald persistant, auditd, fail2ban, sysctl et permissions sensibles.

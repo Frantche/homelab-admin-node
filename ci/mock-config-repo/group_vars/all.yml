@@ -106,5 +106,7 @@ gitea_config:
     issue_title: "Backup restore sentinel"
 
 backup:
-  restic_repository: "/srv/admin/backups/restic"
-  restic_password: "ci-restic-pass"
+  restic_repositories:
+    - name: local
+      repository: "/srv/admin/backups/restic"
+      password: "ci-restic-pass"

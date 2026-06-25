@@ -13,6 +13,7 @@ packages:
   - git
   - docker
   - docker-compose
+  - go
   - openssh
   - rsync
   - sops

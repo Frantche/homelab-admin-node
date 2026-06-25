@@ -106,8 +106,22 @@ harbor:
   jobservice_secret: "secret-jobservice-harbor"
   registry_password: "mot-de-passe-registry-harbor"
 backup:
-  restic_repository: "/srv/admin/backups/restic"
-  restic_password: "mot-de-passe-restic"
+  restic_default_forget_args: "--keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune"
+  restic_require_secure_repositories: true
+  restic_repositories:
+    - name: local
+      repository: "/srv/admin/backups/restic"
+      password: "mot-de-passe-restic"
+    - name: sftp
+      repository: "sftp:backup-admin:/srv/restic/admin-node"
+      password: "mot-de-passe-restic-sftp"
+    - name: s3
+      repository: "s3:https://s3.example.com/admin-node-restic"
+      password: "mot-de-passe-restic-s3"
+      env:
+        AWS_ACCESS_KEY_ID: "access-key"
+        AWS_SECRET_ACCESS_KEY: "secret-key"
+        AWS_DEFAULT_REGION: "us-east-1"
 ```
 
 Définissez les `client_id` et `client_secret` OIDC une seule fois via `oidc_clients`. Hors CI, `oidc_clients.harbor.client_id`, `oidc_clients.harbor.client_secret` et, si l'OIDC OpenBao est activé, `oidc_clients.openbao.*` sont obligatoires. En CI (`ci_mode: true`), le dépôt utilise des valeurs mock déterministes distinctes de la production.
@@ -184,7 +198,7 @@ git push -u origin main
 ## Utilisation avec admin-converge.sh
 
 Le premier `git clone` du dépôt `homelab-admin-node` est réalisé par cloud-init dans `/opt/homelab-admin-node`.  
-Le script `admin-converge.sh` exécute ensuite `git pull --ff-only` sur ce dépôt avant chaque convergence.
+Le script `admin-converge.sh` exécute ensuite `git pull --ff-only` sur ce dépôt avant chaque convergence. Apres la synchronisation Ansible, le role `base` appelle `scripts/build-admin-node.sh`: le binaire Go est reconstruit uniquement si les sources Go ont change.
 
 ### 1. Mettre à jour le config repo via git CLI (optionnel)
 
@@ -213,6 +227,7 @@ sudo ./scripts/admin-converge.sh
 2. Vérifie la présence du playbook local `/opt/homelab-admin-node/ansible/site.yml`
 3. Vérifie la présence de l'inventaire utilisateur `/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini`
 4. Exécute `ansible-playbook -i /etc/admin-config/homelab-node-admin-config/hosts/inventory.ini /opt/homelab-admin-node/ansible/site.yml`
+5. Pendant le role `base`, maintient `bin/admin-node` a jour via un build local conditionnel; `bin/admin-node` et `bin/admin-node.source.sha256` ne sont pas versionnes.
 
 ## Modifier les secrets
 

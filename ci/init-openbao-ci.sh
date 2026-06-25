@@ -31,11 +31,13 @@ done
 # Check if already initialized (exit code 0 means unsealed = initialized)
 initialized="False"
 bao_status=""
-if ! bao_status="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null)"; then
+bao_rc=0
+bao_status="$(docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null)" || bao_rc=$?
+if [[ $bao_rc -ne 0 && $bao_rc -ne 2 ]]; then
   bao_status=""
 fi
 if [[ -n "$bao_status" ]]; then
-  initialized="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("initialized", False))' "$bao_status" 2>/dev/null || echo "False")"
+ initialized="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("initialized", False))' "$bao_status" 2>/dev/null || echo "False")"
 fi
 
 if [[ "$initialized" == "True" ]]; then

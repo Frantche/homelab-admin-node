@@ -26,6 +26,9 @@ ci/.tmp/
 __pycache__/
 ci/__pycache__/
 
+# Build artifacts
+bin/
+
 # Logs
 *.log
 logs/
