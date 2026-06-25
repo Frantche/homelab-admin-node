@@ -3,6 +3,7 @@
 # combined with group_vars/secrets.sops.yaml for CI purposes.
 
 ci_mode: true
+admin_ci_disable_auto_converge: true
 
 service_domains:
   harbor: "harbor.example.com"

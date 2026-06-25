@@ -13,11 +13,55 @@ export CI_MOCK_CLOUDFLARE_TUNNEL="${CI_MOCK_CLOUDFLARE_TUNNEL:-true}"
 export CI_SKIP_PUBLIC_URL_VALIDATION="${CI_SKIP_PUBLIC_URL_VALIDATION:-true}"
 export SKIP_PUBLIC_URL_VALIDATION="${SKIP_PUBLIC_URL_VALIDATION:-true}"
 
+stop_auto_converge() {
+  systemctl disable --now admin-converge.timer admin-unlock.path 2>/dev/null || true
+  systemctl stop admin-converge.service 2>/dev/null || true
+}
+
+dump_debug() {
+  local status=$?
+  echo "=== bootstrap-user-journey debug: status=$status ===" >&2
+  echo "--- admin mode ---" >&2
+  cat /etc/admin-node/mode >&2 2>/dev/null || true
+  echo "--- admin-converge units ---" >&2
+  systemctl --no-pager --full status admin-converge.service admin-converge.timer admin-unlock.path >&2 2>/dev/null || true
+  echo "--- admin-converge journal ---" >&2
+  journalctl -u admin-converge.service --no-pager -n 80 >&2 2>/dev/null || true
+  echo "--- docker ps ---" >&2
+  docker ps -a >&2 2>/dev/null || true
+  for svc in traefik keycloak keycloak-db openbao harbor-core harbor-db gitea gitea-db cloudflared; do
+    echo "--- docker logs: $svc ---" >&2
+    docker logs "$svc" 2>&1 | tail -80 >&2 || true
+  done
+  exit "$status"
+}
+
+run_converge() {
+  local output_file status
+  output_file="$(mktemp)"
+  set +e
+  ADMIN_CONVERGE_SKIP_GIT_PULL=true "$REPO_ROOT/scripts/adminctl" converge 2>&1 | tee "$output_file"
+  status="${PIPESTATUS[0]}"
+  set -e
+  if [[ "$status" -ne 0 ]]; then
+    rm -f "$output_file"
+    return 1
+  fi
+  if grep -q "another run is in progress" "$output_file"; then
+    rm -f "$output_file"
+    echo "ERROR: admin-converge lock was already held during a manual CI convergence" >&2
+    return 1
+  fi
+  rm -f "$output_file"
+}
+
+trap dump_debug ERR
+
 # --- CI prerequisites (TLS certs, /etc/hosts, ansible collections) ---
 "$REPO_ROOT/ci/setup-ci-env.sh"
 
 # Prevent the auto-converge timer from interfering with our manual operations
-systemctl stop admin-converge.timer admin-converge.service 2>/dev/null || true
+stop_auto_converge
 
 # --- Set mode to init via adminctl ---
 "$REPO_ROOT/scripts/adminctl" set-mode init
@@ -25,7 +69,8 @@ assert_contains /etc/admin-node/mode "init"
 
 # --- Run convergence via adminctl converge (init mode: starts services) ---
 echo "=== Running convergence (init mode) via adminctl ==="
-ADMIN_CONVERGE_SKIP_GIT_PULL=true "$REPO_ROOT/scripts/adminctl" converge
+run_converge
+stop_auto_converge
 
 # --- Initialize and unseal OpenBao ---
 "$REPO_ROOT/ci/init-openbao-ci.sh"
@@ -36,12 +81,15 @@ export OPENBAO_TOKEN
 "$REPO_ROOT/ci/update-openbao-token.py"
 
 # --- Set mode to normal via adminctl ---
+stop_auto_converge
 "$REPO_ROOT/scripts/adminctl" set-mode normal
 assert_contains /etc/admin-node/mode "normal"
+stop_auto_converge
 
 # --- Run convergence via adminctl converge (normal mode: validate + backup) ---
 echo "=== Running convergence (normal mode) via adminctl ==="
-ADMIN_CONVERGE_SKIP_GIT_PULL=true "$REPO_ROOT/scripts/adminctl" converge
+run_converge
+stop_auto_converge
 
 # --- Verify final mode is normal ---
 assert_contains /etc/admin-node/mode "normal"
@@ -70,8 +118,10 @@ if [[ "$BACKUP_COUNT" -lt 1 ]]; then
 fi
 
 echo "=== Running restore ==="
+stop_auto_converge
 "$REPO_ROOT/scripts/adminctl" set-mode restore
 assert_contains /etc/admin-node/mode "restore"
+stop_auto_converge
 
 "$REPO_ROOT/scripts/restore.sh"
 assert_contains /etc/admin-node/mode "normal"
