@@ -21,7 +21,7 @@
 
 - name: Render backup environment
   ansible.builtin.template:
-    src: backup.env.j2
+    src: backup-env.j2
     dest: /srv/admin/env/backup.env
     owner: root
     group: root

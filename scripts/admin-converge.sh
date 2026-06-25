@@ -49,8 +49,13 @@ if [[ ! -f "$INVENTORY_PATH" ]]; then
   exit 1
 fi
 
-ansible-playbook \
-  -i "$INVENTORY_PATH" \
-  "$PLAYBOOK_PATH"
+ansible_args=(-i "$INVENTORY_PATH" "$PLAYBOOK_PATH")
+if [[ -n "${ANSIBLE_EXTRA_ARGS:-}" ]]; then
+  # shellcheck disable=SC2206
+  extra_args=($ANSIBLE_EXTRA_ARGS)
+  ansible_args+=("${extra_args[@]}")
+fi
+
+ansible-playbook "${ansible_args[@]}"
 
 echo "[admin-converge] completed"

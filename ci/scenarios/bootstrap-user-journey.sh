@@ -40,7 +40,9 @@ run_converge() {
   local output_file status
   output_file="$(mktemp)"
   set +e
-  ADMIN_CONVERGE_SKIP_GIT_PULL=true "$REPO_ROOT/scripts/adminctl" converge 2>&1 | tee "$output_file"
+  ADMIN_CONVERGE_SKIP_GIT_PULL=true \
+    ANSIBLE_EXTRA_ARGS="-e admin_ci_disable_auto_converge=true" \
+    "$REPO_ROOT/scripts/adminctl" converge 2>&1 | tee "$output_file"
   status="${PIPESTATUS[0]}"
   set -e
   if [[ "$status" -ne 0 ]]; then
