@@ -107,6 +107,7 @@ gitea_config:
     issue_title: "Backup restore sentinel"
 
 backup:
+  restic_init_repositories: true
   restic_repositories:
     - name: local
       repository: "/srv/admin/backups/restic"
