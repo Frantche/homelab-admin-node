@@ -46,6 +46,8 @@ services:
       GITEA__security__SECRET_KEY: ${GITEA_SECRET_KEY}
       GITEA__security__INTERNAL_TOKEN: ${GITEA_INTERNAL_TOKEN}
       GITEA__oauth2__JWT_SECRET: ${GITEA_JWT_SECRET}
+      GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION: "true"
+      GITEA__oauth2_client__USERNAME: "preferred_username"
       GITEA__service__DISABLE_REGISTRATION: "false"
       GITEA__service__ALLOW_ONLY_EXTERNAL_REGISTRATION: "true"
       GITEA__service__SHOW_REGISTRATION_BUTTON: "false"
