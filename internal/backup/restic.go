@@ -111,12 +111,25 @@ func parseEnvFile(path string) (map[string]string, error) {
 		}
 		key = strings.TrimSpace(key)
 		value = strings.TrimSpace(value)
-		if unquoted, err := strconv.Unquote(value); err == nil {
-			value = unquoted
-		}
+		value = unquoteEnvValue(value)
 		values[key] = value
 	}
 	return values, scanner.Err()
+}
+
+func unquoteEnvValue(value string) string {
+	if len(value) < 2 {
+		return value
+	}
+	if strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
+		return strings.TrimSuffix(strings.TrimPrefix(value, "'"), "'")
+	}
+	if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
+		if unquoted, err := strconv.Unquote(value); err == nil {
+			return unquoted
+		}
+	}
+	return value
 }
 
 func splitRepoVar(key string) (string, string, bool) {

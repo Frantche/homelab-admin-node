@@ -214,7 +214,7 @@ func waitStatus(ctx context.Context, container string) (status, error) {
 }
 
 func getStatus(ctx context.Context, container string) (status, error) {
-	out, err := dockerOutput(ctx, container, "bao", "status", "-format=json")
+	out, err := dockerStatusOutput(ctx, container)
 	if err != nil {
 		return status{}, err
 	}
@@ -259,6 +259,19 @@ func renderSecrets(keyset string, keys []string, rootToken string) []byte {
 func dockerOutput(ctx context.Context, container string, args ...string) ([]byte, error) {
 	base := []string{"exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", container}
 	return commandOutput(ctx, "", "docker", append(base, args...)...)
+}
+
+func dockerStatusOutput(ctx context.Context, container string) ([]byte, error) {
+	args := []string{"exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", container, "bao", "status", "-format=json"}
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return out, nil
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 2 && json.Valid(out) {
+		return out, nil
+	}
+	return nil, fmt.Errorf("docker %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 }
 
 func dockerOutputEnv(ctx context.Context, container string, env []string, args ...string) ([]byte, error) {
