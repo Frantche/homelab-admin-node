@@ -17,7 +17,7 @@ CI_INVENTORY="${CI_INVENTORY:-/etc/admin-config/homelab-node-admin-config/hosts/
 ./scripts/build-admin-node.sh
 
 # --- Install mock config repo (demonstrates the config-repo pattern) ---
-./ci/setup-ci-config-repo.sh
+./bin/admin-node ci install-mock-config-repo
 
 # --- Init and set up OpenBao ---
 ./bin/admin-node mode set init
@@ -30,13 +30,13 @@ ansible-playbook \
   "$REPO_ROOT/ansible/site.yml"
 
 # --- Initialize and unseal OpenBao ---
-./ci/init-openbao-ci.sh
+./bin/admin-node ci init-openbao
 OPENBAO_TOKEN="$(cat /opt/homelab-admin-node/secrets/openbao-root-token)"
 export OPENBAO_TOKEN
 
 # --- Normal mode, create data ---
 ./bin/admin-node mode set normal
-./ci/create-sentinel-data.sh
+./bin/admin-node ci create-sentinel
 assert_file_exists /srv/admin/data/sentinel/value.txt
 
 # --- Backup ---

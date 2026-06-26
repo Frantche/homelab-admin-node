@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Frantche/homelab-admin-node/internal/backup"
+	"github.com/Frantche/homelab-admin-node/internal/citest"
 	"github.com/Frantche/homelab-admin-node/internal/config"
 	"github.com/Frantche/homelab-admin-node/internal/converge"
 	"github.com/Frantche/homelab-admin-node/internal/mode"
@@ -62,6 +63,8 @@ func (a app) run(ctx context.Context, args []string) int {
 		return a.runSecret(ctx, args[1:])
 	case "openbao":
 		return a.runOpenBao(ctx, args[1:])
+	case "ci":
+		return a.runCI(ctx, args[1:])
 	default:
 		fmt.Fprintf(a.errOut, "unknown command: %s\n\n", args[0])
 		a.printRootUsage()
@@ -80,6 +83,57 @@ func (a app) printRootUsage() {
 	fmt.Fprintln(a.out, "  converge   Run Ansible convergence")
 	fmt.Fprintln(a.out, "  secret     Manage local secret material")
 	fmt.Fprintln(a.out, "  openbao    Initialize and unseal OpenBao")
+	fmt.Fprintln(a.out, "  ci         Run CI helper operations")
+}
+
+func (a app) runCI(ctx context.Context, args []string) int {
+	subcommand, rest := splitSubcommand(args, "")
+	fs := flag.NewFlagSet("ci", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	rootTokenOut := fs.String("root-token-out", getenv("OPENBAO_ROOT_TOKEN_OUT", ""), "OpenBao CI root token output path")
+	keysetName := fs.String("keyset-name", getenv("KEYSET_NAME", "ci-keyset"), "OpenBao CI keyset name")
+	sentinelPath := fs.String("sentinel-path", getenv("ADMIN_NODE_SENTINEL_PATH", ""), "sentinel data file path")
+	configPath := fs.String("config-path", getenv("OPENBAO_CONFIG_PATH", ""), "config repo group_vars/all.yml path")
+	token := fs.String("token", getenv("OPENBAO_TOKEN", ""), "OpenBao root token")
+	tokenFile := fs.String("token-file", getenv("OPENBAO_TOKEN_FILE", ""), "OpenBao root token file")
+	ageKey := fs.String("age-key", getenv("SOPS_AGE_KEY_FILE", ""), "SOPS age private key")
+	mockSource := fs.String("source", getenv("CI_MOCK_CONFIG_SOURCE", ""), "mock config repo source directory")
+	mockDest := fs.String("dest", getenv("CONFIG_REPO_DIR", ""), "mock config repo destination directory")
+	if err := fs.Parse(rest); err != nil {
+		return 2
+	}
+
+	var err error
+	switch subcommand {
+	case "init-openbao":
+		err = citest.InitOpenBao(ctx, a.cfg, citest.OpenBaoOptions{RootTokenOut: *rootTokenOut, KeysetName: *keysetName})
+		if err == nil {
+			fmt.Fprintln(a.out, "CI OpenBao initialized")
+		}
+	case "create-sentinel":
+		err = citest.CreateSentinel(a.cfg, *sentinelPath)
+		if err == nil {
+			fmt.Fprintln(a.out, "CI sentinel data created")
+		}
+	case "install-mock-config-repo":
+		err = citest.InstallMockConfigRepo(a.cfg, *mockSource, *mockDest)
+		if err == nil {
+			fmt.Fprintln(a.out, "CI mock config repo installed")
+		}
+	case "update-openbao-token":
+		err = citest.UpdateOpenBaoToken(*configPath, *token, *tokenFile, *ageKey)
+		if err == nil {
+			fmt.Fprintln(a.out, "CI OpenBao token updated")
+		}
+	default:
+		fmt.Fprintf(a.errOut, "unknown ci command: %s\n", subcommand)
+		return 2
+	}
+	if err != nil {
+		fmt.Fprintf(a.errOut, "ci %s: %v\n", subcommand, err)
+		return 1
+	}
+	return 0
 }
 
 func (a app) runValidate(_ context.Context, args []string) int {

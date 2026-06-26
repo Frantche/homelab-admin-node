@@ -42,12 +42,14 @@ func TestSubcommandsExist(t *testing.T) {
 		{"backup", "list"},
 		{"validate", "harbor"},
 		{"validate", "openbao"},
+		{"ci", "create-sentinel"},
 	}
 
 	for _, args := range tests {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var out, errOut bytes.Buffer
 			cfg := config.FromEnv()
+			cfg.AdminRoot = t.TempDir()
 			cfg.BackupRoot = t.TempDir()
 			cfg.ValidateMockAll = true
 			a := app{out: &out, errOut: &errOut, cfg: cfg}

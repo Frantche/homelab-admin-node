@@ -74,3 +74,14 @@ bin/admin-node openbao unseal
 ```
 
 Ces commandes remplacent les anciens scripts d'initialisation et d'unseal OpenBao. Elles utilisent `docker exec bao`, `sops` et la clé age locale.
+
+## Helpers CI
+
+```bash
+bin/admin-node ci install-mock-config-repo
+bin/admin-node ci init-openbao
+bin/admin-node ci update-openbao-token
+bin/admin-node ci create-sentinel
+```
+
+Ces commandes portent la logique CI réutilisable. Les scripts `ci/*.sh` restent des entrypoints de compatibilite ou des orchestrateurs de scenario.

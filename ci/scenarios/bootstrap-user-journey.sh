@@ -76,12 +76,12 @@ run_converge
 stop_auto_converge
 
 # --- Initialize and unseal OpenBao ---
-"$REPO_ROOT/ci/init-openbao-ci.sh"
+"$REPO_ROOT/bin/admin-node" ci init-openbao
 OPENBAO_TOKEN="$(cat "$REPO_ROOT/secrets/openbao-root-token")"
 export OPENBAO_TOKEN
 
 # Inject the root token into the mock config repo so the normal-mode playbook can use it
-"$REPO_ROOT/ci/update-openbao-token.py"
+"$REPO_ROOT/bin/admin-node" ci update-openbao-token
 
 # --- Set mode to normal via admin-node ---
 stop_auto_converge
@@ -110,7 +110,7 @@ done
 
 # --- Minimal backup/restore ---
 echo "=== Running backup ==="
-"$REPO_ROOT/ci/create-sentinel-data.sh"
+"$REPO_ROOT/bin/admin-node" ci create-sentinel
 assert_file_exists /srv/admin/data/sentinel/value.txt
 
 "$REPO_ROOT/bin/admin-node" backup run

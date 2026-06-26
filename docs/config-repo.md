@@ -243,7 +243,7 @@ git push
 
 ## Exemple CI — mock config repo
 
-Le répertoire `ci/mock-config-repo/` de ce dépôt constitue un exemple minimal de config repo (sans chiffrement SOPS, pour les tests CI). Voir `ci/setup-ci-config-repo.sh` pour la procédure d'installation en CI.
+Le répertoire `ci/mock-config-repo/` de ce dépôt constitue un exemple minimal de config repo (sans chiffrement SOPS, pour les tests CI). La CI l'installe avec `bin/admin-node ci install-mock-config-repo`; `ci/setup-ci-config-repo.sh` reste un wrapper de compatibilite.
 
 ## Sécurité
 

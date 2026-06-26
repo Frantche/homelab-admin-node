@@ -2,14 +2,17 @@
 
 Ce dossier contient les scripts exécutés **à l'intérieur de la VM Arch Linux** lors des tests d'intégration GitHub Actions (`.github/workflows/admin-node-lifecycle.yml`).
 
+La logique runtime reutilisable doit vivre dans `bin/admin-node`. Les scripts CI restants doivent rester limites a l'orchestration de scenarios, a l'installation de prerequis de test, ou a la construction de harnais temporaires autour de commandes Go.
+
 ## Fichiers
 
 | Fichier | Rôle |
 |---|---|
 | `run-admin-lifecycle.sh` | Point d'entrée principal. Reçoit le nom d'un scénario en argument et le délègue au script correspondant dans `scenarios/`. Appelé par le workflow CI et par `make test-ci-fast` / `make test-ci-full`. |
 | `setup-ci-env.sh` | Prérequis CI : ajoute les entrées `/etc/hosts` pour les domaines de service, installe les collections Ansible requises. Exécuté en premier dans chaque scénario. Les certificats TLS de fallback sont générés par le rôle Traefik pendant la convergence. |
-| `init-openbao-ci.sh` | Initialise et descelle OpenBao dans le conteneur Docker. Stocke le root token dans `/opt/homelab-admin-node/secrets/openbao-root-token` et crée le fichier de secrets SOPS (non chiffré) pour les tests. |
-| `create-sentinel-data.sh` | Crée un fichier sentinelle dans `/srv/admin/data/sentinel/value.txt` pour vérifier que la sauvegarde/restauration conserve bien les données. |
+| `init-openbao-ci.sh` | Wrapper compatible vers `bin/admin-node ci init-openbao`. |
+| `create-sentinel-data.sh` | Wrapper compatible vers `bin/admin-node ci create-sentinel`. |
+| `setup-ci-config-repo.sh` | Wrapper compatible vers `bin/admin-node ci install-mock-config-repo`. |
 | `assertions.sh` | Fonctions d'assertion shell (`assert_file_exists`, `assert_contains`) sourcées par tous les scénarios pour valider les étapes intermédiaires. |
 | `test-oidc-contracts.sh` | Vérifie localement les contrats Ansible OIDC/Harbor/Keycloak (mocks CI, échec explicite hors CI, secret partagé, scope `offline_access`, mapper `groups`). |
 | `ci-extra-vars.json` | Variables Ansible supplémentaires pour le mode CI : mots de passe factices, token Cloudflare fictif, paramètres Keycloak/Harbor/OpenBao/Backup. Passé via `--extra-vars` à chaque exécution du playbook. |
@@ -40,7 +43,7 @@ GitHub Actions (ubuntu-24.04)
             └─ ssh → /opt/homelab-admin-node/ci/run-admin-lifecycle.sh <scenario>
                  ├─ setup-ci-env.sh
                  ├─ ansible-playbook …
-                 ├─ init-openbao-ci.sh
-                 ├─ create-sentinel-data.sh
+                 ├─ bin/admin-node ci init-openbao
+                 ├─ bin/admin-node ci create-sentinel
                  └─ bin/admin-node backup run / restore run …
 ```
