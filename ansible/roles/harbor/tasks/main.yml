@@ -52,7 +52,7 @@
 
 - name: Generate Harbor core secret key
   ansible.builtin.shell:
-    cmd: "openssl rand -hex 16 > {{ admin_node_root }}/data/harbor/core/secretkey"
+    cmd: "openssl rand -hex 16 | tr -d '\n' > {{ admin_node_root }}/data/harbor/core/secretkey"
     creates: "{{ admin_node_root }}/data/harbor/core/secretkey"
   when: not (harbor_test_mode | default(false))
   no_log: true

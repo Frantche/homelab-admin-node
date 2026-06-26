@@ -331,6 +331,8 @@ jobs:
               display_name: "Homelab"
             realm_roles:
               - "admin"
+            groups:
+              - "admin"
             clients:
               - client_id: "harbor"
                 redirect_uris:
@@ -345,6 +347,16 @@ jobs:
                   - "https://git.example.com/user/oauth2/keycloak/callback"
                 web_origins:
                   - "https://git.example.com"
+            users:
+              - username: "ci-sso-user"
+                password: "ci-sso-user-password"
+                email: "ci-sso-user@example.com"
+                first_name: "CI"
+                last_name: "SSO"
+                email_verified: true
+                temporary_password: false
+                groups:
+                  - "admin"
 
           harbor:
             admin_password: "ci-Harbor-admin-p4ss"

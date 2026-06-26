@@ -25,6 +25,9 @@ ci/.tmp/
 .ci/
 __pycache__/
 ci/__pycache__/
+node_modules/
+playwright-report/
+test-results/
 
 # Build artifacts
 bin/

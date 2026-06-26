@@ -149,3 +149,65 @@
     - keycloak_user_id | length > 0
     - keycloak_user_missing_realm_roles | length > 0
   no_log: true
+
+- name: Read assigned groups
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/groups"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_auth_header }}"
+    status_code: 200
+  register: keycloak_user_groups_current
+  when: keycloak_user_id | length > 0
+  no_log: true
+
+- name: Compute missing groups for user
+  ansible.builtin.set_fact:
+    keycloak_user_missing_groups: "{{ (keycloak_user_item.groups | default([])) | difference(keycloak_user_groups_current.json | map(attribute='name') | list) }}"
+  when: keycloak_user_id | length > 0
+  no_log: true
+
+- name: Fetch missing group representations
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/groups?search={{ group_name | urlencode }}&exact=true"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_auth_header }}"
+    status_code: 200
+  loop: "{{ keycloak_user_missing_groups }}"
+  loop_control:
+    loop_var: group_name
+  register: keycloak_user_groups_to_assign
+  when:
+    - keycloak_user_id | length > 0
+    - keycloak_user_missing_groups | length > 0
+  no_log: true
+
+- name: Fail when a requested user group is missing
+  ansible.builtin.fail:
+    msg: "Keycloak group {{ keycloak_missing_group_item.group_name }} is required by user {{ keycloak_user_item.username }} but does not exist."
+  loop: "{{ keycloak_user_groups_to_assign.results | default([]) }}"
+  loop_control:
+    loop_var: keycloak_missing_group_item
+    label: "{{ keycloak_missing_group_item.group_name }}"
+  when:
+    - keycloak_user_id | length > 0
+    - keycloak_user_missing_groups | length > 0
+    - (keycloak_missing_group_item.json | default([]) | selectattr('name', 'equalto', keycloak_missing_group_item.group_name) | list | length) == 0
+
+- name: Assign missing groups to user
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/groups/{{ (keycloak_group_assign_item.json | selectattr('name', 'equalto', keycloak_group_assign_item.group_name) | list | first).id }}"
+    method: PUT
+    headers:
+      Authorization: "{{ keycloak_auth_header }}"
+    status_code: 204
+  loop: "{{ keycloak_user_groups_to_assign.results | default([]) }}"
+  loop_control:
+    loop_var: keycloak_group_assign_item
+    label: "{{ keycloak_group_assign_item.group_name }}"
+  when:
+    - keycloak_user_id | length > 0
+    - keycloak_user_missing_groups | length > 0
+    - (keycloak_group_assign_item.json | default([]) | selectattr('name', 'equalto', keycloak_group_assign_item.group_name) | list | length) > 0
+  no_log: true
