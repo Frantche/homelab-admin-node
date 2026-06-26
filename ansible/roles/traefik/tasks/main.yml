@@ -10,6 +10,12 @@
     state: directory
     mode: "0755"
 
+- name: Ensure traefik dynamic config directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/stacks/traefik/dynamic"
+    state: directory
+    mode: "0755"
+
 - name: Ensure letsencrypt data directory
   ansible.builtin.file:
     path: "{{ admin_node_root }}/data/traefik/letsencrypt"
@@ -18,13 +24,17 @@
     group: root
     mode: "0700"
 
-- name: Copy traefik stack files
+- name: Copy traefik static stack files
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../stacks/traefik/"
-    dest: "{{ admin_node_root }}/stacks/traefik/"
+    src: "{{ playbook_dir }}/../stacks/traefik/{{ item }}"
+    dest: "{{ admin_node_root }}/stacks/traefik/{{ item }}"
     owner: root
     group: root
     mode: preserve
+  loop:
+    - compose.yaml
+    - traefik.yml
+    - traefik-ci.yml
 
 - name: Render traefik compose
   ansible.builtin.template:

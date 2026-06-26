@@ -14,12 +14,13 @@ CI_INVENTORY="${CI_INVENTORY:-/etc/admin-config/homelab-node-admin-config/hosts/
 
 # --- CI prerequisites (TLS certs, /etc/hosts, ansible collections) ---
 ./ci/setup-ci-env.sh
+./scripts/build-admin-node.sh
 
 # --- Install mock config repo (demonstrates the config-repo pattern) ---
-./ci/setup-ci-config-repo.sh
+./bin/admin-node ci install-mock-config-repo
 
 # --- Start in init mode ---
-./scripts/set-mode.sh init
+./bin/admin-node mode set init
 assert_contains /etc/admin-node/mode "init"
 
 # --- Deploy via Ansible playbook with config repo (init mode) ---
@@ -29,19 +30,19 @@ ansible-playbook \
   "$REPO_ROOT/ansible/site.yml"
 
 # --- Initialize and unseal OpenBao ---
-./ci/init-openbao-ci.sh
+./bin/admin-node ci init-openbao
 OPENBAO_TOKEN="$(cat /opt/homelab-admin-node/secrets/openbao-root-token)"
 export OPENBAO_TOKEN
 
 # --- Normal mode ---
-./scripts/set-mode.sh normal
+./bin/admin-node mode set normal
 assert_contains /etc/admin-node/mode "normal"
 
 # --- Create data and backup ---
-./ci/create-sentinel-data.sh
+./bin/admin-node ci create-sentinel
 assert_file_exists /srv/admin/data/sentinel/value.txt
 
-./scripts/backup.sh
+./bin/admin-node backup run
 
 # --- Simulate branch upgrade: set new git-ref ---
 echo "${GITHUB_HEAD_REF:-test-branch}" > /etc/admin-node/git-ref
@@ -55,6 +56,6 @@ ansible-playbook \
   --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}}"
 
 # --- Backup after upgrade ---
-./scripts/backup.sh
+./bin/admin-node backup run
 
 echo "=== upgrade-main-to-branch scenario PASSED ==="

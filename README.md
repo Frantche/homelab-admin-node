@@ -21,25 +21,25 @@ La procédure détaillée de génération, d'installation et de configuration SO
 2. Le premier clone de ce dépôt dans `/opt/homelab-admin-node` est réalisé automatiquement par le cloud-init.
 3. Initialiser le dépôt de configuration privé dans `/etc/admin-config/homelab-node-admin-config` et déposer l’inventaire dans `hosts/inventory.ini`.
 4. Vérifier `/etc/admin-node/mode` = `locked`.
-5. Injecter la clé age via `scripts/unlock.sh`.
-6. Passer en mode `init` via `scripts/set-mode.sh init`.
-7. Lancer `scripts/admin-converge.sh`.
+5. Injecter la clé age via `bin/admin-node secret install-age-key`.
+6. Passer en mode `init` via `bin/admin-node mode set init`.
+7. Lancer `bin/admin-node converge run`.
 
 ## 6. Injection manuelle de la clé age
-Utiliser `sudo ./scripts/unlock.sh /path/to/age-key.txt`.
+Utiliser `sudo ./bin/admin-node secret install-age-key /path/to/age-key.txt`.
 Voir aussi `docs/secret-zero.md` pour la procédure complète.
 
 ## 7. Mode init
 Déploie les stacks, initialise OpenBao, configure DNS/Tunnel (ou mocks), valide APIs, exécute un premier backup.
 
 ## 8. Initialisation OpenBao
-Lancer `scripts/openbao-init.sh` puis enregistrer les clés d'unseal dans `secrets/openbao-unseal.sops.yaml`.
+Lancer `bin/admin-node openbao init-if-needed` pour initialiser OpenBao et écrire les secrets chiffrés.
 
 ## 9. Ajout des unseal keys dans SOPS
 Utiliser le format multi-keyset documenté dans `secrets/openbao-unseal.sops.yaml.example`.
 
 ## 10. Passage en mode normal
-`sudo ./scripts/set-mode.sh normal && sudo ./scripts/admin-converge.sh`.
+`sudo ./bin/admin-node mode set normal && sudo ./bin/admin-node converge run`.
 
 ## 11. Configuration Traefik
 Voir `docs/traefik.md` et `stacks/traefik`.
@@ -58,13 +58,15 @@ Voir `docs/pihole-dns.md` et rôle `ansible/roles/pihole_dns`.
 - Les clients OIDC partagés (Harbor/OpenBao/Gitea) sont définis une seule fois via `oidc_clients.*` dans le config repo; voir `examples/admin-config/group_vars/` et `docs/config-repo.md`.
 
 ## 14. Backup
-`scripts/backup.sh` vérifie santé APIs/DNS/tunnel puis applique rétention locale + `restic forget --keep-last 3 --prune`.
+`bin/admin-node backup run` vérifie santé APIs/DNS/tunnel puis applique rétention locale + restic.
+La configuration restic multi-destinations est documentée dans `docs/backup.md`.
+La CLI Go `admin-node` est documentée dans `docs/admin-node.md`.
 
 ## 15. Restore
-`scripts/restore.sh` restaure fichiers + services, valide, bascule `mode` vers `normal` ou `restore_failed`.
+`bin/admin-node restore run` restaure fichiers + services, valide, bascule `mode` vers `normal` ou `restore_failed`.
 
 ## 16. Validation API
-`scripts/validate-apis.sh`, `scripts/validate-dns.sh`, `scripts/validate-cloudflare-tunnel.sh`.
+`bin/admin-node validate apis|harbor|openbao|gitea|dns|tunnel|hardening` exécute les validations opérationnelles.
 
 ## 17. Hardening
 Le socle de durcissement est appliqué par Ansible: SSH par clé, root SSH désactivé, sudoers dédié, nftables en default deny entrant, journald persistant, auditd, fail2ban, sysctl et permissions sensibles.
@@ -118,12 +120,12 @@ Mocks CI par défaut pour Pi-hole et Cloudflare Tunnel si infra absente.
 
 ## 24. Dépôt de configuration séparé (config repo)
 Gérez votre configuration et vos secrets dans un dépôt Git **privé** séparé.
-Voir `docs/config-repo.md` pour la structure, la mise en place et l'utilisation avec `admin-converge.sh`.
+Voir `docs/config-repo.md` pour la structure, la mise en place et l'utilisation avec `admin-node converge run`.
 
 ```bash
 # inventaire utilisateur (exemple fourni dans ansible/inventory.ini)
 sudo install -D -m 0644 /opt/homelab-admin-node/ansible/inventory.ini /etc/admin-config/homelab-node-admin-config/hosts/inventory.ini
-sudo ./scripts/admin-converge.sh
+sudo ./bin/admin-node converge run
 ```
 
 ## Commandes

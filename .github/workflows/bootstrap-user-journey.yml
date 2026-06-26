@@ -219,8 +219,8 @@ jobs:
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
               "test -d /opt/homelab-admin-node/.git && \
-               test -f /opt/homelab-admin-node/scripts/admin-converge.sh && \
-               test -f /opt/homelab-admin-node/scripts/adminctl"
+               sudo /opt/homelab-admin-node/scripts/build-admin-node.sh >/dev/null && \
+               test -x /opt/homelab-admin-node/bin/admin-node"
           echo "Repository successfully cloned at /opt/homelab-admin-node"
 
       - name: Verify VM is in locked mode
@@ -234,7 +234,7 @@ jobs:
         run: |
           # Simulate the manual admin action performed after cloud-init:
           # create the private config repo under /etc/admin-config and populate
-          # the inventory layout consumed by scripts/admin-converge.sh.
+          # the inventory layout consumed by admin-node converge run.
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
               "sudo mkdir -p /etc/admin-config/homelab-node-admin-config/hosts/group_vars && \
@@ -397,6 +397,7 @@ jobs:
                   - "openbao"
 
           backup:
+            restic_init_repositories: true
             restic_repository: "/srv/admin/backups/restic"
             restic_password: "ci-restic-pass"
           CONFIG

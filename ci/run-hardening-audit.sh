@@ -10,7 +10,8 @@ if ! command -v lynis >/dev/null 2>&1; then
   pacman -Sy --noconfirm --needed lynis
 fi
 
-"$REPO_ROOT/scripts/validate-hardening.sh"
+"$REPO_ROOT/scripts/build-admin-node.sh" >/dev/null
+"$REPO_ROOT/bin/admin-node" validate hardening
 
 echo "[hardening-audit] running Lynis"
 lynis audit system \

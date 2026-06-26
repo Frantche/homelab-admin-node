@@ -4,6 +4,7 @@
     name:
       - docker
       - docker-compose
+      - go
       - jq
       - curl
       - restic

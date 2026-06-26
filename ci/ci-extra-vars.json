@@ -26,6 +26,7 @@
     "root_token": ""
   },
   "backup": {
+    "restic_init_repositories": true,
     "restic_repository": "/srv/admin/backups/restic",
     "restic_password": "ci-restic-pass"
   }

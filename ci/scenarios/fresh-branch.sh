@@ -14,16 +14,17 @@ CI_INVENTORY="${CI_INVENTORY:-/etc/admin-config/homelab-node-admin-config/hosts/
 
 # --- CI prerequisites (TLS certs, /etc/hosts, ansible collections) ---
 ./ci/setup-ci-env.sh
+./scripts/build-admin-node.sh
 
 # --- Install mock config repo (demonstrates the config-repo pattern) ---
-./ci/setup-ci-config-repo.sh
+./bin/admin-node ci install-mock-config-repo
 
 # --- Init phase ---
-./scripts/set-mode.sh locked
+./bin/admin-node mode set locked
 assert_file_exists /etc/admin-node/mode
 assert_contains /etc/admin-node/mode "locked"
 
-./scripts/set-mode.sh init
+./bin/admin-node mode set init
 assert_contains /etc/admin-node/mode "init"
 
 # --- Deploy via Ansible playbook with config repo (init mode - starts services) ---
@@ -33,12 +34,12 @@ ansible-playbook \
   "$REPO_ROOT/ansible/site.yml"
 
 # --- Initialize and unseal OpenBao ---
-./ci/init-openbao-ci.sh
+./bin/admin-node ci init-openbao
 OPENBAO_TOKEN="$(cat /opt/homelab-admin-node/secrets/openbao-root-token)"
 export OPENBAO_TOKEN
 
 # --- Normal mode ---
-./scripts/set-mode.sh normal
+./bin/admin-node mode set normal
 assert_contains /etc/admin-node/mode "normal"
 
 # --- Re-run playbook in normal mode (validates, backs up) ---
@@ -49,10 +50,10 @@ ansible-playbook \
   --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}}"
 
 # --- Create sentinel data + additional backups ---
-./ci/create-sentinel-data.sh
+./bin/admin-node ci create-sentinel
 assert_file_exists /srv/admin/data/sentinel/value.txt
 
-./scripts/backup.sh
+./bin/admin-node backup run
 # Verify backup directory was created
 BACKUP_COUNT="$(find /srv/admin/backups/local -mindepth 1 -maxdepth 1 -type d | wc -l)"
 if [[ "$BACKUP_COUNT" -lt 1 ]]; then
@@ -61,9 +62,9 @@ if [[ "$BACKUP_COUNT" -lt 1 ]]; then
 fi
 
 # Run multiple backups to test retention
-sleep 1 && ./scripts/backup.sh
-sleep 1 && ./scripts/backup.sh
-sleep 1 && ./scripts/backup.sh
+sleep 1 && ./bin/admin-node backup run
+sleep 1 && ./bin/admin-node backup run
+sleep 1 && ./bin/admin-node backup run
 
 # Verify retention keeps max 3 local backups
 BACKUP_COUNT="$(find /srv/admin/backups/local -mindepth 1 -maxdepth 1 -type d | wc -l)"
@@ -73,10 +74,10 @@ if [[ "$BACKUP_COUNT" -gt 3 ]]; then
 fi
 
 # --- Restore ---
-./scripts/set-mode.sh restore
+./bin/admin-node mode set restore
 assert_contains /etc/admin-node/mode "restore"
 
-./scripts/restore.sh
+./bin/admin-node restore run
 assert_contains /etc/admin-node/mode "normal"
 
 echo "=== fresh-branch scenario PASSED ==="

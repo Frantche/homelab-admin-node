@@ -14,12 +14,13 @@ CI_INVENTORY="${CI_INVENTORY:-/etc/admin-config/homelab-node-admin-config/hosts/
 
 # --- CI prerequisites (TLS certs, /etc/hosts, ansible collections) ---
 ./ci/setup-ci-env.sh
+./scripts/build-admin-node.sh
 
 # --- Install mock config repo (demonstrates the config-repo pattern) ---
-./ci/setup-ci-config-repo.sh
+./bin/admin-node ci install-mock-config-repo
 
 # --- Init and set up OpenBao ---
-./scripts/set-mode.sh init
+./bin/admin-node mode set init
 assert_contains /etc/admin-node/mode "init"
 
 # --- Deploy via Ansible playbook with config repo (init mode) ---
@@ -29,17 +30,17 @@ ansible-playbook \
   "$REPO_ROOT/ansible/site.yml"
 
 # --- Initialize and unseal OpenBao ---
-./ci/init-openbao-ci.sh
+./bin/admin-node ci init-openbao
 OPENBAO_TOKEN="$(cat /opt/homelab-admin-node/secrets/openbao-root-token)"
 export OPENBAO_TOKEN
 
 # --- Normal mode, create data ---
-./scripts/set-mode.sh normal
-./ci/create-sentinel-data.sh
+./bin/admin-node mode set normal
+./bin/admin-node ci create-sentinel
 assert_file_exists /srv/admin/data/sentinel/value.txt
 
 # --- Backup ---
-./scripts/backup.sh
+./bin/admin-node backup run
 
 BACKUP_COUNT="$(find /srv/admin/backups/local -mindepth 1 -maxdepth 1 -type d | wc -l)"
 if [[ "$BACKUP_COUNT" -lt 1 ]]; then
@@ -48,12 +49,12 @@ if [[ "$BACKUP_COUNT" -lt 1 ]]; then
 fi
 
 # --- Restore flow ---
-./scripts/set-mode.sh restore
+./bin/admin-node mode set restore
 assert_contains /etc/admin-node/mode "restore"
 
-./scripts/restore.sh
+./bin/admin-node restore run
 
-# restore.sh should set mode to normal on success
+# restore should set mode to normal on success
 assert_contains /etc/admin-node/mode "normal"
 
 # --- Post-restore: re-run playbook to validate ---

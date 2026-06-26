@@ -106,8 +106,22 @@ harbor:
   jobservice_secret: "secret-jobservice-harbor"
   registry_password: "mot-de-passe-registry-harbor"
 backup:
-  restic_repository: "/srv/admin/backups/restic"
-  restic_password: "mot-de-passe-restic"
+  restic_default_forget_args: "--keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune"
+  restic_require_secure_repositories: true
+  restic_repositories:
+    - name: local
+      repository: "/srv/admin/backups/restic"
+      password: "mot-de-passe-restic"
+    - name: sftp
+      repository: "sftp:backup-admin:/srv/restic/admin-node"
+      password: "mot-de-passe-restic-sftp"
+    - name: s3
+      repository: "s3:https://s3.example.com/admin-node-restic"
+      password: "mot-de-passe-restic-s3"
+      env:
+        AWS_ACCESS_KEY_ID: "access-key"
+        AWS_SECRET_ACCESS_KEY: "secret-key"
+        AWS_DEFAULT_REGION: "us-east-1"
 ```
 
 Définissez les `client_id` et `client_secret` OIDC une seule fois via `oidc_clients`. Hors CI, `oidc_clients.harbor.client_id`, `oidc_clients.harbor.client_secret` et, si l'OIDC OpenBao est activé, `oidc_clients.openbao.*` sont obligatoires. En CI (`ci_mode: true`), le dépôt utilise des valeurs mock déterministes distinctes de la production.
@@ -181,10 +195,10 @@ git commit -m "initial config"
 git push -u origin main
 ```
 
-## Utilisation avec admin-converge.sh
+## Utilisation avec admin-node converge
 
 Le premier `git clone` du dépôt `homelab-admin-node` est réalisé par cloud-init dans `/opt/homelab-admin-node`.  
-Le script `admin-converge.sh` exécute ensuite `git pull --ff-only` sur ce dépôt avant chaque convergence.
+`bin/admin-node converge run` exécute ensuite `git pull --ff-only` sur ce dépôt avant chaque convergence. Apres la synchronisation Ansible, le role `base` appelle `scripts/build-admin-node.sh`: le binaire Go est reconstruit uniquement si les sources Go ont change.
 
 ### 1. Mettre à jour le config repo via git CLI (optionnel)
 
@@ -194,7 +208,7 @@ git -C /etc/admin-config/homelab-node-admin-config pull --ff-only
 
 ### 2. Déposer l'inventaire Ansible utilisateur
 
-Par défaut, `admin-converge.sh` lit l'inventaire depuis `/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini`.  
+Par défaut, `admin-node converge run` lit l'inventaire depuis `/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini`.
 Un exemple minimal est disponible dans ce dépôt: `ansible/inventory.ini`.
 
 ```bash
@@ -204,15 +218,16 @@ sudo install -D -m 0644 /opt/homelab-admin-node/ansible/inventory.ini /etc/admin
 ### 3. Lancer la convergence
 
 ```bash
-sudo ./scripts/admin-converge.sh
+sudo ./bin/admin-node converge run
 ```
 
-`admin-converge.sh` :
+`admin-node converge run` :
 
 1. Met à jour `/opt/homelab-admin-node` via `git pull --ff-only`
 2. Vérifie la présence du playbook local `/opt/homelab-admin-node/ansible/site.yml`
 3. Vérifie la présence de l'inventaire utilisateur `/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini`
 4. Exécute `ansible-playbook -i /etc/admin-config/homelab-node-admin-config/hosts/inventory.ini /opt/homelab-admin-node/ansible/site.yml`
+5. Pendant le role `base`, maintient `bin/admin-node` a jour via un build local conditionnel; `bin/admin-node` et `bin/admin-node.source.sha256` ne sont pas versionnes.
 
 ## Modifier les secrets
 
@@ -228,7 +243,7 @@ git push
 
 ## Exemple CI — mock config repo
 
-Le répertoire `ci/mock-config-repo/` de ce dépôt constitue un exemple minimal de config repo (sans chiffrement SOPS, pour les tests CI). Voir `ci/setup-ci-config-repo.sh` pour la procédure d'installation en CI.
+Le répertoire `ci/mock-config-repo/` de ce dépôt constitue un exemple minimal de config repo (sans chiffrement SOPS, pour les tests CI). La CI l'installe avec `bin/admin-node ci install-mock-config-repo`; `ci/setup-ci-config-repo.sh` reste un wrapper de compatibilite.
 
 ## Sécurité
 

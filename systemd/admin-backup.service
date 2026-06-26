@@ -5,4 +5,4 @@ After=network-online.target
 [Service]
 Type=oneshot
 EnvironmentFile=-/srv/admin/env/backup.env
-ExecStart=/opt/homelab-admin-node/scripts/backup.sh
+ExecStart=/opt/homelab-admin-node/bin/admin-node backup run

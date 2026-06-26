@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$SCRIPT_DIR/validate-apis.sh"
-"$SCRIPT_DIR/validate-dns.sh"
-"$SCRIPT_DIR/validate-cloudflare-tunnel.sh"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+"$REPO_ROOT/scripts/build-admin-node.sh" >/dev/null
+"$REPO_ROOT/bin/admin-node" validate apis
+"$REPO_ROOT/bin/admin-node" validate dns
+"$REPO_ROOT/bin/admin-node" validate tunnel

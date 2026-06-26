@@ -44,15 +44,15 @@ https://git.example.com/user/oauth2/keycloak/callback
 
 ## Validation
 
-`scripts/validate-gitea-data.sh` valide l'API Gitea, crée si besoin le dépôt `admin-node-validation`, puis crée si besoin l'issue `Backup restore sentinel`.
+`bin/admin-node validate gitea` valide l'API Gitea, crée si besoin le dépôt `admin-node-validation`, puis crée si besoin l'issue `Backup restore sentinel`.
 
-Cette validation est appelée par `scripts/validate-apis.sh`, donc elle s'exécute avant backup et après restore.
+Cette validation est appelée par `bin/admin-node backup run` et après restore.
 
 ## Backup Et Restore
 
-`scripts/backup.sh` sauvegarde :
+`bin/admin-node backup run` sauvegarde :
 
 - la base PostgreSQL Gitea dans `gitea.sql`;
 - les données applicatives et repositories depuis `/srv/admin/data/gitea`.
 
-`scripts/restore.sh` restaure les données applicatives, réimporte `gitea.sql`, redémarre la stack et relance la validation API.
+`bin/admin-node restore run` restaure les données applicatives, réimporte `gitea.sql`, redémarre la stack et relance la validation API.

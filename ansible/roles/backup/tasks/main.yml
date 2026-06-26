@@ -1,6 +1,35 @@
 ---
-- name: Trigger backup script
-  ansible.builtin.command: /opt/homelab-admin-node/scripts/backup.sh
+- name: Build effective restic repository list
+  ansible.builtin.set_fact:
+    backup_restic_repositories_effective: >-
+      {{
+        backup.restic_repositories | default(
+          (
+            [{
+              'name': 'default',
+              'repository': backup.restic_repository,
+              'password': backup.restic_password | default(''),
+              'forget_args': backup.restic_forget_args | default('--keep-last 3 --prune')
+            }]
+            if (backup.restic_repository | default('', true) | length > 0)
+            else []
+          ),
+          true
+        )
+      }}
+  no_log: true
+
+- name: Render backup environment
+  ansible.builtin.template:
+    src: backup-env.j2
+    dest: /srv/admin/env/backup.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Trigger backup
+  ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node backup run
   environment:
     OPENBAO_TOKEN: "{{ openbao.root_token | default('') }}"
     CI_MOCK_PIHOLE: "{{ 'true' if ((ci_mode | default(false)) or (ci.mock_pihole | default(false))) else 'false' }}"
