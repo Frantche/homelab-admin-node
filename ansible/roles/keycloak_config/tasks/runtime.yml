@@ -42,6 +42,57 @@
   loop: "{{ keycloak_config.realm_roles | default([]) }}"
   no_log: true
 
+- name: Request Keycloak admin token for group management
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/realms/master/protocol/openid-connect/token"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      grant_type: password
+      client_id: admin-cli
+      username: "{{ keycloak.admin_user | default('admin') }}"
+      password: "{{ keycloak.admin_password }}"
+    return_content: true
+    status_code: 200
+  register: keycloak_runtime_token_response
+  no_log: true
+
+- name: Set auth header for Keycloak group operations
+  ansible.builtin.set_fact:
+    keycloak_runtime_auth_header: "{{ 'Bearer ' ~ keycloak_runtime_token_response.json.access_token }}"
+  no_log: true
+
+- name: Find configured groups
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/groups?search={{ keycloak_group_name | urlencode }}&exact=true"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    status_code: 200
+  loop: "{{ keycloak_config.groups | default([]) }}"
+  loop_control:
+    loop_var: keycloak_group_name
+    label: "{{ keycloak_group_name }}"
+  register: keycloak_configured_group_lookup
+  no_log: true
+
+- name: Create configured groups when missing
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/groups"
+    method: POST
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    body_format: json
+    body:
+      name: "{{ keycloak_group_lookup_item.keycloak_group_name }}"
+    status_code: 201
+  loop: "{{ keycloak_configured_group_lookup.results | default([]) }}"
+  loop_control:
+    loop_var: keycloak_group_lookup_item
+    label: "{{ keycloak_group_lookup_item.keycloak_group_name }}"
+  when: (keycloak_group_lookup_item.json | default([]) | selectattr('name', 'equalto', keycloak_group_lookup_item.keycloak_group_name) | list | length) == 0
+  no_log: true
+
 - name: Ensure configured clients exist
   community.general.keycloak_client:
     auth_keycloak_url: "{{ keycloak_config_url }}"

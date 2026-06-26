@@ -29,6 +29,9 @@
       harbor:
         client_id: "harbor"
         client_secret: "prod-harbor-oidc-secret"
+      openbao:
+        client_id: "openbao"
+        client_secret: "prod-openbao-oidc-secret"
       gitea:
         client_id: "gitea"
         client_secret: "prod-gitea-oidc-secret"
@@ -42,15 +45,18 @@
             - "https://harbor.example.com/c/oidc/callback"
           web_origins:
             - "https://harbor.example.com"
+        - client_id: "openbao"
+          redirect_uris:
+            - "https://bao.example.com/ui/vault/auth/oidc/oidc/callback"
         - client_id: "gitea"
           redirect_uris:
             - "https://git.example.com/user/oauth2/keycloak/callback"
           web_origins:
             - "https://git.example.com"
     openbao_config:
-      enabled: false
+      enabled: true
       oidc:
-        enabled: false
+        enabled: true
     harbor_config:
       enabled: true
       validate_certs: true
@@ -107,6 +113,18 @@
       ansible.builtin.set_fact:
         gitea_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', oidc_clients.gitea.client_id) | list | first | default({}) }}"
 
+    - name: Capture OpenBao Keycloak client
+      ansible.builtin.set_fact:
+        openbao_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', oidc_clients.openbao.client_id) | list | first | default({}) }}"
+
+    - name: Capture OpenBao groups mapper
+      ansible.builtin.set_fact:
+        openbao_groups_mapper: "{{ openbao_keycloak_client.protocol_mappers | default([]) | selectattr('name', 'equalto', 'groups') | list | first | default({}) }}"
+
+    - name: Capture Gitea groups mapper
+      ansible.builtin.set_fact:
+        gitea_groups_mapper: "{{ gitea_keycloak_client.protocol_mappers | default([]) | selectattr('name', 'equalto', 'groups') | list | first | default({}) }}"
+
     - name: Assert non-CI OIDC contracts
       ansible.builtin.assert:
         that:
@@ -121,9 +139,15 @@
           - harbor_groups_mapper.protocolMapper == 'oidc-group-membership-mapper'
           - harbor_groups_mapper.config['claim.name'] == 'groups'
           - harbor_groups_mapper.config['userinfo.token.claim'] == 'true'
+          - openbao_keycloak_client | length > 0
+          - openbao_keycloak_client.secret == oidc_clients.openbao.client_secret
+          - openbao_groups_mapper | length > 0
+          - openbao_groups_mapper.config['claim.name'] == 'groups'
           - gitea_runtime.db_password == 'prod-gitea-db'
           - gitea_keycloak_client | length > 0
           - gitea_keycloak_client.secret == oidc_clients.gitea.client_secret
+          - gitea_groups_mapper | length > 0
+          - gitea_groups_mapper.config['claim.name'] == 'groups'
           - gitea_oidc_client_id == oidc_clients.gitea.client_id
           - gitea_oidc_client_secret == oidc_clients.gitea.client_secret
           - gitea_oidc_discovery_url == 'https://keycloak.example.com/realms/homelab/.well-known/openid-configuration'

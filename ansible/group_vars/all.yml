@@ -82,6 +82,7 @@ keycloak_config:
     display_name: "Homelab"
     ssl_required: "external"
   realm_roles: []
+  groups: []
   clients: []
   users: []
 

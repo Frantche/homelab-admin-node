@@ -14,6 +14,16 @@
     keycloak_openbao_client_secret: "{{ oidc_clients.openbao.client_secret | default('ci-oidc-openbao-client-secret', true) if (ci_mode | default(false)) else (oidc_clients.openbao.client_secret | default('', true)) }}"
     keycloak_gitea_client_id: "{{ oidc_clients.gitea.client_id | default('gitea', true) if (ci_mode | default(false)) else (oidc_clients.gitea.client_id | default('', true)) }}"
     keycloak_gitea_client_secret: "{{ oidc_clients.gitea.client_secret | default('ci-oidc-gitea-client-secret', true) if (ci_mode | default(false)) else (oidc_clients.gitea.client_secret | default('', true)) }}"
+    keycloak_groups_protocol_mapper:
+      name: groups
+      protocol: openid-connect
+      protocolMapper: oidc-group-membership-mapper
+      config:
+        claim.name: groups
+        full.path: "false"
+        id.token.claim: "true"
+        access.token.claim: "true"
+        userinfo.token.claim: "true"
   no_log: true
 
 - name: Validate required Harbor OIDC client settings
@@ -84,20 +94,7 @@
           'direct_access_grants_enabled': false,
           'service_accounts_enabled': false,
           'secret': keycloak_harbor_client_secret,
-          'protocol_mappers': [
-            {
-              'name': 'groups',
-              'protocol': 'openid-connect',
-              'protocolMapper': 'oidc-group-membership-mapper',
-              'config': {
-                'claim.name': 'groups',
-                'full.path': 'false',
-                'id.token.claim': 'true',
-                'access.token.claim': 'true',
-                'userinfo.token.claim': 'true'
-              }
-            }
-          ]
+          'protocol_mappers': [keycloak_groups_protocol_mapper]
         }
         | combine(
             (
@@ -129,7 +126,8 @@
           'standard_flow_enabled': true,
           'direct_access_grants_enabled': false,
           'service_accounts_enabled': false,
-          'secret': keycloak_openbao_client_secret
+          'secret': keycloak_openbao_client_secret,
+          'protocol_mappers': [keycloak_groups_protocol_mapper]
         }
         | combine(
             (
@@ -161,7 +159,8 @@
           'standard_flow_enabled': true,
           'direct_access_grants_enabled': false,
           'service_accounts_enabled': false,
-          'secret': keycloak_gitea_client_secret
+          'secret': keycloak_gitea_client_secret,
+          'protocol_mappers': [keycloak_groups_protocol_mapper]
         }
         | combine(
             (

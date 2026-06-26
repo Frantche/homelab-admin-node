@@ -57,6 +57,31 @@ run_converge() {
   rm -f "$output_file"
 }
 
+run_oidc_user_journey() {
+  echo "=== Running OIDC user journey via Playwright ==="
+  if command -v pacman >/dev/null 2>&1; then
+    pacman -Sy --noconfirm --needed nodejs npm chromium nss
+  fi
+  if [[ ! -f /srv/admin/certs/ca.pem ]]; then
+    echo "ERROR: Expected local CA at /srv/admin/certs/ca.pem" >&2
+    return 1
+  fi
+  pushd "$REPO_ROOT/ci/oidc-user-journey" >/dev/null
+  if [[ -f package-lock.json ]]; then
+    npm ci --no-audit --no-fund
+  else
+    npm install --no-audit --no-fund
+  fi
+  CI=true \
+    NODE_EXTRA_CA_CERTS=/srv/admin/certs/ca.pem \
+    SSL_CERT_FILE=/srv/admin/certs/ca.pem \
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE="${PLAYWRIGHT_CHROMIUM_EXECUTABLE:-/usr/bin/chromium}" \
+    OIDC_TEST_USERNAME="${OIDC_TEST_USERNAME:-ci-sso-user}" \
+    OIDC_TEST_PASSWORD="${OIDC_TEST_PASSWORD:-ci-sso-user-password}" \
+    npm test
+  popd >/dev/null
+}
+
 trap dump_debug ERR
 
 # --- CI prerequisites (TLS certs, /etc/hosts, ansible collections) ---
@@ -107,6 +132,9 @@ for svc in traefik keycloak openbao harbor-core gitea; do
   fi
   echo "Service ${svc} is running"
 done
+
+# --- Validate real OIDC browser login ---
+run_oidc_user_journey
 
 # --- Minimal backup/restore ---
 echo "=== Running backup ==="
