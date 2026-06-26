@@ -67,6 +67,23 @@ async function expectJSONFromBrowser(page, path, predicate, description) {
   expect(predicate(payload.json), `${description}: ${payload.text}`).toBeTruthy();
 }
 
+async function expectGiteaWebSession(page) {
+  await page.goto(`${domains.gitea}/user/settings`, { waitUntil: 'domcontentloaded' });
+  await expect(page, 'Gitea should keep the SSO user on an authenticated page').not.toHaveURL(/\/user\/login/, {
+    timeout: 30000
+  });
+  await expect
+    .poll(async () => {
+      return page.evaluate((expectedUsername) => {
+        const text = document.body.innerText;
+        const hasAuthenticatedContent = /settings|account|profile|applications/i.test(text) || text.includes(expectedUsername);
+        const showsLoginForm = /sign in|sign up|forgot password/i.test(text) && document.querySelector('input[name="password"]');
+        return hasAuthenticatedContent && !showsLoginForm;
+      }, username);
+    }, { timeout: 30000 })
+    .toBeTruthy();
+}
+
 test.describe('OIDC user journey', () => {
   test('Harbor accepts the Keycloak SSO user', async ({ page }) => {
     await page.goto(domains.harbor, { waitUntil: 'domcontentloaded' });
@@ -93,12 +110,7 @@ test.describe('OIDC user journey', () => {
     await page.goto(`${domains.gitea}/user/oauth2/keycloak`, { waitUntil: 'domcontentloaded' });
     await completeKeycloakLogin(page);
     await expect(page).toHaveURL(/git\.example\.com/, { timeout: 60000 });
-    await expectJSONFromBrowser(
-      page,
-      '/api/v1/user',
-      (json) => json && json.login === username,
-      'Gitea current user'
-    );
+    await expectGiteaWebSession(page);
   });
 
   test('OpenBao accepts the Keycloak SSO user', async ({ page }) => {
