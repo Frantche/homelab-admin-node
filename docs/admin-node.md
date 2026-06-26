@@ -18,6 +18,9 @@ Le remplacement du binaire est atomique: le nouveau binaire est compile dans un 
 
 ```bash
 bin/admin-node validate apis
+bin/admin-node validate harbor
+bin/admin-node validate openbao
+bin/admin-node validate gitea
 bin/admin-node validate dns
 bin/admin-node validate tunnel
 bin/admin-node validate hardening
@@ -25,6 +28,8 @@ bin/admin-node validate all --output json
 ```
 
 Les statuts possibles sont `ok`, `warn`, `fail` et `skipped`. Le code de sortie vaut `1` si au moins un check est en `fail`.
+
+`validate apis` regroupe OpenBao, Keycloak, Harbor, Gitea et Traefik. Les sous-commandes `harbor`, `openbao` et `gitea` permettent de lancer ces validations individuellement. Les pulls de validation des registry mirrors Harbor restent portes par le role Ansible `harbor_config`, car ils utilisent la configuration `harbor_config.registry_mirrors`.
 
 ## Backup
 

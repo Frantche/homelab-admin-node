@@ -40,6 +40,8 @@ func TestUnknownCommand(t *testing.T) {
 func TestSubcommandsExist(t *testing.T) {
 	tests := [][]string{
 		{"backup", "list"},
+		{"validate", "harbor"},
+		{"validate", "openbao"},
 	}
 
 	for _, args := range tests {
@@ -47,6 +49,7 @@ func TestSubcommandsExist(t *testing.T) {
 			var out, errOut bytes.Buffer
 			cfg := config.FromEnv()
 			cfg.BackupRoot = t.TempDir()
+			cfg.ValidateMockAll = true
 			a := app{out: &out, errOut: &errOut, cfg: cfg}
 
 			code := a.run(context.Background(), args)

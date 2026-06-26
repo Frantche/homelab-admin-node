@@ -99,6 +99,10 @@ func (a app) runValidate(_ context.Context, args []string) int {
 		results = validator.All(ctx)
 	case "apis":
 		results = validator.APIS(ctx)
+	case "harbor":
+		results = []validate.CheckResult{validator.Harbor(ctx)}
+	case "openbao":
+		results = []validate.CheckResult{validator.OpenBao(ctx)}
 	case "gitea":
 		results = []validate.CheckResult{validator.Gitea(ctx)}
 	case "dns":

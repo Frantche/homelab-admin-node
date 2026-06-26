@@ -94,7 +94,20 @@ func (v Validator) Harbor(ctx context.Context) CheckResult {
 			if err := getJSON(ctx, v.Client, rawURL, "", "", &health); err == nil {
 				for _, item := range health.Components {
 					if item.Name == "core" && item.Status == "healthy" {
-						return StatusOK, "core healthy"
+						adminPassword := getenv("HARBOR_ADMIN_PASSWORD", "")
+						if adminPassword == "" {
+							adminPassword = readEnvFileValue(filepath.Join(v.Config.AdminRoot, "env/harbor.env"), "HARBOR_ADMIN_PASSWORD")
+						}
+						if adminPassword == "" {
+							return StatusOK, "core healthy"
+						}
+						adminUser := getenv("HARBOR_ADMIN_USER", "admin")
+						var projects []map[string]any
+						projectsURL := serviceURL(v.Config.HarborDomain, "/api/v2.0/projects?page=1&page_size=1")
+						if err := getJSON(ctx, v.Client, projectsURL, adminUser, adminPassword, &projects); err != nil {
+							return StatusFail, "admin API check failed: " + err.Error()
+						}
+						return StatusOK, "core healthy and admin API reachable"
 					}
 				}
 			}
@@ -317,8 +330,7 @@ func (v Validator) Gitea(ctx context.Context) CheckResult {
 		create := getenv("GITEA_VALIDATION_CREATE", "true") == "true"
 		repoPath := fmt.Sprintf("/api/v1/repos/%s/%s", adminUser, repo)
 		repoURL := serviceURL(v.Config.GiteaDomain, repoPath)
-		var repoPayload map[string]any
-		if err := getJSON(ctx, v.Client, repoURL, adminUser, adminPassword, &repoPayload); err != nil {
+		if err := getJSON(ctx, v.Client, repoURL, adminUser, adminPassword, &giteaRepo{}); err != nil {
 			if !create {
 				return StatusFail, "validation repository not found"
 			}
@@ -328,28 +340,76 @@ func (v Validator) Gitea(ctx context.Context) CheckResult {
 				return StatusFail, "validation repository create failed: " + err.Error()
 			}
 		}
+		repoPayload, err := readGiteaRepo(ctx, v.Client, repoURL, adminUser, adminPassword)
+		if err != nil {
+			return StatusFail, "validation repository read failed after ensure: " + err.Error()
+		}
+		if repoPayload.Name != repo {
+			return StatusFail, "validation repository name mismatch"
+		}
+		if repoPayload.Owner.Login != adminUser {
+			return StatusFail, "validation repository owner mismatch"
+		}
+		if !repoPayload.Private {
+			return StatusFail, "validation repository is not private"
+		}
 
 		issuesURL := serviceURL(v.Config.GiteaDomain, repoPath+"/issues?state=all&limit=100")
-		var issues []struct {
-			Title string `json:"title"`
-		}
-		if err := getJSON(ctx, v.Client, issuesURL, adminUser, adminPassword, &issues); err != nil {
+		issues, err := readGiteaIssues(ctx, v.Client, issuesURL, adminUser, adminPassword)
+		if err != nil {
 			return StatusFail, "validation issues read failed: " + err.Error()
 		}
-		for _, issue := range issues {
-			if issue.Title == issueTitle {
-				return StatusOK, "validation repo and issue present"
+		if !hasGiteaIssue(issues, issueTitle) {
+			if !create {
+				return StatusFail, "validation issue not found"
+			}
+			body := map[string]any{"title": issueTitle, "body": "Sentinel issue used to validate Gitea backup and restore."}
+			if err := postJSON(ctx, v.Client, serviceURL(v.Config.GiteaDomain, repoPath+"/issues"), adminUser, adminPassword, body, nil); err != nil {
+				return StatusFail, "validation issue create failed: " + err.Error()
 			}
 		}
-		if !create {
-			return StatusFail, "validation issue not found"
+		issues, err = readGiteaIssues(ctx, v.Client, issuesURL, adminUser, adminPassword)
+		if err != nil {
+			return StatusFail, "validation issues reread failed: " + err.Error()
 		}
-		body := map[string]any{"title": issueTitle, "body": "Sentinel issue used to validate Gitea backup and restore."}
-		if err := postJSON(ctx, v.Client, serviceURL(v.Config.GiteaDomain, repoPath+"/issues"), adminUser, adminPassword, body, nil); err != nil {
-			return StatusFail, "validation issue create failed: " + err.Error()
+		if !hasGiteaIssue(issues, issueTitle) {
+			return StatusFail, "validation issue not found after create/read"
 		}
 		return StatusOK, "validation repo and issue present"
 	})
+}
+
+type giteaRepo struct {
+	Name    string `json:"name"`
+	Private bool   `json:"private"`
+	Owner   struct {
+		Login string `json:"login"`
+	} `json:"owner"`
+}
+
+type giteaIssue struct {
+	Title string `json:"title"`
+}
+
+func readGiteaRepo(ctx context.Context, client HTTPDoer, rawURL string, adminUser string, adminPassword string) (giteaRepo, error) {
+	var repo giteaRepo
+	err := getJSON(ctx, client, rawURL, adminUser, adminPassword, &repo)
+	return repo, err
+}
+
+func readGiteaIssues(ctx context.Context, client HTTPDoer, rawURL string, adminUser string, adminPassword string) ([]giteaIssue, error) {
+	var issues []giteaIssue
+	err := getJSON(ctx, client, rawURL, adminUser, adminPassword, &issues)
+	return issues, err
+}
+
+func hasGiteaIssue(issues []giteaIssue, title string) bool {
+	for _, issue := range issues {
+		if issue.Title == title {
+			return true
+		}
+	}
+	return false
 }
 
 func (v Validator) ensureGiteaAdminAuth(ctx context.Context, adminUser string, adminPassword string) error {

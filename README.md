@@ -66,7 +66,7 @@ La CLI Go `admin-node` est documentée dans `docs/admin-node.md`.
 `bin/admin-node restore run` restaure fichiers + services, valide, bascule `mode` vers `normal` ou `restore_failed`.
 
 ## 16. Validation API
-`bin/admin-node validate apis|dns|tunnel|hardening` exécute les validations opérationnelles.
+`bin/admin-node validate apis|harbor|openbao|gitea|dns|tunnel|hardening` exécute les validations opérationnelles.
 
 ## 17. Hardening
 Le socle de durcissement est appliqué par Ansible: SSH par clé, root SSH désactivé, sudoers dédié, nftables en default deny entrant, journald persistant, auditd, fail2ban, sysctl et permissions sensibles.
