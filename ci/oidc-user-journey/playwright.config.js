@@ -16,7 +16,7 @@ module.exports = defineConfig({
     ignoreHTTPSErrors: false,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: 'off',
     launchOptions: {
       executablePath: chromiumExecutablePath
     }
