@@ -26,7 +26,6 @@ stop_otel_mock() {
 start_otel_mock() {
   rm -rf "$CI_OTEL_MOCK_STATE_DIR"
   mkdir -p "$CI_OTEL_MOCK_STATE_DIR"
-  "$REPO_ROOT/ci/start-otel-mock-backend.sh"
 }
 
 dump_debug() {
@@ -131,7 +130,7 @@ stop_auto_converge
 echo "=== Running convergence (normal mode) via admin-node ==="
 run_converge
 stop_auto_converge
-CI_OTEL_MOCK_STATE_DIR= "$REPO_ROOT/bin/admin-node" validate observability
+"$REPO_ROOT/bin/admin-node" validate observability
 
 # --- Verify final mode is normal ---
 assert_contains /etc/admin-node/mode "normal"

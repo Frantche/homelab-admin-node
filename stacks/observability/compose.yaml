@@ -1,4 +1,25 @@
 services:
+{% if observability.mock_backend_enabled | default(false) | bool %}
+  otel-mock-backend:
+    image: python:3.13-alpine
+    container_name: otel-mock-backend
+    restart: unless-stopped
+    command:
+      - python
+      - /otel-mock-backend.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - "43190"
+      - --state-dir
+      - /state
+    volumes:
+      - {{ admin_repo_root | default('/opt/homelab-admin-node') }}/ci/otel-mock-backend.py:/otel-mock-backend.py:ro
+      - {{ observability.mock_state_dir | default('/tmp/admin-node-otel-mock') }}:/state
+    networks:
+      - admin-net
+
+{% endif %}
   otel-collector:
     image: "{{ observability.collector_image | default('otel/opentelemetry-collector-contrib:0.139.0') }}"
     container_name: otel-collector
@@ -15,6 +36,10 @@ services:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /srv/admin/data/harbor/log:/srv/admin/data/harbor/log:ro
       - /srv/admin/data/harbor/job_logs:/srv/admin/data/harbor/job_logs:ro
+{% if observability.mock_backend_enabled | default(false) | bool %}
+    depends_on:
+      - otel-mock-backend
+{% endif %}
     extra_hosts:
       - "host.docker.internal:host-gateway"
 {% if observability.expose_host_ports | default(false) | bool %}
