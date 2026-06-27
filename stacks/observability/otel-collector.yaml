@@ -25,11 +25,12 @@ receivers:
 
   docker_stats:
     endpoint: unix:///var/run/docker.sock
+    api_version: "{{ observability.docker_api_version | default('1.40') }}"
     collection_interval: {{ observability.collection_interval | default('30s') }}
 
   filelog/docker:
     include:
-      - /var/lib/docker/containers/*/*.log
+      - /var/lib/docker/containers/*/*-json.log
     start_at: end
     include_file_path: true
     operators:
