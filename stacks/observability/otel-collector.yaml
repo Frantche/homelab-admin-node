@@ -45,6 +45,17 @@ receivers:
       - type: remove
         field: attributes.time
 
+  filelog/harbor:
+    include:
+      - /srv/admin/data/harbor/log/*.log
+      - /srv/admin/data/harbor/job_logs/**/*.log
+    start_at: end
+    include_file_path: true
+    operators:
+      - type: add
+        field: attributes.log.source
+        value: harbor
+
 processors:
   memory_limiter:
     check_interval: 5s
@@ -96,6 +107,7 @@ service:
       receivers:
         - otlp
         - filelog/docker
+        - filelog/harbor
       processors:
         - memory_limiter
         - resource

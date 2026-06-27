@@ -13,6 +13,8 @@ services:
       - /:/hostfs:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /srv/admin/data/harbor/log:/srv/admin/data/harbor/log:ro
+      - /srv/admin/data/harbor/job_logs:/srv/admin/data/harbor/job_logs:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
 {% if observability.expose_host_ports | default(false) | bool %}
