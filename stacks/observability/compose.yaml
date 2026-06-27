@@ -51,8 +51,6 @@ services:
         condition: service_healthy
     network_mode: "service:otel-mock-backend"
 {% else %}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 {% if observability.expose_host_ports | default(false) | bool %}
     ports:
       - "127.0.0.1:4317:4317"
