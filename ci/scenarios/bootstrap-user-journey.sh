@@ -12,10 +12,26 @@ export CI_MOCK_PIHOLE="${CI_MOCK_PIHOLE:-true}"
 export CI_MOCK_CLOUDFLARE_TUNNEL="${CI_MOCK_CLOUDFLARE_TUNNEL:-true}"
 export CI_SKIP_PUBLIC_URL_VALIDATION="${CI_SKIP_PUBLIC_URL_VALIDATION:-true}"
 export SKIP_PUBLIC_URL_VALIDATION="${SKIP_PUBLIC_URL_VALIDATION:-true}"
+export CI_OTEL_MOCK_STATE_DIR="${CI_OTEL_MOCK_STATE_DIR:-/tmp/admin-node-otel-mock-bootstrap-user-journey}"
+
+otel_mock_pid=""
 
 stop_auto_converge() {
   systemctl disable --now admin-converge.timer admin-unlock.path 2>/dev/null || true
   systemctl stop admin-converge.service 2>/dev/null || true
+}
+
+stop_otel_mock() {
+  if [[ -n "$otel_mock_pid" ]]; then
+    kill "$otel_mock_pid" 2>/dev/null || true
+  fi
+}
+
+start_otel_mock() {
+  rm -rf "$CI_OTEL_MOCK_STATE_DIR"
+  mkdir -p "$CI_OTEL_MOCK_STATE_DIR"
+  python3 "$REPO_ROOT/ci/otel-mock-backend.py" --port 43190 --state-dir "$CI_OTEL_MOCK_STATE_DIR" &
+  otel_mock_pid="$!"
 }
 
 dump_debug() {
@@ -83,10 +99,12 @@ run_oidc_user_journey() {
 }
 
 trap dump_debug ERR
+trap stop_otel_mock EXIT
 
 # --- CI prerequisites (TLS certs, /etc/hosts, ansible collections) ---
 "$REPO_ROOT/ci/setup-ci-env.sh"
 "$REPO_ROOT/scripts/build-admin-node.sh"
+start_otel_mock
 
 # Prevent the auto-converge timer from interfering with our manual operations
 stop_auto_converge
@@ -118,6 +136,7 @@ stop_auto_converge
 echo "=== Running convergence (normal mode) via admin-node ==="
 run_converge
 stop_auto_converge
+"$REPO_ROOT/bin/admin-node" validate observability
 
 # --- Verify final mode is normal ---
 assert_contains /etc/admin-node/mode "normal"
