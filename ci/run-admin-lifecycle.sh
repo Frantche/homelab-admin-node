@@ -19,8 +19,7 @@ export CI_OTEL_MOCK_STATE_DIR
 rm -rf "$CI_OTEL_MOCK_STATE_DIR"
 mkdir -p "$CI_OTEL_MOCK_STATE_DIR"
 
-python3 ./ci/otel-mock-backend.py --port 43190 --state-dir "$CI_OTEL_MOCK_STATE_DIR" &
-otel_mock_pid="$!"
-trap 'kill "$otel_mock_pid" 2>/dev/null || true' EXIT
+./ci/start-otel-mock-backend.sh
+trap 'docker rm -f "${CI_OTEL_MOCK_CONTAINER_NAME:-otel-mock-backend}" >/dev/null 2>&1 || true' EXIT
 
 "./ci/scenarios/${scenario}.sh"

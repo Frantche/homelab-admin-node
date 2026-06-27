@@ -134,5 +134,4 @@ observability:
   logs_endpoint: "http://victorialogs.example.net:9428/insert/opentelemetry/v1/logs"
   collection_interval: "30s"
   docker_api_version: "1.40"
-  network_mode: "bridge"
   expose_host_ports: false

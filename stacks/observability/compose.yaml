@@ -13,9 +13,6 @@ services:
       - /:/hostfs:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
-{% if observability.network_mode | default('bridge') == 'host' %}
-    network_mode: host
-{% else %}
     extra_hosts:
       - "host.docker.internal:host-gateway"
 {% if observability.expose_host_ports | default(false) | bool %}
@@ -25,10 +22,7 @@ services:
 {% endif %}
     networks:
       - admin-net
-{% endif %}
 
-{% if observability.network_mode | default('bridge') != 'host' %}
 networks:
   admin-net:
     external: true
-{% endif %}

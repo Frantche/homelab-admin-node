@@ -14,24 +14,19 @@ export CI_SKIP_PUBLIC_URL_VALIDATION="${CI_SKIP_PUBLIC_URL_VALIDATION:-true}"
 export SKIP_PUBLIC_URL_VALIDATION="${SKIP_PUBLIC_URL_VALIDATION:-true}"
 export CI_OTEL_MOCK_STATE_DIR="${CI_OTEL_MOCK_STATE_DIR:-/tmp/admin-node-otel-mock-bootstrap-user-journey}"
 
-otel_mock_pid=""
-
 stop_auto_converge() {
   systemctl disable --now admin-converge.timer admin-unlock.path 2>/dev/null || true
   systemctl stop admin-converge.service 2>/dev/null || true
 }
 
 stop_otel_mock() {
-  if [[ -n "$otel_mock_pid" ]]; then
-    kill "$otel_mock_pid" 2>/dev/null || true
-  fi
+  docker rm -f "${CI_OTEL_MOCK_CONTAINER_NAME:-otel-mock-backend}" >/dev/null 2>&1 || true
 }
 
 start_otel_mock() {
   rm -rf "$CI_OTEL_MOCK_STATE_DIR"
   mkdir -p "$CI_OTEL_MOCK_STATE_DIR"
-  python3 "$REPO_ROOT/ci/otel-mock-backend.py" --port 43190 --state-dir "$CI_OTEL_MOCK_STATE_DIR" &
-  otel_mock_pid="$!"
+  "$REPO_ROOT/ci/start-otel-mock-backend.sh"
 }
 
 dump_debug() {
