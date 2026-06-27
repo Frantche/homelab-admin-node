@@ -24,12 +24,15 @@ bin/admin-node validate gitea
 bin/admin-node validate dns
 bin/admin-node validate tunnel
 bin/admin-node validate hardening
+bin/admin-node validate observability
 bin/admin-node validate all --output json
 ```
 
 Les statuts possibles sont `ok`, `warn`, `fail` et `skipped`. Le code de sortie vaut `1` si au moins un check est en `fail`.
 
-`validate apis` regroupe OpenBao, Keycloak, Harbor, Gitea et Traefik. Les sous-commandes `harbor`, `openbao` et `gitea` permettent de lancer ces validations individuellement. Les pulls de validation des registry mirrors Harbor restent portes par le role Ansible `harbor_config`, car ils utilisent la configuration `harbor_config.registry_mirrors`.
+`validate apis` regroupe OpenBao, Keycloak, Harbor, Gitea et Traefik. Les sous-commandes `harbor`, `openbao`, `gitea` et `observability` permettent de lancer ces validations individuellement. Les pulls de validation des registry mirrors Harbor restent portes par le role Ansible `harbor_config`, car ils utilisent la configuration `harbor_config.registry_mirrors`.
+
+`validate observability` verifie le conteneur OpenTelemetry Collector et son endpoint de sante. En CI, il confirme aussi que le mock OTLP a recu des metriques et des logs exportes par le collector.
 
 ## Backup
 

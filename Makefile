@@ -19,7 +19,7 @@ sops-check:
 		echo "sops not installed"; \
 	fi
 
-validate: validate-apis validate-dns validate-cloudflare-tunnel validate-hardening
+validate: validate-apis validate-dns validate-cloudflare-tunnel validate-hardening validate-observability
 
 validate-apis:
 	@./scripts/build-admin-node.sh >/dev/null
@@ -36,6 +36,10 @@ validate-cloudflare-tunnel:
 validate-hardening:
 	@./scripts/build-admin-node.sh >/dev/null
 	@./bin/admin-node validate hardening
+
+validate-observability:
+	@./scripts/build-admin-node.sh >/dev/null
+	@./bin/admin-node validate observability
 
 test-oidc-contracts:
 	@./ci/test-oidc-contracts.sh

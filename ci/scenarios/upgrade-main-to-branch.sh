@@ -55,6 +55,8 @@ ansible-playbook \
   "$REPO_ROOT/ansible/site.yml" \
   --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}}"
 
+./bin/admin-node validate observability
+
 # --- Backup after upgrade ---
 ./bin/admin-node backup run
 

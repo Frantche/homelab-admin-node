@@ -49,6 +49,8 @@ ansible-playbook \
   "$REPO_ROOT/ansible/site.yml" \
   --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}}"
 
+./bin/admin-node validate observability
+
 # --- Create sentinel data + additional backups ---
 ./bin/admin-node ci create-sentinel
 assert_file_exists /srv/admin/data/sentinel/value.txt

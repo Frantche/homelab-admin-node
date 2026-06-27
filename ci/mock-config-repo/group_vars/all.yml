@@ -118,6 +118,13 @@ gitea_config:
     repo: "admin-node-validation"
     issue_title: "Backup restore sentinel"
 
+observability:
+  enabled: true
+  metrics_endpoint: "http://host.docker.internal:43190/v1/metrics"
+  logs_endpoint: "http://host.docker.internal:43190/v1/logs"
+  compression: "none"
+  collection_interval: "5s"
+
 backup:
   restic_init_repositories: true
   restic_repositories:

@@ -45,6 +45,58 @@ func (v Validator) All(ctx context.Context) []CheckResult {
 	return results
 }
 
+func (v Validator) Observability(ctx context.Context) CheckResult {
+	return timed("Observability", func() (Status, string) {
+		if v.Config.ValidateMockAll {
+			return StatusSkipped, "ADMIN_NODE_VALIDATE_MOCK_ALL=true"
+		}
+
+		if result := v.Runner.Run(ctx, "docker", "inspect", "-f", "{{.State.Running}}", "otel-collector"); result.Code != 0 {
+			return StatusFail, "otel-collector container is unavailable"
+		} else if strings.TrimSpace(result.Stdout) != "true" {
+			return StatusFail, "otel-collector container is not running"
+		}
+
+		version := v.Runner.Run(ctx, "docker", "exec", "otel-collector", "/otelcol-contrib", "--version")
+		if version.Code != 0 {
+			return StatusFail, "otel-collector binary is unavailable"
+		}
+
+		mockDir := getenv("CI_OTEL_MOCK_STATE_DIR", "")
+		if mockDir == "" {
+			return StatusOK, "collector running"
+		}
+
+		sentinelName := fmt.Sprintf("admin-node-otel-log-sentinel-%d", time.Now().UnixNano())
+		sentinel := v.Runner.Run(ctx, "docker", "run", "-d", "--name", sentinelName, "--network", "admin-net", "alpine:3.20", "sh", "-c", "echo admin-node-otel-log-sentinel; sleep 30")
+		if sentinel.Code != 0 {
+			return StatusFail, "failed to create log sentinel container: " + strings.TrimSpace(sentinel.Stderr)
+		}
+		defer v.Runner.Run(context.Background(), "docker", "rm", "-f", sentinelName)
+
+		ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+		defer cancel()
+		for {
+			metricsSeen := fileHasContent(filepath.Join(mockDir, "metrics.received"))
+			logsSeen := fileHasContent(filepath.Join(mockDir, "logs.received"))
+			if metricsSeen && logsSeen {
+				return StatusOK, "collector exported metrics and logs to CI OTLP mock"
+			}
+			if ctx.Err() != nil {
+				missing := []string{}
+				if !metricsSeen {
+					missing = append(missing, "metrics")
+				}
+				if !logsSeen {
+					missing = append(missing, "logs")
+				}
+				return StatusFail, "CI OTLP mock did not receive " + strings.Join(missing, " and ")
+			}
+			time.Sleep(3 * time.Second)
+		}
+	})
+}
+
 func (v Validator) Keycloak(ctx context.Context) CheckResult {
 	return timed("Keycloak", func() (Status, string) {
 		if v.Config.ValidateMockAll {

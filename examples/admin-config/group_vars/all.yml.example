@@ -127,3 +127,10 @@ gitea_config:
   validation:
     repo: "admin-node-validation"
     issue_title: "Backup restore sentinel"
+
+observability:
+  enabled: false
+  metrics_endpoint: "http://victoriametrics.example.net:8428/opentelemetry/v1/metrics"
+  logs_endpoint: "http://victorialogs.example.net:9428/insert/opentelemetry/v1/logs"
+  collection_interval: "30s"
+  expose_host_ports: false

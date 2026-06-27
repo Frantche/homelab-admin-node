@@ -1,0 +1,103 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  hostmetrics:
+    root_path: /hostfs
+    collection_interval: {{ observability.collection_interval | default('30s') }}
+    scrapers:
+      cpu:
+      disk:
+      filesystem:
+      load:
+      memory:
+      network:
+      paging:
+      processes:
+
+  docker_stats:
+    endpoint: unix:///var/run/docker.sock
+    collection_interval: {{ observability.collection_interval | default('30s') }}
+
+  filelog/docker:
+    include:
+      - /var/lib/docker/containers/*/*.log
+    start_at: end
+    include_file_path: true
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.time
+          layout_type: gotime
+          layout: "2006-01-02T15:04:05.999999999Z07:00"
+      - type: move
+        from: attributes.log
+        to: body
+      - type: remove
+        field: attributes.time
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: {{ observability.memory_limit_mib | default(256) }}
+  resource:
+    attributes:
+      - key: service.namespace
+        value: homelab-admin-node
+        action: upsert
+      - key: deployment.environment
+        value: "{{ 'ci' if (ci_mode | default(false)) else 'homelab' }}"
+        action: upsert
+      - key: host.name
+        value: "{{ ansible_hostname | default('admin-node') }}"
+        action: upsert
+  batch:
+
+exporters:
+  otlphttp/backend:
+{% if observability.compression | default('gzip') != 'none' %}
+    compression: {{ observability.compression | default('gzip') }}
+{% endif %}
+    encoding: proto
+    metrics_endpoint: "{{ observability.metrics_endpoint }}"
+    logs_endpoint: "{{ observability.logs_endpoint }}"
+{% if observability.headers is defined %}
+    headers:
+{% for header_name, header_value in observability.headers.items() %}
+      {{ header_name }}: "{{ header_value }}"
+{% endfor %}
+{% endif %}
+
+service:
+  extensions:
+    - health_check
+  pipelines:
+    metrics:
+      receivers:
+        - otlp
+        - hostmetrics
+        - docker_stats
+      processors:
+        - memory_limiter
+        - resource
+        - batch
+      exporters:
+        - otlphttp/backend
+    logs:
+      receivers:
+        - otlp
+        - filelog/docker
+      processors:
+        - memory_limiter
+        - resource
+        - batch
+      exporters:
+        - otlphttp/backend

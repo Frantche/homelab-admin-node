@@ -1,0 +1,28 @@
+services:
+  otel-collector:
+    image: "{{ observability.collector_image | default('otel/opentelemetry-collector-contrib:0.139.0') }}"
+    container_name: otel-collector
+    restart: unless-stopped
+    user: "0:0"
+    command:
+      - --config=/etc/otelcol/config.yaml
+    volumes:
+      - /srv/admin/config/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+      - /proc:/hostfs/proc:ro
+      - /sys:/hostfs/sys:ro
+      - /:/hostfs:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+{% if observability.expose_host_ports | default(false) | bool %}
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+{% endif %}
+    networks:
+      - admin-net
+
+networks:
+  admin-net:
+    external: true
