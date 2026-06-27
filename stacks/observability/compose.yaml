@@ -13,6 +13,15 @@ services:
       - "43190"
       - --state-dir
       - /state
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:43190/healthz', timeout=2).read()"
+      interval: 2s
+      timeout: 3s
+      retries: 15
     volumes:
       - {{ admin_repo_root | default('/opt/homelab-admin-node') }}/ci/otel-mock-backend.py:/otel-mock-backend.py:ro
       - {{ observability.mock_state_dir | default('/tmp/admin-node-otel-mock') }}:/state
@@ -38,7 +47,8 @@ services:
       - /srv/admin/data/harbor/job_logs:/srv/admin/data/harbor/job_logs:ro
 {% if observability.mock_backend_enabled | default(false) | bool %}
     depends_on:
-      - otel-mock-backend
+      otel-mock-backend:
+        condition: service_healthy
     network_mode: "service:otel-mock-backend"
 {% else %}
     extra_hosts:

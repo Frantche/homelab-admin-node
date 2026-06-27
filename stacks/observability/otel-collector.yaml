@@ -26,6 +26,7 @@ receivers:
   docker_stats:
     endpoint: unix:///var/run/docker.sock
     api_version: "{{ observability.docker_api_version | default('1.40') }}"
+    initial_delay: {{ observability.docker_stats_initial_delay | default('30s') }}
     collection_interval: {{ observability.collection_interval | default('30s') }}
 
   filelog/docker:
