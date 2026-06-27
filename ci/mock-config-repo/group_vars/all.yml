@@ -120,11 +120,12 @@ gitea_config:
 
 observability:
   enabled: true
-  metrics_endpoint: "http://host.docker.internal:43190/v1/metrics"
-  logs_endpoint: "http://host.docker.internal:43190/v1/logs"
+  metrics_endpoint: "http://127.0.0.1:43190/v1/metrics"
+  logs_endpoint: "http://127.0.0.1:43190/v1/logs"
   compression: "none"
   collection_interval: "5s"
   docker_api_version: "1.40"
+  network_mode: "host"
 
 backup:
   restic_init_repositories: true

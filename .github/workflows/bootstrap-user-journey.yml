@@ -392,11 +392,12 @@ jobs:
 
           observability:
             enabled: true
-            metrics_endpoint: "http://host.docker.internal:43190/v1/metrics"
-            logs_endpoint: "http://host.docker.internal:43190/v1/logs"
+            metrics_endpoint: "http://127.0.0.1:43190/v1/metrics"
+            logs_endpoint: "http://127.0.0.1:43190/v1/logs"
             compression: "none"
             collection_interval: "5s"
             docker_api_version: "1.40"
+            network_mode: "host"
 
           openbao:
             root_token: ""
@@ -573,6 +574,11 @@ jobs:
               -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
               admin@127.0.0.1:/tmp/admin-node-otel-mock.tgz \
               .ci/artifacts/bootstrap/admin-node-otel-mock.tgz 2>/dev/null || true
+            mkdir -p .ci/artifacts/bootstrap/otel-mock
+            scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
+              admin@127.0.0.1:/tmp/admin-node-otel-mock-bootstrap-user-journey/. \
+              .ci/artifacts/bootstrap/otel-mock/ 2>/dev/null || true
             scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
               admin@127.0.0.1:/opt/homelab-admin-node/ci/oidc-user-journey/test-results \
