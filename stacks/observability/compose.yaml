@@ -39,7 +39,8 @@ services:
 {% if observability.mock_backend_enabled | default(false) | bool %}
     depends_on:
       - otel-mock-backend
-{% endif %}
+    network_mode: "service:otel-mock-backend"
+{% else %}
     extra_hosts:
       - "host.docker.internal:host-gateway"
 {% if observability.expose_host_ports | default(false) | bool %}
@@ -49,6 +50,7 @@ services:
 {% endif %}
     networks:
       - admin-net
+{% endif %}
 
 networks:
   admin-net:
