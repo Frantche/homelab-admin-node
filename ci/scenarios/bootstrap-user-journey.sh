@@ -45,7 +45,7 @@ dump_debug() {
   journalctl -u admin-converge.service --no-pager -n 80 >&2 2>/dev/null || true
   echo "--- docker ps ---" >&2
   docker ps -a >&2 2>/dev/null || true
-  for svc in traefik keycloak keycloak-db openbao harbor-core harbor-db gitea gitea-db cloudflared; do
+  for svc in traefik keycloak keycloak-db openbao harbor-core harbor-db gitea gitea-db cloudflared otel-collector; do
     echo "--- docker logs: $svc ---" >&2
     docker logs "$svc" 2>&1 | tail -80 >&2 || true
   done
@@ -136,7 +136,7 @@ stop_auto_converge
 echo "=== Running convergence (normal mode) via admin-node ==="
 run_converge
 stop_auto_converge
-"$REPO_ROOT/bin/admin-node" validate observability
+CI_OTEL_MOCK_STATE_DIR= "$REPO_ROOT/bin/admin-node" validate observability
 
 # --- Verify final mode is normal ---
 assert_contains /etc/admin-node/mode "normal"
