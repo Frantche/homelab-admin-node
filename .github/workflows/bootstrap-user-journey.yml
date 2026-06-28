@@ -395,7 +395,9 @@ jobs:
             metrics_endpoint: "http://127.0.0.1:43190/v1/metrics"
             logs_endpoint: "http://127.0.0.1:43190/v1/logs"
             compression: "none"
+            otlp_encoding: "json"
             collection_interval: "5s"
+            service_metrics_interval: "5s"
             docker_api_version: "1.40"
             mock_backend_enabled: true
             mock_state_dir: "/tmp/admin-node-otel-mock-bootstrap-user-journey"
@@ -439,6 +441,44 @@ jobs:
                     CI_SKIP_PUBLIC_URL_VALIDATION=${CI_SKIP_PUBLIC_URL_VALIDATION} \
                     SKIP_PUBLIC_URL_VALIDATION=true \
                     /opt/homelab-admin-node/ci/scenarios/bootstrap-user-journey.sh"
+
+      - name: Snapshot validated OTLP mock payloads
+        run: |
+          mkdir -p .ci/artifacts/bootstrap/otel-mock-validated
+
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
+              "sudo tar -C /tmp -czf /tmp/admin-node-otel-mock-validated.tgz admin-node-otel-mock-bootstrap-user-journey && \
+               sudo chown admin:admin /tmp/admin-node-otel-mock-validated.tgz && \
+               sudo chown -R admin:admin /tmp/admin-node-otel-mock-bootstrap-user-journey"
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
+              admin@127.0.0.1:/tmp/admin-node-otel-mock-validated.tgz \
+              .ci/artifacts/bootstrap/admin-node-otel-mock-validated.tgz
+          scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
+              admin@127.0.0.1:/tmp/admin-node-otel-mock-bootstrap-user-journey/. \
+              .ci/artifacts/bootstrap/otel-mock-validated/
+
+      - name: Verify validated OTLP mock artifact content
+        run: |
+          metrics_file=.ci/artifacts/bootstrap/otel-mock-validated/metrics.received
+          logs_file=.ci/artifacts/bootstrap/otel-mock-validated/logs.received
+
+          test -s "$metrics_file"
+          test -s "$logs_file"
+
+          for marker in \
+            '"key":"service.name","value":{"stringValue":"gitea"}' \
+            '"key":"service.name","value":{"stringValue":"harbor-core"}' \
+            '"key":"service.name","value":{"stringValue":"harbor-exporter"}' \
+            '"key":"service.name","value":{"stringValue":"openbao"}' \
+            '"key":"service.name","value":{"stringValue":"traefik"}'
+          do
+            grep -Fq "$marker" "$metrics_file"
+          done
+
+          grep -Fq "admin-node-otel-log-sentinel" "$logs_file"
 
       - name: Ensure AppArmor convergence after reboot
         timeout-minutes: 25

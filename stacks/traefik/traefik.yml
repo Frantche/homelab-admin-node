@@ -1,5 +1,7 @@
 {% set traefik_letsencrypt_enabled = traefik_letsencrypt_enabled | default((not (ci_mode | default(false))) and (not (traefik.local_tls_enabled | default(false))) and ((cloudflare.dns_api_token | default('') | length) > 0) and ((acme_email | default('') | length) > 0)) %}
 entryPoints:
+  metrics:
+    address: ":8082"
   websecure:
     address: ":443"
     http:
@@ -9,6 +11,9 @@ entryPoints:
 {% endif %}
 api:
   dashboard: true
+metrics:
+  prometheus:
+    entryPoint: metrics
 ping:
   entryPoint: "websecure"
 providers:

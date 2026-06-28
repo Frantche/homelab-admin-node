@@ -123,7 +123,9 @@ observability:
   metrics_endpoint: "http://127.0.0.1:43190/v1/metrics"
   logs_endpoint: "http://127.0.0.1:43190/v1/logs"
   compression: "none"
+  otlp_encoding: "json"
   collection_interval: "5s"
+  service_metrics_interval: "5s"
   docker_api_version: "1.40"
   mock_backend_enabled: true
   mock_state_dir: "/tmp/admin-node-otel-mock"
