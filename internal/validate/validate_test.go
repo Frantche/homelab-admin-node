@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -150,6 +152,83 @@ func TestObservabilityOKWhenCollectorIsHealthy(t *testing.T) {
 	result := v.Observability(context.Background())
 	if result.Status != StatusOK {
 		t.Fatalf("status = %s, want %s (%s)", result.Status, StatusOK, result.Message)
+	}
+}
+
+func TestObservabilityOKWithExpectedMockContent(t *testing.T) {
+	mockDir := t.TempDir()
+	t.Setenv("CI_OTEL_MOCK_STATE_DIR", mockDir)
+	writeMockPayload(t, mockDir, "metrics.received", `{
+		"resourceMetrics": [{
+			"scopeMetrics": [{
+				"metrics": [{
+					"data": {
+						"dataPoints": [{
+							"attributes": [
+								{"key": "job", "value": {"stringValue": "gitea"}},
+								{"key": "job", "value": {"stringValue": "harbor-core"}},
+								{"key": "job", "value": {"stringValue": "harbor-exporter"}},
+								{"key": "job", "value": {"stringValue": "openbao"}},
+								{"key": "job", "value": {"stringValue": "traefik"}}
+							]
+						}]
+					}
+				}]
+			}]
+		}]
+	}`)
+	writeMockPayload(t, mockDir, "logs.received", `{"body":{"stringValue":"admin-node-otel-log-sentinel"}}`)
+
+	v := Validator{Runner: observabilityRunner{}}
+	result := v.Observability(context.Background())
+	if result.Status != StatusOK {
+		t.Fatalf("status = %s, want %s (%s)", result.Status, StatusOK, result.Message)
+	}
+	if !strings.Contains(result.Message, "expected service metrics") {
+		t.Fatalf("message = %q, want content validation success", result.Message)
+	}
+}
+
+func TestObservabilityFailsWhenMetricContentIsMissing(t *testing.T) {
+	mockDir := t.TempDir()
+	t.Setenv("CI_OTEL_MOCK_STATE_DIR", mockDir)
+	writeMockPayload(t, mockDir, "metrics.received", "gitea harbor-core harbor-exporter openbao")
+	writeMockPayload(t, mockDir, "logs.received", "admin-node-otel-log-sentinel")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	v := Validator{Runner: observabilityRunner{}}
+	result := v.Observability(ctx)
+	if result.Status != StatusFail {
+		t.Fatalf("status = %s, want %s", result.Status, StatusFail)
+	}
+	if !strings.Contains(result.Message, "metrics content: traefik") {
+		t.Fatalf("message = %q, want missing traefik metric content", result.Message)
+	}
+}
+
+func TestObservabilityFailsWhenLogContentIsMissing(t *testing.T) {
+	mockDir := t.TempDir()
+	t.Setenv("CI_OTEL_MOCK_STATE_DIR", mockDir)
+	writeMockPayload(t, mockDir, "metrics.received", "gitea harbor-core harbor-exporter openbao traefik")
+	writeMockPayload(t, mockDir, "logs.received", "other log")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	v := Validator{Runner: observabilityRunner{}}
+	result := v.Observability(ctx)
+	if result.Status != StatusFail {
+		t.Fatalf("status = %s, want %s", result.Status, StatusFail)
+	}
+	if !strings.Contains(result.Message, "logs content: admin-node-otel-log-sentinel") {
+		t.Fatalf("message = %q, want missing sentinel log content", result.Message)
+	}
+}
+
+func writeMockPayload(t *testing.T, dir string, name string, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+		t.Fatalf("write mock payload: %v", err)
 	}
 }
 

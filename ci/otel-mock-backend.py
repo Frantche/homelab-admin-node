@@ -18,11 +18,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         length = int(self.headers.get("content-length", "0"))
+        body = b""
         if length:
-            self.rfile.read(length)
+            body = self.rfile.read(length)
         name = "logs.received" if "log" in self.path else "metrics.received"
         with (self.state_dir / name).open("ab") as fh:
-            fh.write(self.path.encode("utf-8") + b"\n")
+            fh.write(b"\n--- request ")
+            fh.write(self.path.encode("utf-8"))
+            fh.write(b" ---\n")
+            fh.write(body)
+            fh.write(b"\n")
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"ok\n")

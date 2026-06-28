@@ -54,6 +54,7 @@ services:
       GITEA__openid__ENABLE_OPENID_SIGNIN: "false"
       GITEA__openid__ENABLE_OPENID_SIGNUP: "true"
       GITEA__openid__WHITELISTED_URIS: "{{ service_domains.keycloak }}"
+      GITEA__metrics__ENABLED: "true"
 {% if traefik_local_ca_enabled | default(ci_mode | default(false)) | bool %}
       SSL_CERT_FILE: /etc/ssl/certs/admin-node-ca.pem
 {% endif %}

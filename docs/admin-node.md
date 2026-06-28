@@ -32,7 +32,7 @@ Les statuts possibles sont `ok`, `warn`, `fail` et `skipped`. Le code de sortie 
 
 `validate apis` regroupe OpenBao, Keycloak, Harbor, Gitea et Traefik. Les sous-commandes `harbor`, `openbao`, `gitea` et `observability` permettent de lancer ces validations individuellement. Les pulls de validation des registry mirrors Harbor restent portes par le role Ansible `harbor_config`, car ils utilisent la configuration `harbor_config.registry_mirrors`.
 
-`validate observability` verifie le conteneur OpenTelemetry Collector et son endpoint de sante. En CI, il confirme aussi que le mock OTLP a recu des metriques et des logs exportes par le collector.
+`validate observability` verifie le conteneur OpenTelemetry Collector et son endpoint de sante. En CI, il confirme aussi que le mock OTLP a recu les metriques dediees Gitea, Harbor, OpenBao et Traefik, ainsi que le log sentinel emis pendant le test.
 
 ## Backup
 

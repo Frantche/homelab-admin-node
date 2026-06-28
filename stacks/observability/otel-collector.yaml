@@ -29,6 +29,55 @@ receivers:
     initial_delay: {{ observability.docker_stats_initial_delay | default('30s') }}
     collection_interval: {{ observability.collection_interval | default('30s') }}
 
+  prometheus/gitea:
+    config:
+      scrape_configs:
+        - job_name: gitea
+          scrape_interval: {{ observability.service_metrics_interval | default(observability.collection_interval | default('30s')) }}
+          metrics_path: /metrics
+          static_configs:
+            - targets:
+                - gitea:3000
+
+  prometheus/harbor:
+    config:
+      scrape_configs:
+        - job_name: harbor-core
+          scrape_interval: {{ observability.service_metrics_interval | default(observability.collection_interval | default('30s')) }}
+          metrics_path: /metrics
+          static_configs:
+            - targets:
+                - harbor-core:8001
+        - job_name: harbor-exporter
+          scrape_interval: {{ observability.service_metrics_interval | default(observability.collection_interval | default('30s')) }}
+          metrics_path: /metrics
+          static_configs:
+            - targets:
+                - harbor-exporter:8080
+
+  prometheus/openbao:
+    config:
+      scrape_configs:
+        - job_name: openbao
+          scrape_interval: {{ observability.service_metrics_interval | default(observability.collection_interval | default('30s')) }}
+          metrics_path: /v1/sys/metrics
+          params:
+            format:
+              - prometheus
+          static_configs:
+            - targets:
+                - openbao:8200
+
+  prometheus/traefik:
+    config:
+      scrape_configs:
+        - job_name: traefik
+          scrape_interval: {{ observability.service_metrics_interval | default(observability.collection_interval | default('30s')) }}
+          metrics_path: /metrics
+          static_configs:
+            - targets:
+                - traefik:8082
+
   filelog/docker:
     include:
       - /var/lib/docker/containers/*/*-json.log
@@ -79,7 +128,7 @@ exporters:
 {% if observability.compression | default('gzip') != 'none' %}
     compression: {{ observability.compression | default('gzip') }}
 {% endif %}
-    encoding: proto
+    encoding: {{ observability.otlp_encoding | default('proto') }}
     metrics_endpoint: "{{ observability.metrics_endpoint }}"
     logs_endpoint: "{{ observability.logs_endpoint }}"
 {% if observability.headers is defined %}
@@ -98,6 +147,10 @@ service:
         - otlp
         - hostmetrics
         - docker_stats
+        - prometheus/gitea
+        - prometheus/harbor
+        - prometheus/openbao
+        - prometheus/traefik
       processors:
         - memory_limiter
         - resource

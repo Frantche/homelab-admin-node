@@ -1,8 +1,13 @@
 entryPoints:
+  metrics:
+    address: ":8082"
   websecure:
     address: ":443"
 api:
   dashboard: true
+metrics:
+  prometheus:
+    entryPoint: metrics
 ping:
   entryPoint: "websecure"
 providers:

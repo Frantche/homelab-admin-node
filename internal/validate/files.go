@@ -2,7 +2,10 @@ package validate
 
 import "os"
 
-func fileHasContent(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.Size() > 0
+func fileContent(path string) string {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(content)
 }

@@ -77,24 +77,60 @@ func (v Validator) Observability(ctx context.Context) CheckResult {
 		ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()
 		for {
-			metricsSeen := fileHasContent(filepath.Join(mockDir, "metrics.received"))
-			logsSeen := fileHasContent(filepath.Join(mockDir, "logs.received"))
-			if metricsSeen && logsSeen {
-				return StatusOK, "collector exported metrics and logs to CI OTLP mock"
+			missingMetrics, missingLogs := missingObservabilityMockContent(mockDir)
+			if len(missingMetrics) == 0 && len(missingLogs) == 0 {
+				return StatusOK, "collector exported expected service metrics and sentinel logs to CI OTLP mock"
 			}
 			if ctx.Err() != nil {
 				missing := []string{}
-				if !metricsSeen {
-					missing = append(missing, "metrics")
+				if len(missingMetrics) > 0 {
+					missing = append(missing, "metrics content: "+strings.Join(missingMetrics, ", "))
 				}
-				if !logsSeen {
-					missing = append(missing, "logs")
+				if len(missingLogs) > 0 {
+					missing = append(missing, "logs content: "+strings.Join(missingLogs, ", "))
 				}
-				return StatusFail, "CI OTLP mock did not receive " + strings.Join(missing, " and ")
+				return StatusFail, "CI OTLP mock missing " + strings.Join(missing, " and ")
 			}
 			time.Sleep(3 * time.Second)
 		}
 	})
+}
+
+func missingObservabilityMockContent(mockDir string) ([]string, []string) {
+	metricsContent := fileContent(filepath.Join(mockDir, "metrics.received"))
+	logsContent := fileContent(filepath.Join(mockDir, "logs.received"))
+
+	metricMarkers := []struct {
+		name    string
+		markers []string
+	}{
+		{name: "gitea", markers: []string{"gitea"}},
+		{name: "harbor-core", markers: []string{"harbor-core"}},
+		{name: "harbor-exporter", markers: []string{"harbor-exporter"}},
+		{name: "openbao", markers: []string{"openbao"}},
+		{name: "traefik", markers: []string{"traefik"}},
+	}
+	missingMetrics := []string{}
+	for _, expected := range metricMarkers {
+		if !containsAny(metricsContent, expected.markers) {
+			missingMetrics = append(missingMetrics, expected.name)
+		}
+	}
+
+	missingLogs := []string{}
+	if !strings.Contains(logsContent, "admin-node-otel-log-sentinel") {
+		missingLogs = append(missingLogs, "admin-node-otel-log-sentinel")
+	}
+	return missingMetrics, missingLogs
+}
+
+func containsAny(text string, markers []string) bool {
+	for _, marker := range markers {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (v Validator) Keycloak(ctx context.Context) CheckResult {
