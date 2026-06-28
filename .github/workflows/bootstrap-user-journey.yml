@@ -448,7 +448,9 @@ jobs:
 
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
-              "sudo tar -C /tmp -czf /tmp/admin-node-otel-mock-validated.tgz admin-node-otel-mock-bootstrap-user-journey"
+              "sudo tar -C /tmp -czf /tmp/admin-node-otel-mock-validated.tgz admin-node-otel-mock-bootstrap-user-journey && \
+               sudo chown admin:admin /tmp/admin-node-otel-mock-validated.tgz && \
+               sudo chown -R admin:admin /tmp/admin-node-otel-mock-bootstrap-user-journey"
           scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
               admin@127.0.0.1:/tmp/admin-node-otel-mock-validated.tgz \
