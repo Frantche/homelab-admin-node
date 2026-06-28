@@ -118,6 +118,16 @@ gitea_config:
     repo: "admin-node-validation"
     issue_title: "Backup restore sentinel"
 
+observability:
+  enabled: true
+  metrics_endpoint: "http://127.0.0.1:43190/v1/metrics"
+  logs_endpoint: "http://127.0.0.1:43190/v1/logs"
+  compression: "none"
+  collection_interval: "5s"
+  docker_api_version: "1.40"
+  mock_backend_enabled: true
+  mock_state_dir: "/tmp/admin-node-otel-mock"
+
 backup:
   restic_init_repositories: true
   restic_repositories:

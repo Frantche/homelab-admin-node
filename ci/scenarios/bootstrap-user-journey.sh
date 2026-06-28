@@ -12,10 +12,20 @@ export CI_MOCK_PIHOLE="${CI_MOCK_PIHOLE:-true}"
 export CI_MOCK_CLOUDFLARE_TUNNEL="${CI_MOCK_CLOUDFLARE_TUNNEL:-true}"
 export CI_SKIP_PUBLIC_URL_VALIDATION="${CI_SKIP_PUBLIC_URL_VALIDATION:-true}"
 export SKIP_PUBLIC_URL_VALIDATION="${SKIP_PUBLIC_URL_VALIDATION:-true}"
+export CI_OTEL_MOCK_STATE_DIR="${CI_OTEL_MOCK_STATE_DIR:-/tmp/admin-node-otel-mock-bootstrap-user-journey}"
 
 stop_auto_converge() {
   systemctl disable --now admin-converge.timer admin-unlock.path 2>/dev/null || true
   systemctl stop admin-converge.service 2>/dev/null || true
+}
+
+stop_otel_mock() {
+  docker rm -f "${CI_OTEL_MOCK_CONTAINER_NAME:-otel-mock-backend}" >/dev/null 2>&1 || true
+}
+
+start_otel_mock() {
+  rm -rf "$CI_OTEL_MOCK_STATE_DIR"
+  mkdir -p "$CI_OTEL_MOCK_STATE_DIR"
 }
 
 dump_debug() {
@@ -29,7 +39,7 @@ dump_debug() {
   journalctl -u admin-converge.service --no-pager -n 80 >&2 2>/dev/null || true
   echo "--- docker ps ---" >&2
   docker ps -a >&2 2>/dev/null || true
-  for svc in traefik keycloak keycloak-db openbao harbor-core harbor-db gitea gitea-db cloudflared; do
+  for svc in traefik keycloak keycloak-db openbao harbor-core harbor-db gitea gitea-db cloudflared otel-collector; do
     echo "--- docker logs: $svc ---" >&2
     docker logs "$svc" 2>&1 | tail -80 >&2 || true
   done
@@ -83,10 +93,12 @@ run_oidc_user_journey() {
 }
 
 trap dump_debug ERR
+trap stop_otel_mock EXIT
 
 # --- CI prerequisites (TLS certs, /etc/hosts, ansible collections) ---
 "$REPO_ROOT/ci/setup-ci-env.sh"
 "$REPO_ROOT/scripts/build-admin-node.sh"
+start_otel_mock
 
 # Prevent the auto-converge timer from interfering with our manual operations
 stop_auto_converge
@@ -118,6 +130,7 @@ stop_auto_converge
 echo "=== Running convergence (normal mode) via admin-node ==="
 run_converge
 stop_auto_converge
+"$REPO_ROOT/bin/admin-node" validate observability
 
 # --- Verify final mode is normal ---
 assert_contains /etc/admin-node/mode "normal"

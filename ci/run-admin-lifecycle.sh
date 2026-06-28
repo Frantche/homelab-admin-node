@@ -14,4 +14,9 @@ cd "$SCRIPT_DIR/.."
 SKIP_PUBLIC_URL_VALIDATION=${SKIP_PUBLIC_URL_VALIDATION:-true}
 export SKIP_PUBLIC_URL_VALIDATION
 
+CI_OTEL_MOCK_STATE_DIR="${CI_OTEL_MOCK_STATE_DIR:-/tmp/admin-node-otel-mock}"
+export CI_OTEL_MOCK_STATE_DIR
+rm -rf "$CI_OTEL_MOCK_STATE_DIR"
+mkdir -p "$CI_OTEL_MOCK_STATE_DIR"
+
 "./ci/scenarios/${scenario}.sh"

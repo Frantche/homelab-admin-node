@@ -66,7 +66,7 @@ La CLI Go `admin-node` est documentée dans `docs/admin-node.md`.
 `bin/admin-node restore run` restaure fichiers + services, valide, bascule `mode` vers `normal` ou `restore_failed`.
 
 ## 16. Validation API
-`bin/admin-node validate apis|harbor|openbao|gitea|dns|tunnel|hardening` exécute les validations opérationnelles.
+`bin/admin-node validate apis|harbor|openbao|gitea|dns|tunnel|hardening|observability` exécute les validations opérationnelles.
 
 ## 17. Hardening
 Le socle de durcissement est appliqué par Ansible: SSH par clé, root SSH désactivé, sudoers dédié, nftables en default deny entrant, journald persistant, auditd, fail2ban, sysctl et permissions sensibles.
@@ -79,6 +79,15 @@ make validate-hardening
 
 La CI exécute aussi Lynis dans la VM Arch et publie le rapport en artifact `hardening-audit`.
 Voir `docs/hardening.md`.
+
+## 17bis. Observabilité
+Le rôle `observability` déploie uniquement un OpenTelemetry Collector. Les backends restent externes: configurez `observability.metrics_endpoint` vers VictoriaMetrics et `observability.logs_endpoint` vers VictoriaLogs dans le config repo.
+
+Validation locale:
+
+```bash
+make validate-observability
+```
 
 ## 18. Fonctionnement Renovate
 Renovate externe uniquement. Fichier local: `renovate.json`.

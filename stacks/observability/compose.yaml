@@ -1,0 +1,65 @@
+services:
+{% if observability.mock_backend_enabled | default(false) | bool %}
+  otel-mock-backend:
+    image: python:3.13-alpine
+    container_name: otel-mock-backend
+    restart: unless-stopped
+    command:
+      - python
+      - /otel-mock-backend.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - "43190"
+      - --state-dir
+      - /state
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:43190/healthz', timeout=2).read()"
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    volumes:
+      - {{ admin_repo_root | default('/opt/homelab-admin-node') }}/ci/otel-mock-backend.py:/otel-mock-backend.py:ro
+      - {{ observability.mock_state_dir | default('/tmp/admin-node-otel-mock') }}:/state
+    networks:
+      - admin-net
+
+{% endif %}
+  otel-collector:
+    image: "{{ observability.collector_image | default('otel/opentelemetry-collector-contrib:0.139.0') }}"
+    container_name: otel-collector
+    restart: unless-stopped
+    user: "0:0"
+    command:
+      - --config=/etc/otelcol/config.yaml
+    volumes:
+      - /srv/admin/config/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+      - /proc:/hostfs/proc:ro
+      - /sys:/hostfs/sys:ro
+      - /:/hostfs:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /srv/admin/data/harbor/log:/srv/admin/data/harbor/log:ro
+      - /srv/admin/data/harbor/job_logs:/srv/admin/data/harbor/job_logs:ro
+{% if observability.mock_backend_enabled | default(false) | bool %}
+    depends_on:
+      otel-mock-backend:
+        condition: service_healthy
+    network_mode: "service:otel-mock-backend"
+{% else %}
+{% if observability.expose_host_ports | default(false) | bool %}
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+{% endif %}
+    networks:
+      - admin-net
+{% endif %}
+
+networks:
+  admin-net:
+    external: true

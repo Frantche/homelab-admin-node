@@ -390,6 +390,16 @@ jobs:
               repo: "admin-node-validation"
               issue_title: "Backup restore sentinel"
 
+          observability:
+            enabled: true
+            metrics_endpoint: "http://127.0.0.1:43190/v1/metrics"
+            logs_endpoint: "http://127.0.0.1:43190/v1/logs"
+            compression: "none"
+            collection_interval: "5s"
+            docker_api_version: "1.40"
+            mock_backend_enabled: true
+            mock_state_dir: "/tmp/admin-node-otel-mock-bootstrap-user-journey"
+
           openbao:
             root_token: ""
 
@@ -528,6 +538,67 @@ jobs:
         with:
           name: hardening-audit
           path: .ci/artifacts/lynis
+          if-no-files-found: ignore
+
+      - name: Collect bootstrap logs
+        if: always()
+        run: |
+          mkdir -p .ci/artifacts/bootstrap
+
+          if [ -f .ci/vm/qemu.log ]; then
+            cp .ci/vm/qemu.log .ci/artifacts/bootstrap/qemu.log
+          fi
+
+          SSH_OPTS=(
+            -o StrictHostKeyChecking=no
+            -o UserKnownHostsFile=/dev/null
+            -o ConnectTimeout=5
+            -i .ci/ssh/id_ed25519
+            -p ${SSH_PORT}
+          )
+
+          if ssh "${SSH_OPTS[@]}" admin@127.0.0.1 "echo ready" >/dev/null 2>&1; then
+            ssh "${SSH_OPTS[@]}" admin@127.0.0.1 "sudo cat /var/log/cloud-init-output.log" \
+              > .ci/artifacts/bootstrap/cloud-init-output.log 2>/dev/null || true
+            ssh "${SSH_OPTS[@]}" admin@127.0.0.1 "sudo journalctl --no-pager" \
+              > .ci/artifacts/bootstrap/journal.log 2>/dev/null || true
+            ssh "${SSH_OPTS[@]}" admin@127.0.0.1 "sudo journalctl -u admin-converge.service --no-pager" \
+              > .ci/artifacts/bootstrap/admin-converge.log 2>/dev/null || true
+            ssh "${SSH_OPTS[@]}" admin@127.0.0.1 "sudo docker ps -a" \
+              > .ci/artifacts/bootstrap/docker-ps.txt 2>/dev/null || true
+            ssh "${SSH_OPTS[@]}" admin@127.0.0.1 \
+              "for c in \$(sudo docker ps -a --format '{{.Names}}'); do echo \"--- \$c ---\"; sudo docker logs \$c 2>&1; done" \
+              > .ci/artifacts/bootstrap/docker-logs.txt 2>/dev/null || true
+            ssh "${SSH_OPTS[@]}" admin@127.0.0.1 \
+              "sudo tar -C /tmp -czf /tmp/admin-node-otel-mock.tgz admin-node-otel-mock-bootstrap-user-journey 2>/dev/null || true"
+            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
+              admin@127.0.0.1:/tmp/admin-node-otel-mock.tgz \
+              .ci/artifacts/bootstrap/admin-node-otel-mock.tgz 2>/dev/null || true
+            mkdir -p .ci/artifacts/bootstrap/otel-mock
+            scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
+              admin@127.0.0.1:/tmp/admin-node-otel-mock-bootstrap-user-journey/. \
+              .ci/artifacts/bootstrap/otel-mock/ 2>/dev/null || true
+            scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
+              admin@127.0.0.1:/opt/homelab-admin-node/ci/oidc-user-journey/test-results \
+              .ci/artifacts/bootstrap/playwright-test-results 2>/dev/null || true
+            scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -P ${SSH_PORT} \
+              admin@127.0.0.1:/opt/homelab-admin-node/ci/oidc-user-journey/playwright-report \
+              .ci/artifacts/bootstrap/playwright-report 2>/dev/null || true
+          else
+            echo "VM SSH unavailable; only host-side logs were collected" \
+              > .ci/artifacts/bootstrap/collection-warning.txt
+          fi
+
+      - name: Upload bootstrap logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-user-journey-logs
+          path: .ci/artifacts/bootstrap
           if-no-files-found: ignore
 
       - name: Show VM logs on failure

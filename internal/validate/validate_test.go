@@ -38,6 +38,20 @@ func (r openBaoRunner) Run(_ context.Context, _ string, args ...string) runner.R
 	}
 }
 
+type observabilityRunner struct{}
+
+func (r observabilityRunner) Run(_ context.Context, name string, args ...string) runner.Result {
+	joined := name + " " + strings.Join(args, " ")
+	switch {
+	case strings.Contains(joined, "docker inspect"):
+		return runner.Result{Stdout: "true\n"}
+	case strings.Contains(joined, "docker exec otel-collector /otelcol-contrib --version"):
+		return runner.Result{Stdout: "Server available\n"}
+	default:
+		return runner.Result{}
+	}
+}
+
 func TestKeycloakOK(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/realms/master/.well-known/openid-configuration" {
@@ -128,6 +142,14 @@ func TestHarborAdminCheckFailsWithBadPassword(t *testing.T) {
 	}
 	if !strings.Contains(result.Message, "admin API check failed") {
 		t.Fatalf("message = %q, want admin API failure", result.Message)
+	}
+}
+
+func TestObservabilityOKWhenCollectorIsHealthy(t *testing.T) {
+	v := Validator{Runner: observabilityRunner{}}
+	result := v.Observability(context.Background())
+	if result.Status != StatusOK {
+		t.Fatalf("status = %s, want %s (%s)", result.Status, StatusOK, result.Message)
 	}
 }
 

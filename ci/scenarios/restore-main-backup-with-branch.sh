@@ -64,4 +64,6 @@ ansible-playbook \
   "$REPO_ROOT/ansible/site.yml" \
   --extra-vars "{\"openbao\": {\"root_token\": \"${OPENBAO_TOKEN}\"}}"
 
+./bin/admin-node validate observability
+
 echo "=== restore-main-backup-with-branch scenario PASSED ==="

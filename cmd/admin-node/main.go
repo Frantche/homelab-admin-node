@@ -165,6 +165,8 @@ func (a app) runValidate(_ context.Context, args []string) int {
 		results = []validate.CheckResult{validator.Tunnel(ctx)}
 	case "hardening":
 		results = []validate.CheckResult{validator.Hardening(ctx)}
+	case "observability":
+		results = []validate.CheckResult{validator.Observability(ctx)}
 	default:
 		fmt.Fprintf(a.errOut, "unknown validate command: %s\n", subcommand)
 		return 2

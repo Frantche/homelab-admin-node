@@ -1,0 +1,43 @@
+---
+- name: Require OpenTelemetry export endpoints
+  ansible.builtin.assert:
+    that:
+      - observability.metrics_endpoint | default('', true) | length > 0
+      - observability.logs_endpoint | default('', true) | length > 0
+    fail_msg: >-
+      observability.metrics_endpoint and observability.logs_endpoint are required
+      when observability.enabled is true. They must point to external OTLP HTTP
+      ingestion endpoints, for example VictoriaMetrics and VictoriaLogs.
+
+- name: Ensure observability directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ admin_node_root }}/stacks/observability"
+    - "{{ admin_node_root }}/config/otel-collector"
+
+- name: Render OpenTelemetry collector config
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../stacks/observability/otel-collector.yaml"
+    dest: "{{ admin_node_root }}/config/otel-collector/config.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Render observability compose
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../stacks/observability/compose.yaml"
+    dest: "{{ admin_node_root }}/stacks/observability/compose.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Start observability collector
+  ansible.builtin.command: docker compose -f compose.yaml up -d
+  args:
+    chdir: "{{ admin_node_root }}/stacks/observability"
+  changed_when: true
