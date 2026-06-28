@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import gzip
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -21,6 +22,8 @@ class Handler(BaseHTTPRequestHandler):
         body = b""
         if length:
             body = self.rfile.read(length)
+        if self.headers.get("content-encoding", "").lower() == "gzip":
+            body = gzip.decompress(body)
         name = "logs.received" if "log" in self.path else "metrics.received"
         with (self.state_dir / name).open("ab") as fh:
             fh.write(b"\n--- request ")

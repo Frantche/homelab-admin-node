@@ -158,25 +158,7 @@ func TestObservabilityOKWhenCollectorIsHealthy(t *testing.T) {
 func TestObservabilityOKWithExpectedMockContent(t *testing.T) {
 	mockDir := t.TempDir()
 	t.Setenv("CI_OTEL_MOCK_STATE_DIR", mockDir)
-	writeMockPayload(t, mockDir, "metrics.received", `{
-		"resourceMetrics": [{
-			"scopeMetrics": [{
-				"metrics": [{
-					"data": {
-						"dataPoints": [{
-							"attributes": [
-								{"key": "job", "value": {"stringValue": "gitea"}},
-								{"key": "job", "value": {"stringValue": "harbor-core"}},
-								{"key": "job", "value": {"stringValue": "harbor-exporter"}},
-								{"key": "job", "value": {"stringValue": "openbao"}},
-								{"key": "job", "value": {"stringValue": "traefik"}}
-							]
-						}]
-					}
-				}]
-			}]
-		}]
-	}`)
+	writeMockPayload(t, mockDir, "metrics.received", `{"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"gitea"}}]}},{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"harbor-core"}}]}},{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"harbor-exporter"}}]}},{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"openbao"}}]}},{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"traefik"}}]}}]}`)
 	writeMockPayload(t, mockDir, "logs.received", `{"body":{"stringValue":"admin-node-otel-log-sentinel"}}`)
 
 	v := Validator{Runner: observabilityRunner{}}
@@ -192,7 +174,7 @@ func TestObservabilityOKWithExpectedMockContent(t *testing.T) {
 func TestObservabilityFailsWhenMetricContentIsMissing(t *testing.T) {
 	mockDir := t.TempDir()
 	t.Setenv("CI_OTEL_MOCK_STATE_DIR", mockDir)
-	writeMockPayload(t, mockDir, "metrics.received", "gitea harbor-core harbor-exporter openbao")
+	writeMockPayload(t, mockDir, "metrics.received", `"key":"service.name","value":{"stringValue":"gitea"} "key":"service.name","value":{"stringValue":"harbor-core"} "key":"service.name","value":{"stringValue":"harbor-exporter"} "key":"service.name","value":{"stringValue":"openbao"}`)
 	writeMockPayload(t, mockDir, "logs.received", "admin-node-otel-log-sentinel")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -210,7 +192,7 @@ func TestObservabilityFailsWhenMetricContentIsMissing(t *testing.T) {
 func TestObservabilityFailsWhenLogContentIsMissing(t *testing.T) {
 	mockDir := t.TempDir()
 	t.Setenv("CI_OTEL_MOCK_STATE_DIR", mockDir)
-	writeMockPayload(t, mockDir, "metrics.received", "gitea harbor-core harbor-exporter openbao traefik")
+	writeMockPayload(t, mockDir, "metrics.received", `"key":"service.name","value":{"stringValue":"gitea"} "key":"service.name","value":{"stringValue":"harbor-core"} "key":"service.name","value":{"stringValue":"harbor-exporter"} "key":"service.name","value":{"stringValue":"openbao"} "key":"service.name","value":{"stringValue":"traefik"}`)
 	writeMockPayload(t, mockDir, "logs.received", "other log")
 
 	ctx, cancel := context.WithCancel(context.Background())

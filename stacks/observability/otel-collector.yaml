@@ -125,9 +125,7 @@ processors:
 
 exporters:
   otlphttp/backend:
-{% if observability.compression | default('gzip') != 'none' %}
     compression: {{ observability.compression | default('gzip') }}
-{% endif %}
     encoding: {{ observability.otlp_encoding | default('proto') }}
     metrics_endpoint: "{{ observability.metrics_endpoint }}"
     logs_endpoint: "{{ observability.logs_endpoint }}"

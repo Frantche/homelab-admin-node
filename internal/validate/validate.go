@@ -104,11 +104,11 @@ func missingObservabilityMockContent(mockDir string) ([]string, []string) {
 		name    string
 		markers []string
 	}{
-		{name: "gitea", markers: []string{"gitea"}},
-		{name: "harbor-core", markers: []string{"harbor-core"}},
-		{name: "harbor-exporter", markers: []string{"harbor-exporter"}},
-		{name: "openbao", markers: []string{"openbao"}},
-		{name: "traefik", markers: []string{"traefik"}},
+		{name: "gitea", markers: []string{`"key":"service.name","value":{"stringValue":"gitea"}`}},
+		{name: "harbor-core", markers: []string{`"key":"service.name","value":{"stringValue":"harbor-core"}`}},
+		{name: "harbor-exporter", markers: []string{`"key":"service.name","value":{"stringValue":"harbor-exporter"}`}},
+		{name: "openbao", markers: []string{`"key":"service.name","value":{"stringValue":"openbao"}`}},
+		{name: "traefik", markers: []string{`"key":"service.name","value":{"stringValue":"traefik"}`}},
 	}
 	missingMetrics := []string{}
 	for _, expected := range metricMarkers {
