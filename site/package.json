@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "scripts": {
+    "build": "hugo --minify",
+    "serve": "hugo server --bind 127.0.0.1 --baseURL http://127.0.0.1:1313/"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "postcss-cli": "^11.0.1"
+  }
+}

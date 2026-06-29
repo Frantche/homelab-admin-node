@@ -1,151 +1,84 @@
 # homelab-admin-node
 
-Repository complet pour construire et opérer un nœud d'administration homelab (Arch Linux + cloud-init + Ansible + Docker Compose).
+`homelab-admin-node` builds and operates a reproducible homelab administration VM.
 
-## 1. Objectif du projet
-Ce dépôt reconstruit une VM `admin-01` indépendante de Talos/Kubernetes pour gérer Traefik, Keycloak, OpenBao, Harbor, Gitea, Cloudflare Tunnel, backups et restauration.
+It targets an `admin-01` node, usually deployed on Proxmox from an Arch Linux cloud image with cloud-init. The node is then converged with Ansible and Docker Compose.
 
-## 2. Architecture
-LAN -> Pi-hole -> admin-01 -> Traefik -> Keycloak/OpenBao/Harbor/Gitea/dashboard.
-Internet -> Cloudflare -> cloudflared -> Traefik -> mêmes services.
+## What It Runs
 
-## 3. Rôle du cloud-init
-Le cloud-init prépare la base système et configure entièrement le service `admin-converge` (script + unités systemd + timer). Les secrets restent absents pour garantir le mode `locked` par défaut.
+- Traefik for HTTPS ingress.
+- Keycloak for identity and OIDC.
+- OpenBao for secret management.
+- Harbor for registry and proxy-cache mirrors.
+- Gitea for Git hosting and validation workflows.
+- Cloudflare Tunnel for public ingress when enabled.
+- Pi-hole DNS integration for local records.
+- Restic backup and restore.
+- Host hardening, service validation, and lifecycle CI scenarios.
 
-## 4. Principe du secret zéro
-Le secret zéro est la clé privée age installée manuellement dans `/etc/sops/age/keys.txt` (0400 root:root).
-La procédure détaillée de génération, d'installation et de configuration SOPS est dans `docs/secret-zero.md`.
+## Why Use It
 
-## 5. Première installation
-1. Provisionner la VM avec `cloud-init/admin-01.user-data.yaml`.
-2. Le premier clone de ce dépôt dans `/opt/homelab-admin-node` est réalisé automatiquement par le cloud-init.
-3. Initialiser le dépôt de configuration privé dans `/etc/admin-config/homelab-node-admin-config` et déposer l’inventaire dans `hosts/inventory.ini`.
-4. Vérifier `/etc/admin-node/mode` = `locked`.
-5. Injecter la clé age via `bin/admin-node secret install-age-key`.
-6. Passer en mode `init` via `bin/admin-node mode set init`.
-7. Lancer `bin/admin-node converge run`.
+The project keeps the admin node reproducible and recoverable:
 
-## 6. Injection manuelle de la clé age
-Utiliser `sudo ./bin/admin-node secret install-age-key /path/to/age-key.txt`.
-Voir aussi `docs/secret-zero.md` pour la procédure complète.
+- Public code, roles, templates, and stacks live in this repository.
+- Private deployment values live in a separate private config repository.
+- Secrets are encrypted with SOPS and age.
+- The node starts in `locked` mode until the secret zero and config repo are present.
+- `admin-node converge run` applies the desired state consistently.
+- Backup, restore, validation, and disaster recovery are part of the normal workflow.
 
-## 7. Mode init
-Déploie les stacks, initialise OpenBao, configure DNS/Tunnel (ou mocks), valide APIs, exécute un premier backup.
+## Quick Start
 
-## 8. Initialisation OpenBao
-Lancer `bin/admin-node openbao init-if-needed` pour initialiser OpenBao et écrire les secrets chiffrés.
+1. Create a Proxmox VM from an Arch Linux cloud image.
+2. Attach `cloud-init/admin-01.user-data.yaml`.
+3. Boot the VM and wait for cloud-init to clone this repository into `/opt/homelab-admin-node`.
+4. Create a private config repository under `/etc/admin-config/homelab-node-admin-config`.
+5. Install the age private key with:
 
-## 9. Ajout des unseal keys dans SOPS
-Utiliser le format multi-keyset documenté dans `secrets/openbao-unseal.sops.yaml.example`.
+   ```bash
+   sudo /opt/homelab-admin-node/bin/admin-node secret install-age-key ./age-key.txt
+   ```
 
-## 10. Passage en mode normal
-`sudo ./bin/admin-node mode set normal && sudo ./bin/admin-node converge run`.
+6. Switch to init mode and converge:
 
-## 11. Configuration Traefik
-Voir `docs/traefik.md` et `stacks/traefik`.
+   ```bash
+   sudo /opt/homelab-admin-node/bin/admin-node mode set init
+   sudo /opt/homelab-admin-node/bin/admin-node converge run
+   ```
 
-## 12. Configuration Cloudflare Tunnel
-Voir `docs/cloudflare-tunnel.md` et `stacks/cloudflared/config.yml.tpl`.
+7. Switch to normal mode and validate:
 
-## 13. Configuration Pi-hole DNS local
-Voir `docs/pihole-dns.md` et rôle `ansible/roles/pihole_dns`.
+   ```bash
+   sudo /opt/homelab-admin-node/bin/admin-node mode set normal
+   sudo /opt/homelab-admin-node/bin/admin-node converge run
+   sudo /opt/homelab-admin-node/bin/admin-node validate all
+   ```
 
-## 13bis. Configuration SSO et rôles applicatifs
-- Keycloak (realm/roles/users/clients): rôle `ansible/roles/keycloak_config` via `keycloak_config.*`.
-- OpenBao (secret engines + auth OIDC): rôle `ansible/roles/openbao_config` via `openbao_config.*`.
-- Harbor (OIDC + registry mirrors proxy-cache): rôle `ansible/roles/harbor_config` via `harbor_config.*`.
-- Gitea (OIDC + dépôt/issue de validation): rôle `ansible/roles/gitea_config` via `gitea_config.*`; voir `docs/gitea.md`.
-- Les clients OIDC partagés (Harbor/OpenBao/Gitea) sont définis une seule fois via `oidc_clients.*` dans le config repo; voir `examples/admin-config/group_vars/` et `docs/config-repo.md`.
+The full Proxmox, config repo, secrets, deployment, and operations guides are in the documentation site.
 
-## 14. Backup
-`bin/admin-node backup run` vérifie santé APIs/DNS/tunnel puis applique rétention locale + restic.
-La configuration restic multi-destinations est documentée dans `docs/backup.md`.
-La CLI Go `admin-node` est documentée dans `docs/admin-node.md`.
+## Documentation
 
-## 15. Restore
-`bin/admin-node restore run` restaure fichiers + services, valide, bascule `mode` vers `normal` ou `restore_failed`.
+The Hugo/Docsy documentation source lives in `site/`.
+The published documentation is intended for GitHub Pages:
 
-## 16. Validation API
-`bin/admin-node validate apis|harbor|openbao|gitea|dns|tunnel|hardening|observability` exécute les validations opérationnelles.
-
-## 17. Hardening
-Le socle de durcissement est appliqué par Ansible: SSH par clé, root SSH désactivé, sudoers dédié, nftables en default deny entrant, journald persistant, auditd, fail2ban, sysctl et permissions sensibles.
-
-Validation locale:
+https://frantche.github.io/homelab-admin-node/
 
 ```bash
-make validate-hardening
+make docs-build
+make docs-serve
 ```
 
-La CI exécute aussi Lynis dans la VM Arch et publie le rapport en artifact `hardening-audit`.
-Voir `docs/hardening.md`.
+GitHub Pages is built from `main` by `.github/workflows/pages.yml`.
 
-## 17bis. Observabilité
-Le rôle `observability` déploie uniquement un OpenTelemetry Collector. Les backends restent externes: configurez `observability.metrics_endpoint` vers VictoriaMetrics et `observability.logs_endpoint` vers VictoriaLogs dans le config repo.
+## Development
 
-Validation locale:
+Useful checks:
 
 ```bash
-make validate-observability
-```
-
-## 18. Fonctionnement Renovate
-Renovate externe uniquement. Fichier local: `renovate.json`.
-
-## 19. Scénarios CI
-`fresh-branch`, `upgrade-main-to-branch`, `restore-main-backup-with-branch` (voir `ci/scenarios`).
-
-## 20. Procédure disaster recovery
-Voir `docs/restore-runbook.md`.
-
-## 21. Limitations connues
-Mocks CI par défaut pour Pi-hole et Cloudflare Tunnel si infra absente.
-
-## 22. Checklist finale
-- cloud-init minimal sans secret
-- modes `locked/init/normal/restore/restore_failed`
-- stacks Docker Compose et validations API/DNS/Tunnel
-- backup + restore + rétention 3 snapshots
-- hardening système validé par script + rapport Lynis CI
-
-## 23. Checklist hardening adaptée
-- OS Arch maintenu via paquets Ansible/cloud-init
-- Compte `admin` nominatif géré par cloud-init
-- Connexion root SSH désactivée
-- SSH par clé uniquement
-- sudo configuré via `/etc/sudoers.d/admin-node`
-- firewall nftables default deny entrant
-- ports attendus vérifiés: SSH `22/tcp`, HTTPS `443/tcp`, syslog Harbor local `127.0.0.1:1514`
-- fail2ban activé pour SSH
-- sysctl hardening appliqué
-- logs journald persistants
-- auditd installé et actif
-- backups/restores déjà couverts par les scénarios existants
-- secrets hors Git ou chiffrés SOPS/age
-- permissions fichiers sensibles vérifiées
-- timers systemd opérés par Ansible
-- scan Lynis exécuté en CI
-- documentation restore maintenue
-
-## 24. Dépôt de configuration séparé (config repo)
-Gérez votre configuration et vos secrets dans un dépôt Git **privé** séparé.
-Voir `docs/config-repo.md` pour la structure, la mise en place et l'utilisation avec `admin-node converge run`.
-
-```bash
-# inventaire utilisateur (exemple fourni dans ansible/inventory.ini)
-sudo install -D -m 0644 /opt/homelab-admin-node/ansible/inventory.ini /etc/admin-config/homelab-node-admin-config/hosts/inventory.ini
-sudo ./bin/admin-node converge run
-```
-
-## Commandes
-```bash
+make build-admin-node
 make lint
-make ansible-syntax
-make shellcheck
 make validate
-make validate-hardening
-make validate-apis
-make validate-dns
-make validate-cloudflare-tunnel
 make test-ci-fast
 ```
+
+Some targets require local tools such as Ansible, ShellCheck, SOPS, Docker, QEMU, or Hugo.

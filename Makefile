@@ -61,8 +61,39 @@ test-ci-full:
 render:
 	@echo "Render is managed by Ansible templates/tasks"
 
-docs:
-	@echo "Documentation is in README.md and docs/*.md"
+docs: docs-build
+
+docs-deps:
+	@if command -v npm >/dev/null 2>&1; then \
+		cd site && npm ci; \
+	else \
+		echo "npm not installed"; \
+		exit 1; \
+	fi
+
+docs-build: docs-deps
+	@if command -v hugo >/dev/null 2>&1; then \
+		cd site && hugo --minify; \
+	else \
+		echo "hugo not installed"; \
+		exit 1; \
+	fi
+
+docs-check: docs-deps
+	@if command -v hugo >/dev/null 2>&1; then \
+		cd site && hugo --minify --panicOnWarning --printPathWarnings; \
+	else \
+		echo "hugo not installed"; \
+		exit 1; \
+	fi
+
+docs-serve: docs-deps
+	@if command -v hugo >/dev/null 2>&1; then \
+		cd site && hugo server --bind 127.0.0.1 --baseURL http://127.0.0.1:1313/; \
+	else \
+		echo "hugo not installed"; \
+		exit 1; \
+	fi
 
 shellcheck:
 	@if command -v shellcheck >/dev/null 2>&1; then \
