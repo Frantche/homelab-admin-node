@@ -1,0 +1,39 @@
+baseURL: "https://frantche.github.io/homelab-admin-node/"
+title: "homelab-admin-node"
+
+contentDir: content/en
+defaultContentLanguage: en
+enableRobotsTXT: true
+enableGitInfo: true
+
+module:
+  imports:
+    - path: github.com/google/docsy
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+  highlight:
+    style: github
+    noClasses: false
+
+params:
+  copyright: "Frantche"
+  github_repo: "https://github.com/Frantche/homelab-admin-node"
+  offlineSearch: true
+  ui:
+    breadcrumb_disable: false
+    footer_about_enable: false
+    navbar_logo: true
+    sidebar_menu_compact: false
+    sidebar_search_disable: false
+
+menu:
+  main:
+    - name: Documentation
+      url: /docs/
+      weight: 10
+    - name: GitHub
+      url: https://github.com/Frantche/homelab-admin-node
+      weight: 20

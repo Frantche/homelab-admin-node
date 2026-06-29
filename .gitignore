@@ -26,6 +26,8 @@ ci/.tmp/
 __pycache__/
 ci/__pycache__/
 node_modules/
+site/public/
+site/resources/
 playwright-report/
 test-results/
 
