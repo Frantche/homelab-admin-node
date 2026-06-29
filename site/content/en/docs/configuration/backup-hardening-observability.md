@@ -7,6 +7,8 @@ weight: 40
 
 Backups use restic repositories configured in encrypted secrets.
 
+Reference: [restic documentation](https://restic.readthedocs.io/en/stable/).
+
 ```yaml
 backup:
   restic_default_forget_args: "--keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune"
@@ -18,6 +20,23 @@ backup:
 ```
 
 Repositories can be local, SFTP, S3, or any restic-supported backend.
+
+| Variable | Default/example | Purpose |
+| --- | --- | --- |
+| `backup.restic_repositories[]` | derived from legacy single-repository settings when unset | List of restic repositories to use. |
+| `backup.restic_repositories[].name` | required | Logical repository name. |
+| `backup.restic_repositories[].repository` | required | Restic repository URL/path. |
+| `backup.restic_repositories[].password` | required | Restic password. Store encrypted. |
+| `backup.restic_repositories[].forget_args` | `backup.restic_default_forget_args` | Per-repository retention arguments. |
+| `backup.restic_repositories[].options` | unset | Extra restic CLI options applied to backup, init, and forget commands for that repository. |
+| `backup.restic_repositories[].env` | `{}` | Backend-specific environment variables such as S3 credentials. Store sensitive values encrypted. |
+| `backup.restic_repository` | unset | Legacy single repository URL used when `restic_repositories` is absent. |
+| `backup.restic_password` | unset | Legacy single repository password. Store encrypted. |
+| `backup.restic_forget_args` | `--keep-last 3 --prune` | Legacy single repository retention arguments. |
+| `backup.restic_default_forget_args` | `--keep-last 3 --prune` | Default retention arguments for repositories. |
+| `backup.restic_init_repositories` | `false` | Initializes repositories before backup when enabled. |
+| `backup.restic_require_secure_repositories` | `true` | Rejects insecure repository declarations when enabled. |
+| `backup.restic_backup_paths` | tool default | Optional explicit backup path list passed to the backup environment. |
 
 ## Hardening
 
@@ -45,9 +64,30 @@ hardening:
 
 The role manages SSH hardening, sudoers, nftables, journald persistence, auditd, fail2ban, sysctl settings, sensitive file permissions, and optional AppArmor profiles.
 
+Reference: [Docker Compose documentation](https://docs.docker.com/compose/) for container runtime declarations affected by hardening profiles.
+
+| Variable | Default/example | Purpose |
+| --- | --- | --- |
+| `hardening.enabled` | `true` | Enables the hardening role. |
+| `hardening.ssh.allow_users[]` | `["admin"]` | Users allowed by the managed SSH drop-in. |
+| `hardening.sudo.nopasswd` | `true` | Controls passwordless sudo for the wheel group. |
+| `hardening.firewall.ssh_allowed_cidrs[]` | `["0.0.0.0/0", "::/0"]` | CIDRs allowed to reach SSH in nftables. |
+| `hardening.firewall.https_allowed_cidrs[]` | `["0.0.0.0/0", "::/0"]` | CIDRs allowed to reach HTTPS in nftables. |
+| `hardening.fail2ban.enabled` | `true` | Installs and enables fail2ban SSH protection. |
+| `hardening.auditd.enabled` | `true` | Installs auditd and deploys admin-node audit rules. |
+| `hardening.apparmor.enabled` | `true` | Installs and configures AppArmor support. |
+| `hardening.apparmor.enforce` | `true` | Loads enabled profiles in enforce mode when runtime support is active. |
+| `hardening.apparmor.auto_reboot` | `true` | Allows the role to request a reboot when AppArmor needs kernel activation. |
+| `hardening.apparmor.profiles.traefik` | `true` | Enables the Traefik AppArmor profile. |
+| `hardening.apparmor.profiles.cloudflared` | `true` | Enables the cloudflared AppArmor profile. |
+| `hardening.apparmor.profiles.openbao` | `true` | Enables the OpenBao AppArmor profile. |
+| `hardening.lynis.enabled` | `true` | Enables Lynis-related hardening checks/configuration. |
+
 ## Observability
 
 The observability role deploys an OpenTelemetry Collector. Backends remain external.
+
+Reference: [OpenTelemetry Collector documentation](https://opentelemetry.io/docs/collector/).
 
 ```yaml
 observability:
@@ -56,3 +96,12 @@ observability:
   logs_endpoint: "http://victorialogs.example.net:9428/insert/opentelemetry/v1/logs"
   collection_interval: "30s"
 ```
+
+| Variable | Default/example | Purpose |
+| --- | --- | --- |
+| `observability.enabled` | `false` | Deploys the OpenTelemetry Collector stack when enabled. |
+| `observability.metrics_endpoint` | example VictoriaMetrics OTLP URL | Required when enabled. OTLP HTTP metrics destination. |
+| `observability.logs_endpoint` | example VictoriaLogs OTLP URL | Required when enabled. OTLP HTTP logs destination. |
+| `observability.collection_interval` | `30s` | Collector scrape/collection interval. |
+| `observability.docker_api_version` | `1.40` | Docker API version used by the collector configuration. |
+| `observability.expose_host_ports` | `false` | Exposes collector ports on the host when enabled. |
