@@ -1,0 +1,54 @@
+name: grafana-dashboard-import
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/grafana-dashboard-import.yml
+      - ci/test-grafana-dashboard-import.sh
+      - docs/observability.md
+      - site/content/en/docs/configuration/backup-hardening-observability.md
+      - stacks/observability/grafana/dashboards/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  import:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    env:
+      GRAFANA_URL: http://127.0.0.1:3000
+      GRAFANA_USER: admin
+      GRAFANA_PASSWORD: admin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate dashboard JSON
+        run: |
+          find stacks/observability/grafana/dashboards \
+            -maxdepth 1 \
+            -type f \
+            -name '*.json' \
+            -print \
+            -exec jq empty {} \;
+
+      - name: Start Grafana
+        run: |
+          docker run -d \
+            --name grafana-dashboard-import-test \
+            -p 127.0.0.1:3000:3000 \
+            -e GF_SECURITY_ADMIN_USER="${GRAFANA_USER}" \
+            -e GF_SECURITY_ADMIN_PASSWORD="${GRAFANA_PASSWORD}" \
+            -e GF_AUTH_ANONYMOUS_ENABLED=false \
+            grafana/grafana:11.6.0
+
+      - name: Import dashboards
+        run: ./ci/test-grafana-dashboard-import.sh
+
+      - name: Show Grafana logs on failure
+        if: failure()
+        run: docker logs grafana-dashboard-import-test || true
