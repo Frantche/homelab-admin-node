@@ -52,4 +52,4 @@ service_domains:
 | `ci.mock_cloudflare_tunnel` | `true` | Allows Cloudflare Tunnel validation to run without a real tunnel. |
 | `ci.skip_public_url_validation` | `true` | Skips public URL validation in CI-oriented runs. |
 
-Secrets should be placed in `group_vars/secrets.sops.yaml`, not in `group_vars/all.yml`.
+Secrets should be placed in the environment secrets file, such as `di/group_vars/secrets.sops.yaml` or `pr/group_vars/secrets.sops.yaml`, not in `di/group_vars/all.yml` or `pr/group_vars/all.yml`.

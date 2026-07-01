@@ -10,8 +10,10 @@ Reference: [SOPS documentation](https://getsops.io/docs/).
 Use:
 
 ```text
-/etc/admin-config/homelab-node-admin-config/group_vars/secrets.sops.yaml
+/etc/admin-config/homelab-node-admin-config/di/group_vars/secrets.sops.yaml
 ```
+
+Use `pr/group_vars/secrets.sops.yaml` for the `pr` environment. The active file is selected by the inventory path used for convergence.
 
 Typical secret groups are:
 
@@ -46,20 +48,28 @@ Typical secret groups are:
 | `backup.restic_repositories[].env` | Backend-specific environment variables such as S3 credentials. |
 | `observability.*` | Optional credentials or endpoint-specific values if telemetry backends require them. |
 
-Some examples also show `keycloak_config`, `harbor_config`, and `openbao_config` in the secrets file when they contain secret material. Prefer keeping non-secret configuration in `group_vars/all.yml` and only secret values in `group_vars/secrets.sops.yaml`.
+Some examples also show `keycloak_config`, `harbor_config`, and `openbao_config` in the secrets file when they contain secret material. Prefer keeping non-secret configuration in the active environment `group_vars/all.yml` and only secret values in the matching `secrets.sops.yaml`.
 
 Edit secrets with:
 
 ```bash
-sops group_vars/secrets.sops.yaml
+sops di/group_vars/secrets.sops.yaml
 ```
 
 Then commit the encrypted file:
 
 ```bash
-git add group_vars/secrets.sops.yaml
+git add di/group_vars/secrets.sops.yaml
 git commit -m "update admin-node secrets"
 git push
 ```
 
 Never commit unencrypted secret files, `age-key.txt`, `/etc/sops/age/keys.txt`, tokens, or provider credentials.
+
+## Before and after OpenBao initialization
+
+Before the first OpenBao initialization, keep generated OpenBao values empty or absent in the encrypted config repo. Application and provider secrets can already be present because the node needs them during convergence.
+
+After `admin-node openbao init-if-needed` succeeds, update the encrypted environment secrets with the generated OpenBao root token values consumed by the OpenBao configuration role. Commit and push only the SOPS-encrypted file.
+
+The local OpenBao unseal material is recovery material, not normal deployment configuration. Store a secure offline copy and do not commit decrypted tokens or unseal keys.
