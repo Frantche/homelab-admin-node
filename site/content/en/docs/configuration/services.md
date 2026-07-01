@@ -53,7 +53,7 @@ Store the Pi-hole API token in encrypted secrets.
 | `pihole.api_url` | `http://pihole.local` | Base URL used for Pi-hole API calls. |
 | `pihole.dns_records[].name` | `harbor.example.com` | DNS name to create or validate. |
 | `pihole.dns_records[].ip` | `{{ admin_node_lan_ip }}` | Target IP for the DNS record. |
-| `pihole.api_token` | secret | API token stored in `group_vars/secrets.sops.yaml`. |
+| `pihole.api_token` | secret | API token stored in the active environment secrets file, such as `di/group_vars/secrets.sops.yaml`. |
 
 ## Cloudflare Tunnel
 

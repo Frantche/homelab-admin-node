@@ -8,7 +8,7 @@ Security expectations:
 - Never commit the age private key.
 - Never commit unencrypted production secrets.
 - Keep the config repo private.
-- Store `group_vars/secrets.sops.yaml` encrypted with SOPS.
+- Store environment secrets such as `di/group_vars/secrets.sops.yaml` and `pr/group_vars/secrets.sops.yaml` encrypted with SOPS.
 - Keep cloud-init user-data free of production secrets.
 - Review changes to hardening, firewall, backup, restore, and OIDC configuration carefully.
 

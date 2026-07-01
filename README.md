@@ -32,21 +32,29 @@ The project keeps the admin node reproducible and recoverable:
 1. Create a Proxmox VM from an Arch Linux cloud image.
 2. Attach `cloud-init/admin-01.user-data.yaml`.
 3. Boot the VM and wait for cloud-init to clone this repository into `/opt/homelab-admin-node`.
-4. Create a private config repository under `/etc/admin-config/homelab-node-admin-config`.
+4. Create or clone the private config repository under `/etc/admin-config/homelab-node-admin-config`.
+   The current layout uses `di/` and `pr/`; the VM selects `di` with:
+
+   ```text
+   INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/di/inventory.ini
+   ```
+
 5. Install the age private key with:
 
    ```bash
    sudo /opt/homelab-admin-node/bin/admin-node secret install-age-key ./age-key.txt
    ```
 
-6. Switch to init mode and converge:
+6. Switch to init mode, converge, then initialize OpenBao if needed:
 
    ```bash
    sudo /opt/homelab-admin-node/bin/admin-node mode set init
    sudo /opt/homelab-admin-node/bin/admin-node converge run
+   sudo /opt/homelab-admin-node/bin/admin-node openbao init-if-needed
    ```
 
-7. Switch to normal mode and validate:
+7. Commit the generated or updated encrypted secrets to the private config repo.
+8. Switch to normal mode and validate:
 
    ```bash
    sudo /opt/homelab-admin-node/bin/admin-node mode set normal

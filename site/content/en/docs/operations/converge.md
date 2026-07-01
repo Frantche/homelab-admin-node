@@ -31,8 +31,33 @@ Pass extra Ansible arguments:
 sudo /opt/homelab-admin-node/bin/admin-node converge run --extra-vars "--check"
 ```
 
-The default inventory path is:
+The built-in legacy inventory path is:
 
 ```text
 /etc/admin-config/homelab-node-admin-config/hosts/inventory.ini
+```
+
+For real deployments with the split `di` and `pr` config repo, set `INVENTORY_PATH` explicitly instead of relying on the legacy path. The current VM uses:
+
+```text
+/etc/admin-config/homelab-node-admin-config/di/inventory.ini
+```
+
+For boot and timer runs, keep that setting in a systemd drop-in:
+
+```ini
+[Service]
+Environment=INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/di/inventory.ini
+Environment=HARBOR_DOMAIN=harbor.example.com
+Environment=OPENBAO_DOMAIN=bao.example.com
+Environment=KEYCLOAK_DOMAIN=keycloak.example.com
+Environment=GITEA_DOMAIN=git.example.com
+Environment=TRAEFIK_DOMAIN=traefik.example.com
+Environment=ADMIN_NODE_LAN_IP=192.0.2.10
+```
+
+When the code repository is already on the intended commit, or root cannot fetch the code repository, use:
+
+```bash
+sudo /opt/homelab-admin-node/bin/admin-node converge run --skip-git-pull
 ```
