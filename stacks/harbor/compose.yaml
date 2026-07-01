@@ -115,7 +115,7 @@ services:
       - admin-net
 
   harbor-registryctl:
-    image: goharbor/harbor-registryctl:v2.15.1
+    image: goharbor/harbor-registryctl:v2.15.2
     container_name: harbor-registryctl
     restart: unless-stopped
     cap_drop:
