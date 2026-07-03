@@ -67,7 +67,7 @@ bin/admin-node converge run --skip-git-pull --extra-vars "-e admin_ci_disable_au
 bin/admin-node secret install-age-key /path/to/age-key.txt
 ```
 
-`converge run` prend le lock `/run/admin-converge.lock`, exécute `git pull --ff-only` sauf option contraire, puis lance `ansible-playbook`.
+`converge run` prend le lock `/run/admin-converge.lock`, vérifie les commits distants puis exécute `git pull --ff-only` si nécessaire sur le dépôt applicatif et sur le dépôt Git contenant l'inventaire, sauf option contraire. Il lance ensuite `ansible-playbook`.
 
 ## OpenBao
 

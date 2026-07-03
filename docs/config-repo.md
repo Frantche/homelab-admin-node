@@ -197,10 +197,12 @@ git push -u origin main
 
 ## Utilisation avec admin-node converge
 
-Le premier `git clone` du dépôt `homelab-admin-node` est réalisé par cloud-init dans `/opt/homelab-admin-node`.  
-`bin/admin-node converge run` exécute ensuite `git pull --ff-only` sur ce dépôt avant chaque convergence. Apres la synchronisation Ansible, le role `base` appelle `scripts/build-admin-node.sh`: le binaire Go est reconstruit uniquement si les sources Go ont change.
+Le premier `git clone` du dépôt `homelab-admin-node` est réalisé par cloud-init dans `/opt/homelab-admin-node`.
+`bin/admin-node converge run` vérifie ensuite les commits distants et exécute `git pull --ff-only` si nécessaire sur ce dépôt avant chaque convergence. Si l'inventaire est dans un dépôt Git avec une branche qui suit un upstream, la même vérification est faite sur ce config repo avant de lancer Ansible. Apres la synchronisation Ansible, le role `base` appelle `scripts/build-admin-node.sh`: le binaire Go est reconstruit uniquement si les sources Go ont change.
 
 ### 1. Mettre à jour le config repo via git CLI (optionnel)
+
+Cette étape est seulement utile pour une vérification manuelle: `admin-node converge run` met aussi à jour le dépôt qui contient l'inventaire quand il est sur une branche avec upstream.
 
 ```bash
 git -C /etc/admin-config/homelab-node-admin-config pull --ff-only
@@ -223,11 +225,12 @@ sudo ./bin/admin-node converge run
 
 `admin-node converge run` :
 
-1. Met à jour `/opt/homelab-admin-node` via `git pull --ff-only`
-2. Vérifie la présence du playbook local `/opt/homelab-admin-node/ansible/site.yml`
-3. Vérifie la présence de l'inventaire utilisateur `/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini`
-4. Exécute `ansible-playbook -i /etc/admin-config/homelab-node-admin-config/hosts/inventory.ini /opt/homelab-admin-node/ansible/site.yml`
-5. Pendant le role `base`, maintient `bin/admin-node` a jour via un build local conditionnel; `bin/admin-node` et `bin/admin-node.source.sha256` ne sont pas versionnes.
+1. Met à jour `/opt/homelab-admin-node` via `git pull --ff-only` si le dépôt est en retard
+2. Résout le dépôt Git qui contient l'inventaire utilisateur et le met à jour via `git pull --ff-only` si un upstream contient de nouveaux commits
+3. Vérifie la présence du playbook local `/opt/homelab-admin-node/ansible/site.yml`
+4. Vérifie la présence de l'inventaire utilisateur `/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini`
+5. Exécute `ansible-playbook -i /etc/admin-config/homelab-node-admin-config/hosts/inventory.ini /opt/homelab-admin-node/ansible/site.yml`
+6. Pendant le role `base`, maintient `bin/admin-node` a jour via un build local conditionnel; `bin/admin-node` et `bin/admin-node.source.sha256` ne sont pas versionnes.
 
 ## Modifier les secrets
 
