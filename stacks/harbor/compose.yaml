@@ -1,6 +1,6 @@
 services:
   harbor-log:
-    image: goharbor/harbor-log:v2.15.1
+    image: goharbor/harbor-log:v2.15.2
     container_name: harbor-log
     restart: unless-stopped
     cap_drop:
@@ -88,7 +88,7 @@ services:
       - admin-net
 
   harbor-registry:
-    image: goharbor/registry-photon:v2.15.1
+    image: goharbor/registry-photon:v2.15.2
     container_name: harbor-registry
     restart: unless-stopped
     cap_drop:
@@ -144,7 +144,7 @@ services:
       - admin-net
 
   harbor-core:
-    image: goharbor/harbor-core:v2.15.1
+    image: goharbor/harbor-core:v2.15.2
     container_name: harbor-core
     restart: unless-stopped
     cap_drop:
@@ -217,7 +217,7 @@ services:
       - admin-net
 
   harbor-portal:
-    image: goharbor/harbor-portal:v2.15.1
+    image: goharbor/harbor-portal:v2.15.2
     container_name: harbor-portal
     restart: unless-stopped
     cap_drop:
@@ -241,7 +241,7 @@ services:
       - admin-net
 
   harbor-jobservice:
-    image: goharbor/harbor-jobservice:v2.15.1
+    image: goharbor/harbor-jobservice:v2.15.2
     container_name: harbor-jobservice
     restart: unless-stopped
     cap_drop:
@@ -281,7 +281,7 @@ services:
       - admin-net
 
   harbor-trivy:
-    image: goharbor/trivy-adapter-photon:v2.15.1
+    image: goharbor/trivy-adapter-photon:v2.15.2
     container_name: harbor-trivy
     restart: unless-stopped
     cap_drop:
@@ -325,7 +325,7 @@ services:
       - admin-net
 
   harbor-exporter:
-    image: goharbor/harbor-exporter:v2.15.1
+    image: goharbor/harbor-exporter:v2.15.2
     container_name: harbor-exporter
     restart: unless-stopped
     environment:
@@ -367,7 +367,7 @@ services:
       - admin-net
 
   harbor-nginx:
-    image: goharbor/nginx-photon:v2.15.1
+    image: goharbor/nginx-photon:v2.15.2
     container_name: harbor-nginx
     restart: unless-stopped
     cap_drop:
