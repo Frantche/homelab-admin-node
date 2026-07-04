@@ -150,6 +150,34 @@
   when: not (harbor_test_mode | default(false))
   no_log: true
 
+- name: Ensure Harbor database container is running
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up -d harbor-db
+  args:
+    chdir: "{{ admin_node_root }}/stacks/harbor"
+  changed_when: false
+  when: not (harbor_test_mode | default(false))
+
+- name: Wait for Harbor database readiness
+  ansible.builtin.command: docker exec harbor-db pg_isready -U postgres -d registry
+  register: harbor_db_readiness
+  until: harbor_db_readiness.rc == 0
+  retries: 30
+  delay: 2
+  changed_when: false
+  when: not (harbor_test_mode | default(false))
+
+- name: Align Harbor database password with inventory secret
+  ansible.builtin.shell: |
+    set -euo pipefail
+    docker exec -i -e HARBOR_DB_PASSWORD="{{ harbor_runtime.db_password }}" harbor-db sh -c 'psql -U postgres -d registry -v ON_ERROR_STOP=1 -v pw="$HARBOR_DB_PASSWORD"' <<'SQL'
+    ALTER USER postgres WITH PASSWORD :'pw';
+    SQL
+  args:
+    executable: /bin/bash
+  changed_when: false
+  when: not (harbor_test_mode | default(false))
+  no_log: true
+
 - name: Start harbor stack
   ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up -d
   args:
