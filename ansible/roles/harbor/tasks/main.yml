@@ -50,6 +50,15 @@
     - "{{ admin_node_root }}/data/harbor/trivy-adapter/reports"
   when: not (harbor_test_mode | default(false))
 
+- name: Ensure Harbor Redis data directory permissions
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/data/harbor/redis"
+    state: directory
+    owner: "999"
+    group: "999"
+    mode: "0755"
+  when: not (harbor_test_mode | default(false))
+
 - name: Generate Harbor core secret key
   ansible.builtin.shell:
     cmd: "openssl rand -hex 16 | tr -d '\n' > {{ admin_node_root }}/data/harbor/core/secretkey"
@@ -143,6 +152,13 @@
 
 - name: Start harbor stack
   ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up -d
+  args:
+    chdir: "{{ admin_node_root }}/stacks/harbor"
+  changed_when: true
+  when: not (harbor_test_mode | default(false))
+
+- name: Reload Harbor nginx upstream resolution
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml restart harbor-nginx
   args:
     chdir: "{{ admin_node_root }}/stacks/harbor"
   changed_when: true
