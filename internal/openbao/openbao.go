@@ -32,15 +32,16 @@ func InitIfNeeded(ctx context.Context, opts Options) error {
 	if _, err := os.Stat(opts.AgeKey); err != nil {
 		return fmt.Errorf("missing age private key at %s", opts.AgeKey)
 	}
-	if _, err := os.Stat(opts.SecretsFile); err == nil {
-		fmt.Printf("OpenBao unseal secrets already exist: %s\n", opts.SecretsFile)
-		return nil
-	}
 	st, err := waitStatus(ctx, opts.Container)
 	if err != nil {
 		return err
 	}
+	secretsExist := fileExists(opts.SecretsFile)
 	if st.Initialized {
+		if secretsExist {
+			fmt.Printf("OpenBao unseal secrets already exist: %s\n", opts.SecretsFile)
+			return nil
+		}
 		return fmt.Errorf("OpenBao is already initialized but %s is missing", opts.SecretsFile)
 	}
 	initJSON, err := dockerOutput(ctx, opts.Container, "bao", "operator", "init", "-key-shares=5", "-key-threshold=3", "-format=json")
@@ -68,6 +69,13 @@ func InitIfNeeded(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	if secretsExist {
+		backupPath, err := backupExistingFile(opts.SecretsFile)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("[openbao-init] backed up existing unseal secrets to %s\n", backupPath)
+	}
 	if err := os.WriteFile(opts.SecretsFile, encrypted, 0o600); err != nil {
 		return err
 	}
@@ -78,6 +86,18 @@ func InitIfNeeded(ctx context.Context, opts Options) error {
 	}
 	fmt.Printf("[openbao-init] wrote encrypted unseal secrets to %s\n", opts.SecretsFile)
 	return nil
+}
+
+func backupExistingFile(path string) (string, error) {
+	input, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	backupPath := fmt.Sprintf("%s.preinit-backup-%s", path, time.Now().UTC().Format("20060102-150405"))
+	if err := os.WriteFile(backupPath, input, 0o600); err != nil {
+		return "", err
+	}
+	return backupPath, nil
 }
 
 func Unseal(ctx context.Context, opts Options) error {
@@ -179,6 +199,11 @@ func rootToken(opts Options) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("OPENBAO_TOKEN or --token-file is required")
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func defaults(opts Options) Options {

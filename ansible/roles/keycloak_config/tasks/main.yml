@@ -2,6 +2,7 @@
 - name: Set Keycloak connection facts
   ansible.builtin.set_fact:
     keycloak_realm_cfg: "{{ keycloak_config.realm }}"
+    keycloak_config_validate_certs: "{{ keycloak_config.validate_certs | default(not (ci_mode | default(false))) }}"
     keycloak_manage_harbor_oidc_client: "{{ (harbor_config.enabled | default(false)) and (harbor_config.oidc.enabled | default(false)) }}"
     keycloak_manage_openbao_oidc_client: "{{ (openbao_config.enabled | default(false)) and (openbao_config.oidc.enabled | default(false)) }}"
     keycloak_manage_gitea_oidc_client: "{{ (gitea_config.enabled | default(false)) and (gitea_config.oidc.enabled | default(false)) }}"
