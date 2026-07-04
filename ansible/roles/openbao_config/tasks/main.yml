@@ -1,7 +1,34 @@
 ---
+- name: Check generated OpenBao unseal secrets
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/../secrets/openbao-unseal.sops.yaml"
+  register: openbao_generated_secrets_file
+  no_log: true
+
+- name: Decrypt generated OpenBao unseal secrets
+  ansible.builtin.command: sops --decrypt --output-type json {{ playbook_dir }}/../secrets/openbao-unseal.sops.yaml
+  environment:
+    SOPS_AGE_KEY_FILE: /etc/sops/age/keys.txt
+  register: openbao_generated_secrets
+  changed_when: false
+  when: openbao_generated_secrets_file.stat.exists
+  no_log: true
+
+- name: Merge generated OpenBao unseal secrets
+  ansible.builtin.set_fact:
+    openbao: "{{ openbao | default({}) | combine(decrypted_openbao_generated_secrets.openbao | default({}), recursive=True) }}"
+    openbao_config: "{{ openbao_config | default({}) | combine(decrypted_openbao_generated_secrets.openbao_config | default({}), recursive=True) }}"
+  vars:
+    decrypted_openbao_generated_secrets: "{{ openbao_generated_secrets.stdout | from_json }}"
+  when:
+    - openbao_generated_secrets is defined
+    - not (openbao_generated_secrets is skipped)
+  no_log: true
+
 - name: Build OpenBao config token fact
   ansible.builtin.set_fact:
     openbao_config_token: "{{ openbao.root_token | default('', true) if (openbao.root_token | default('', true) | length > 0) else (openbao_config.root_token | default('', true)) }}"
+    openbao_config_validate_certs: "{{ openbao_config.validate_certs | default(not (ci_mode | default(false))) }}"
   no_log: true
 
 - name: Fail when OpenBao config is enabled without root token

@@ -88,7 +88,7 @@
     - role: openbao
       when: admin_mode != 'locked'
     - role: openbao_config
-      when: admin_mode == 'normal' and (openbao_config.enabled | default(false))
+      when: admin_mode != 'locked' and (openbao_config.enabled | default(false))
     - role: keycloak
       when: admin_mode != 'locked'
     - role: gitea
@@ -106,6 +106,6 @@
     - role: pihole_dns
       when: admin_mode != 'locked' and not (ci_mode | default(false)) and ((pihole.enabled | default(true)) | bool)
     - role: validate_apis
-      when: admin_mode == 'normal'
+      when: admin_mode != 'locked'
     - role: backup
       when: admin_mode == 'normal'

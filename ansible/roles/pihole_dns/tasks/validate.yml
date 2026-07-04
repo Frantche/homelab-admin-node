@@ -1,10 +1,10 @@
 ---
 - name: Validate Pi-hole API reachability
   ansible.builtin.uri:
-    url: "{{ pihole.api_url }}"
+    url: "{{ pihole_api_url }}/{{ 'api/auth' if pihole_api_version_effective == 'v6' else 'admin/api.php' }}"
     method: GET
-    status_code: 200
-    validate_certs: false
+    status_code: "{{ [200, 401] if pihole_api_version_effective == 'v6' else 200 }}"
+    validate_certs: "{{ pihole_api_validate_certs }}"
 
 - name: Validate DNS resolution for configured records
   ansible.builtin.command: getent ahostsv4 {{ item.name }}
