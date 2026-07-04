@@ -158,10 +158,18 @@ Reference: [OpenBao documentation](https://openbao.org/docs/).
 ```yaml
 openbao_config:
   enabled: true
+  secret_engines:
+    - path: "secret"
+      type: "kv-v2"
   oidc:
     enabled: true
     discovery_url: "https://keycloak.example.com/realms/homelab"
     default_role: "default"
+    roles:
+      - name: "admin"
+        group: "admin"
+        secret_engines:
+          - "secret"
 ```
 
 | Variable | Default/example | Purpose |
@@ -179,7 +187,11 @@ openbao_config:
 | `openbao_config.oidc.role.groups_claim` | `groups` | Claim used for groups. |
 | `openbao_config.oidc.role.allowed_redirect_uris` | `[]` | Allowed OIDC callback URLs. |
 | `openbao_config.oidc.role.bound_audiences` | `[]` | Accepted token audiences. |
-| `openbao_config.oidc.role.policies` | `["default"]` | Policies attached to authenticated users. |
+| `openbao_config.oidc.role.policies` | ignored | Legacy field. The default OIDC role is always limited to `["default"]`. |
+| `openbao_config.oidc.roles[]` | `[]` | Explicit OIDC roles that grant access to KV-v2 secret engines. Each item requires `name`, `group`, and `secret_engines`. |
+| `openbao_config.oidc.roles[].name` | example: `admin` | OpenBao OIDC role name and suffix for the generated `oidc-<name>` ACL policy. |
+| `openbao_config.oidc.roles[].group` | example: `admin` | Required OIDC `groups` claim value for the role. |
+| `openbao_config.oidc.roles[].secret_engines[]` | example: `secret` | KV-v2 secret engine paths to administer. Paths are normalized with a trailing slash and must exist in `openbao_config.secret_engines`. |
 | `openbao_config_url` | `https://{{ service_domains.openbao }}` | Role default for the OpenBao API base URL. |
 | `openbao_config_validate_certs` | `false` | TLS certificate validation setting for OpenBao configuration API calls. |
 
