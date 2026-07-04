@@ -127,6 +127,7 @@ gitea_config:
     name: "keycloak"
     discovery_url: "https://{{ service_domains.keycloak }}/realms/{{ keycloak_config.realm.name }}/.well-known/openid-configuration"
     scopes: "openid email profile"
+    user_sync_enabled: false
   validation:
     repo: "admin-node-validation"
     issue_title: "Backup restore sentinel"
