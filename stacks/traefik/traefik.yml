@@ -4,9 +4,9 @@ entryPoints:
     address: ":8082"
   websecure:
     address: ":443"
+{% if traefik_letsencrypt_enabled %}
     http:
       tls:
-{% if traefik_letsencrypt_enabled %}
         certResolver: letsencrypt
 {% endif %}
 api:

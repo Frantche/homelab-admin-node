@@ -130,6 +130,14 @@
     - registryctl.yml
   when: not (harbor_test_mode | default(false))
 
+- name: Render Harbor registry config
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../stacks/harbor/config/registry.yml"
+    dest: "{{ admin_node_root }}/stacks/harbor/config/registry.yml"
+    mode: "0644"
+  register: harbor_registry_config_render
+  when: not (harbor_test_mode | default(false))
+
 - name: Render harbor compose
   ansible.builtin.template:
     src: "{{ playbook_dir }}/../stacks/harbor/compose.yaml"
@@ -184,6 +192,15 @@
     chdir: "{{ admin_node_root }}/stacks/harbor"
   changed_when: true
   when: not (harbor_test_mode | default(false))
+
+- name: Recreate Harbor registry services after config render
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up -d --force-recreate harbor-registry harbor-registryctl
+  args:
+    chdir: "{{ admin_node_root }}/stacks/harbor"
+  changed_when: true
+  when:
+    - not (harbor_test_mode | default(false))
+    - harbor_registry_config_render.changed
 
 - name: Reload Harbor nginx upstream resolution
   ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml restart harbor-nginx

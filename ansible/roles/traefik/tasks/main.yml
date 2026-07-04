@@ -211,6 +211,34 @@
     - traefik_update_ca_certificates.rc == 0
     - traefik_local_ca_certificate_anchor.changed
 
+- name: Ensure Docker trust directory for Harbor local CA
+  ansible.builtin.file:
+    path: "/etc/docker/certs.d/{{ service_domains.harbor }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: not traefik_letsencrypt_enabled
+
+- name: Install local CA for Docker Harbor registry trust
+  ansible.builtin.copy:
+    src: "{{ admin_node_root }}/certs/ca.pem"
+    dest: "/etc/docker/certs.d/{{ service_domains.harbor }}/ca.crt"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  register: traefik_docker_harbor_ca
+  when: not traefik_letsencrypt_enabled
+
+- name: Restart Docker after Harbor registry CA changes
+  ansible.builtin.service:
+    name: docker
+    state: restarted
+  when:
+    - not traefik_letsencrypt_enabled
+    - traefik_docker_harbor_ca.changed
+
 - name: Render traefik static config (production)
   ansible.builtin.template:
     src: "{{ playbook_dir }}/../stacks/traefik/traefik.yml"
