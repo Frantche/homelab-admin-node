@@ -1,8 +1,13 @@
 ---
 - name: Compute Traefik TLS mode
   ansible.builtin.set_fact:
-    traefik_letsencrypt_enabled: "{{ (not (ci_mode | default(false))) and (not (traefik.local_tls_enabled | default(false))) and ((cloudflare.dns_api_token | default('') | length) > 0) and ((acme_email | default('') | length) > 0) }}"
-    traefik_local_ca_enabled: "{{ (ci_mode | default(false)) or (traefik.local_tls_enabled | default(false)) or ((cloudflare.dns_api_token | default('') | length) == 0) or ((acme_email | default('') | length) == 0) }}"
+    traefik_letsencrypt_enabled: "{{ (not (ci_mode | default(false))) and (not (traefik.local_tls_enabled | default(false))) and ((cloudflare.enabled | default(true)) | bool) and ((cloudflare.dns_api_token | default('') | length) > 0) and ((acme_email | default('') | length) > 0) }}"
+    traefik_local_ca_enabled: "{{ (ci_mode | default(false)) or (traefik.local_tls_enabled | default(false)) or (not ((cloudflare.enabled | default(true)) | bool)) or ((cloudflare.dns_api_token | default('') | length) == 0) or ((acme_email | default('') | length) == 0) }}"
+
+- name: Compute local TLS expected DNS names
+  ansible.builtin.set_fact:
+    traefik_local_tls_expected_dns_names: "{{ ((service_domains | dict2items | map(attribute='value') | list) + (admin_node_fqdn | default('', true)).split() + ['localhost']) | unique }}"
+  when: not traefik_letsencrypt_enabled
 
 - name: Ensure traefik stack directory
   ansible.builtin.file:
@@ -61,6 +66,31 @@
     traefik_local_tls_missing: "{{ traefik_local_tls_files.results | selectattr('stat.exists', 'equalto', false) | list | length > 0 }}"
   when: not traefik_letsencrypt_enabled
 
+- name: Inspect local TLS certificate
+  ansible.builtin.command: openssl x509 -in {{ admin_node_root }}/certs/cert.pem -noout -checkend 2592000 -ext subjectAltName
+  register: traefik_local_tls_certificate_inspection
+  changed_when: false
+  failed_when: false
+  when:
+    - not traefik_letsencrypt_enabled
+    - not (traefik_local_tls_missing | bool)
+
+- name: Compute local TLS certificate renewal need from certificate content
+  ansible.builtin.set_fact:
+    traefik_local_tls_renewal_needed: >-
+      {{
+        (traefik_local_tls_missing | bool)
+        or (traefik_local_tls_certificate_inspection.rc | default(1) != 0)
+        or (
+          traefik_local_tls_expected_dns_names
+          | reject('in', traefik_local_tls_certificate_inspection.stdout | default(''))
+          | list
+          | length > 0
+        )
+        or ('IP Address:' ~ admin_node_lan_ip not in (traefik_local_tls_certificate_inspection.stdout | default('')))
+      }}
+  when: not traefik_letsencrypt_enabled
+
 - name: Generate local CA and fallback TLS certificate
   ansible.builtin.shell: |
     set -euo pipefail
@@ -85,7 +115,7 @@
     basicConstraints=critical,CA:FALSE
     keyUsage=critical,digitalSignature,keyEncipherment
     extendedKeyUsage=serverAuth
-    subjectAltName={{ (((service_domains | dict2items | map(attribute='value') | list) + ['localhost']) | unique | map('regex_replace', '^(.*)$', 'DNS:\1') | list + ['IP:127.0.0.1', 'IP:' ~ admin_node_lan_ip]) | join(',') }}
+    subjectAltName={{ (traefik_local_tls_expected_dns_names | map('regex_replace', '^(.*)$', 'DNS:\1') | list + ['IP:127.0.0.1', 'IP:' ~ admin_node_lan_ip]) | join(',') }}
     EOF
     openssl x509 -req -days 825 -in "$work_dir/server.csr" -CA "$work_dir/ca.pem" -CAkey "$work_dir/ca-key.pem" -CAcreateserial -out "$work_dir/cert.pem" -extfile "$work_dir/server.ext" -extensions server_cert
 
@@ -98,7 +128,7 @@
     executable: /bin/bash
   when:
     - not traefik_letsencrypt_enabled
-    - traefik_local_tls_missing | bool
+    - traefik_local_tls_renewal_needed | bool
 
 - name: Lock down local TLS private keys
   ansible.builtin.file:

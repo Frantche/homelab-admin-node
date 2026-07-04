@@ -1,11 +1,42 @@
 ---
+- name: Build Pi-hole API facts
+  ansible.builtin.set_fact:
+    pihole_api_url: "{{ pihole.api_url | regex_replace('/+$', '') }}"
+    pihole_api_validate_certs: "{{ pihole.validate_certs | default(not (ci_mode | default(false))) }}"
+
+- name: Probe Pi-hole v6 API when auto-detecting
+  ansible.builtin.uri:
+    url: "{{ pihole_api_url }}/api/auth"
+    method: GET
+    status_code: [200, 401, 404]
+    validate_certs: "{{ pihole_api_validate_certs }}"
+  register: pihole_v6_probe
+  changed_when: false
+  when:
+    - (pihole.enabled | default(true)) | bool
+    - (pihole.api_version | default('auto')) == 'auto'
+    - not ansible_check_mode
+
+- name: Select Pi-hole API version
+  ansible.builtin.set_fact:
+    pihole_api_version_effective: >-
+      {{
+        'v6'
+        if (
+          (pihole.api_version | default('auto')) == 'v6'
+          or (
+            (pihole.api_version | default('auto')) == 'auto'
+            and (pihole_v6_probe.status | default(404)) in [200, 401]
+          )
+        )
+        else 'v5'
+      }}
+  when: (pihole.enabled | default(true)) | bool
+
 - name: Select pihole API task file
   ansible.builtin.include_tasks: "{{ selected_api_file }}"
   vars:
-    selected_api_file: >-
-      {% if pihole.api_version == 'v5' %}api_v5.yml
-      {% elif pihole.api_version == 'v6' %}api_v6.yml
-      {% else %}api_v5.yml{% endif %}
+    selected_api_file: "{{ 'api_v6.yml' if pihole_api_version_effective == 'v6' else 'api_v5.yml' }}"
   when:
     - (pihole.enabled | default(true)) | bool
     - not ansible_check_mode

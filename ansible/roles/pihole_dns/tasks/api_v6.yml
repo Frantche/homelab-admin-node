@@ -1,15 +1,52 @@
 ---
 - name: Configure Pi-hole local DNS records via v6 API
-  ansible.builtin.uri:
-    url: "{{ pihole.api_url }}/api/config/dns/hosts"
-    method: POST
-    status_code: [200, 201, 204]
-    headers:
-      X-API-Key: '{{ pihole.api_token }}'
-    body_format: json
-    body:
-      domain: "{{ item.name }}"
-      ip: "{{ item.ip }}"
-    validate_certs: false
-  loop: "{{ pihole.dns_records }}"
-  no_log: true
+  block:
+    - name: Create Pi-hole v6 API session
+      ansible.builtin.uri:
+        url: "{{ pihole_api_url }}/api/auth"
+        method: POST
+        status_code: 200
+        body_format: json
+        body:
+          password: "{{ pihole.api_token }}"
+        validate_certs: "{{ pihole_api_validate_certs }}"
+      register: pihole_v6_auth
+      changed_when: false
+      no_log: true
+
+    - name: Read Pi-hole v6 local DNS hosts
+      ansible.builtin.uri:
+        url: "{{ pihole_api_url }}/api/config/dns/hosts"
+        method: GET
+        status_code: 200
+        headers:
+          X-FTL-SID: "{{ pihole_v6_auth.json.session.sid }}"
+        validate_certs: "{{ pihole_api_validate_certs }}"
+      register: pihole_v6_hosts
+      changed_when: false
+      no_log: true
+
+    - name: Configure Pi-hole local DNS records via v6 API
+      ansible.builtin.uri:
+        url: "{{ pihole_api_url }}/api/config/dns/hosts/{{ ((item.ip ~ ' ' ~ item.name) | urlencode) | replace('+', '%20') }}"
+        method: PUT
+        status_code: 201
+        headers:
+          X-FTL-SID: "{{ pihole_v6_auth.json.session.sid }}"
+        validate_certs: "{{ pihole_api_validate_certs }}"
+      loop: "{{ pihole.dns_records }}"
+      when: (item.ip ~ ' ' ~ item.name) not in (pihole_v6_hosts.json.config.dns.hosts | default([]))
+      no_log: true
+
+  always:
+    - name: Close Pi-hole v6 API session
+      ansible.builtin.uri:
+        url: "{{ pihole_api_url }}/api/auth"
+        method: DELETE
+        status_code: [204, 401, 404]
+        headers:
+          X-FTL-SID: "{{ pihole_v6_auth.json.session.sid | default('') }}"
+        validate_certs: "{{ pihole_api_validate_certs }}"
+      changed_when: false
+      when: pihole_v6_auth is defined
+      no_log: true
