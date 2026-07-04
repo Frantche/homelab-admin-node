@@ -56,6 +56,12 @@
   when: openbao_config.oidc.enabled | default(false)
   no_log: true
 
+- name: Build OpenBao OIDC audience facts
+  ansible.builtin.set_fact:
+    openbao_oidc_bound_audiences: "{{ openbao_config.oidc.role.bound_audiences | default([], true) if (openbao_config.oidc.role.bound_audiences | default([], true) | length > 0) else [openbao_oidc_client_id] }}"
+  when: openbao_config.oidc.enabled | default(false)
+  no_log: true
+
 - name: Validate required OpenBao OIDC client settings
   ansible.builtin.assert:
     that:
@@ -197,7 +203,7 @@
       user_claim: "{{ openbao_config.oidc.role.user_claim | default('sub') }}"
       groups_claim: "{{ openbao_config.oidc.role.groups_claim | default('groups') }}"
       allowed_redirect_uris: "{{ openbao_config.oidc.role.allowed_redirect_uris | default([]) }}"
-      bound_audiences: "{{ openbao_config.oidc.role.bound_audiences | default([]) }}"
+      bound_audiences: "{{ openbao_oidc_bound_audiences }}"
       policies: "{{ openbao_config.oidc.role.policies | default(['default']) }}"
     status_code: [200, 204]
   when: openbao_config.oidc.enabled | default(false)
