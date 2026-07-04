@@ -192,11 +192,17 @@ services:
       METRIC_PORT: 8001
       METRIC_NAMESPACE: harbor
       METRIC_SUBSYSTEM: core
+{% if traefik_local_ca_enabled | default(ci_mode | default(false)) | bool %}
+      SSL_CERT_FILE: /etc/ssl/certs/admin-node-ca.pem
+{% endif %}
     volumes:
       - ./config/core-app.conf:/etc/core/app.conf:ro
       - /srv/admin/data/harbor/core/token.key:/etc/core/private_key.pem:ro
       - /srv/admin/data/harbor/core/secretkey:/etc/core/key:ro
       - /srv/admin/data/harbor/core:/data
+{% if traefik_local_ca_enabled | default(ci_mode | default(false)) | bool %}
+      - /srv/admin/certs/ca.pem:/etc/ssl/certs/admin-node-ca.pem:ro
+{% endif %}
     depends_on:
       harbor-db:
         condition: service_healthy

@@ -4,6 +4,7 @@
   gather_facts: false
   vars:
     ci_mode: false
+    traefik_local_ca_enabled: true
     service_domains:
       harbor: "harbor.example.com"
       openbao: "bao.example.com"
@@ -101,6 +102,10 @@
       vars:
         gitea_config_test_mode: true
 
+    - name: Render Harbor compose with Traefik local CA enabled
+      ansible.builtin.set_fact:
+        harbor_compose_with_local_ca: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/harbor/compose.yaml') }}"
+
     - name: Capture Harbor Keycloak client
       ansible.builtin.set_fact:
         harbor_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', oidc_clients.harbor.client_id) | list | first | default({}) }}"
@@ -151,3 +156,5 @@
           - gitea_oidc_client_id == oidc_clients.gitea.client_id
           - gitea_oidc_client_secret == oidc_clients.gitea.client_secret
           - gitea_oidc_discovery_url == 'https://keycloak.example.com/realms/homelab/.well-known/openid-configuration'
+          - "'SSL_CERT_FILE: /etc/ssl/certs/admin-node-ca.pem' in harbor_compose_with_local_ca"
+          - "'/srv/admin/certs/ca.pem:/etc/ssl/certs/admin-node-ca.pem:ro' in harbor_compose_with_local_ca"
