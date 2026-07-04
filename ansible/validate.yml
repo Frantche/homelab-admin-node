@@ -10,7 +10,9 @@
     - name: Validate DNS script
       ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node validate dns
       changed_when: false
+      when: (pihole.enabled | default(true)) | bool
 
     - name: Validate Cloudflare tunnel script
       ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node validate tunnel
       changed_when: false
+      when: (cloudflare.enabled | default(true)) | bool

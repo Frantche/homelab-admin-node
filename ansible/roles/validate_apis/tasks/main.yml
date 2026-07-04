@@ -5,17 +5,23 @@
     OPENBAO_TOKEN: "{{ openbao.root_token | default('') }}"
     CI_MOCK_PIHOLE: "{{ 'true' if ((ci_mode | default(false)) or (ci.mock_pihole | default(false))) else 'false' }}"
     CI_MOCK_CLOUDFLARE_TUNNEL: "{{ 'true' if ((ci_mode | default(false)) or (ci.mock_cloudflare_tunnel | default(false))) else 'false' }}"
+    PIHOLE_ENABLED: "{{ 'true' if ((pihole.enabled | default(true)) | bool) else 'false' }}"
+    CLOUDFLARE_ENABLED: "{{ 'true' if ((cloudflare.enabled | default(true)) | bool) else 'false' }}"
   changed_when: false
 
 - name: Validate local DNS
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node validate dns
   environment:
     CI_MOCK_PIHOLE: "{{ 'true' if ((ci_mode | default(false)) or (ci.mock_pihole | default(false))) else 'false' }}"
+    PIHOLE_ENABLED: "{{ 'true' if ((pihole.enabled | default(true)) | bool) else 'false' }}"
   changed_when: false
+  when: (pihole.enabled | default(true)) | bool
 
 - name: Validate cloudflare tunnel
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node validate tunnel
   environment:
     CI_MOCK_CLOUDFLARE_TUNNEL: "{{ 'true' if ((ci_mode | default(false)) or (ci.mock_cloudflare_tunnel | default(false))) else 'false' }}"
     SKIP_PUBLIC_URL_VALIDATION: "{{ 'true' if ((ci_mode | default(false)) or (ci.skip_public_url_validation | default(false))) else 'false' }}"
+    CLOUDFLARE_ENABLED: "{{ 'true' if ((cloudflare.enabled | default(true)) | bool) else 'false' }}"
   changed_when: false
+  when: (cloudflare.enabled | default(true)) | bool

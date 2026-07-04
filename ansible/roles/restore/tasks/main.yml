@@ -1,6 +1,9 @@
 ---
 - name: Execute restore
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node restore run
+  environment:
+    PIHOLE_ENABLED: "{{ 'true' if ((pihole.enabled | default(true)) | bool) else 'false' }}"
+    CLOUDFLARE_ENABLED: "{{ 'true' if ((cloudflare.enabled | default(true)) | bool) else 'false' }}"
   register: restore_result
   changed_when: false
   failed_when: restore_result.rc != 0 and admin_mode != 'restore_failed'

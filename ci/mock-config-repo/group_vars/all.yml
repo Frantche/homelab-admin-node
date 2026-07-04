@@ -27,6 +27,7 @@ admin:
   traefik_dashboard_basic_auth: "admin:$$apr1$$ci$$fakehash"
 
 cloudflare:
+  enabled: true
   tunnel_id: "fake-tunnel-id"
   tunnel_token: "eyJhIjoiZmFrZSIsInQiOiJmYWtlIiwicyI6ImZha2UifQ=="
   account_id: "fake-account-id"

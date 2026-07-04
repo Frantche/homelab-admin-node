@@ -154,6 +154,33 @@ func TestStartStacksSkipsCloudflaredComposeInCIMockMode(t *testing.T) {
 	}
 }
 
+func TestStartStacksSkipsCloudflaredComposeWhenCloudflareDisabled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeDocker := filepath.Join(binDir, "docker")
+	if err := os.WriteFile(fakeDocker, []byte("#!/usr/bin/env bash\necho unexpected docker call >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	cloudflaredCompose := filepath.Join(root, "cloudflared.yaml")
+	if err := os.WriteFile(cloudflaredCompose, []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := startStacks(context.Background(), config.Config{CloudflareDisabled: true}, stacks{
+		CloudflaredCompose: cloudflaredCompose,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSelectBackupByNumber(t *testing.T) {
 	var out bytes.Buffer
 	id, err := Select(bytes.NewBufferString("2\n"), &out, []backup.Info{{ID: "a"}, {ID: "b"}})

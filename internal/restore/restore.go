@@ -43,7 +43,7 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 	}
 
 	set := stackSet(cfg.AdminRoot)
-	stopStacks(ctx, set)
+	stopStacks(ctx, cfg, set)
 
 	if fileExists(filepath.Join(info.Path, "offline-images.tar")) {
 		if err := run(ctx, nil, "docker", "load", "-i", filepath.Join(info.Path, "offline-images.tar")); err != nil {
@@ -177,14 +177,16 @@ func stackSet(adminRoot string) stacks {
 	}
 }
 
-func stopStacks(ctx context.Context, set stacks) {
+func stopStacks(ctx context.Context, cfg config.Config, set stacks) {
 	commands := []stackCommand{
 		{set.TraefikCompose, set.TraefikEnv},
 		{set.KeycloakCompose, set.KeycloakEnv},
 		{set.OpenBaoCompose, ""},
 		{set.HarborCompose, set.HarborEnv},
 		{set.GiteaCompose, set.GiteaEnv},
-		{set.CloudflaredCompose, set.CloudflaredEnv},
+	}
+	if !cfg.CloudflareDisabled {
+		commands = append(commands, stackCommand{set.CloudflaredCompose, set.CloudflaredEnv})
 	}
 	for _, command := range commands {
 		if fileExists(command.Compose) {
@@ -201,7 +203,7 @@ func startStacks(ctx context.Context, cfg config.Config, set stacks) error {
 		{set.HarborCompose, set.HarborEnv},
 		{set.GiteaCompose, set.GiteaEnv},
 	}
-	if !cfg.CIMockCloudflareTunnel {
+	if !cfg.CloudflareDisabled && !cfg.CIMockCloudflareTunnel {
 		commands = append(commands, stackCommand{set.CloudflaredCompose, set.CloudflaredEnv})
 	}
 	for _, command := range commands {
