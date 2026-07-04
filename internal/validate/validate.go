@@ -41,7 +41,12 @@ func (v Validator) APIS(ctx context.Context) []CheckResult {
 
 func (v Validator) All(ctx context.Context) []CheckResult {
 	results := v.APIS(ctx)
-	results = append(results, v.DNS(ctx), v.Tunnel(ctx))
+	if !v.Config.PiholeDisabled {
+		results = append(results, v.DNS(ctx))
+	}
+	if !v.Config.CloudflareDisabled {
+		results = append(results, v.Tunnel(ctx))
+	}
 	return results
 }
 
@@ -585,6 +590,9 @@ func (v Validator) Traefik(ctx context.Context) CheckResult {
 
 func (v Validator) DNS(_ context.Context) CheckResult {
 	return timed("DNS", func() (Status, string) {
+		if v.Config.PiholeDisabled {
+			return StatusSkipped, "PIHOLE_ENABLED=false"
+		}
 		if v.Config.ValidateMockAll {
 			return StatusSkipped, "ADMIN_NODE_VALIDATE_MOCK_ALL=true"
 		}
@@ -614,6 +622,9 @@ func (v Validator) DNS(_ context.Context) CheckResult {
 
 func (v Validator) Tunnel(ctx context.Context) CheckResult {
 	return timed("Tunnel", func() (Status, string) {
+		if v.Config.CloudflareDisabled {
+			return StatusSkipped, "CLOUDFLARE_ENABLED=false"
+		}
 		if v.Config.ValidateMockAll {
 			return StatusSkipped, "ADMIN_NODE_VALIDATE_MOCK_ALL=true"
 		}

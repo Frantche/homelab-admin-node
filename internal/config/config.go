@@ -36,6 +36,8 @@ type Config struct {
 	CIMode                    bool
 	CIMockPihole              bool
 	CIMockCloudflareTunnel    bool
+	PiholeDisabled            bool
+	CloudflareDisabled        bool
 	SkipPublicURLValidation   bool
 	CISkipPublicURLValidation bool
 	ValidateMockAll           bool
@@ -58,6 +60,8 @@ func FromEnv() Config {
 		CIMode:                    getenvBool("CI_MODE", false),
 		CIMockPihole:              getenvBool("CI_MOCK_PIHOLE", false),
 		CIMockCloudflareTunnel:    getenvBool("CI_MOCK_CLOUDFLARE_TUNNEL", false),
+		PiholeDisabled:            !getenvBool("PIHOLE_ENABLED", true),
+		CloudflareDisabled:        !getenvBool("CLOUDFLARE_ENABLED", true),
 		SkipPublicURLValidation:   getenvBool("SKIP_PUBLIC_URL_VALIDATION", false),
 		CISkipPublicURLValidation: getenvBool("CI_SKIP_PUBLIC_URL_VALIDATION", false),
 		ValidateMockAll:           getenvBool("ADMIN_NODE_VALIDATE_MOCK_ALL", false),

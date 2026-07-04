@@ -77,6 +77,9 @@ pihole:
       ip: "{{ admin_node_lan_ip }}"
     - name: "traefik.mondomaine.fr"
       ip: "{{ admin_node_lan_ip }}"
+
+cloudflare:
+  enabled: true
 ```
 
 ### `group_vars/secrets.sops.yaml` — exemple (avant chiffrement)

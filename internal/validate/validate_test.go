@@ -400,6 +400,17 @@ func TestDNSMockSkipped(t *testing.T) {
 	}
 }
 
+func TestDNSDisabledSkipped(t *testing.T) {
+	v := Validator{Config: config.Config{PiholeDisabled: true}}
+	result := v.DNS(context.Background())
+	if result.Status != StatusSkipped {
+		t.Fatalf("status = %s, want %s", result.Status, StatusSkipped)
+	}
+	if !strings.Contains(result.Message, "PIHOLE_ENABLED=false") {
+		t.Fatalf("message = %q", result.Message)
+	}
+}
+
 func TestTunnelMockOK(t *testing.T) {
 	v := Validator{Config: config.Config{CIMockCloudflareTunnel: true}, Runner: &tunnelRunner{}}
 	result := v.Tunnel(context.Background())
@@ -407,6 +418,17 @@ func TestTunnelMockOK(t *testing.T) {
 		t.Fatalf("status = %s, want %s (%s)", result.Status, StatusOK, result.Message)
 	}
 	if !strings.Contains(result.Message, "cloudflared") {
+		t.Fatalf("message = %q", result.Message)
+	}
+}
+
+func TestTunnelDisabledSkipped(t *testing.T) {
+	v := Validator{Config: config.Config{CloudflareDisabled: true}, Runner: &tunnelRunner{}}
+	result := v.Tunnel(context.Background())
+	if result.Status != StatusSkipped {
+		t.Fatalf("status = %s, want %s", result.Status, StatusSkipped)
+	}
+	if !strings.Contains(result.Message, "CLOUDFLARE_ENABLED=false") {
 		t.Fatalf("message = %q", result.Message)
 	}
 }

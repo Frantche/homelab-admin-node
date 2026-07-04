@@ -100,10 +100,10 @@
       when: admin_mode != 'locked' and (harbor_config.enabled | default(false))
     - role: gitea_config
       when: admin_mode != 'locked' and (gitea_config.enabled | default(false))
-    - role: cloudflared
-      when: admin_mode != 'locked'
+    - role: cloudflare
+      when: admin_mode != 'locked' and ((cloudflare.enabled | default(true)) | bool)
     - role: pihole_dns
-      when: admin_mode != 'locked' and not (ci_mode | default(false))
+      when: admin_mode != 'locked' and not (ci_mode | default(false)) and ((pihole.enabled | default(true)) | bool)
     - role: validate_apis
       when: admin_mode == 'normal'
     - role: backup

@@ -8,6 +8,9 @@ service_domains:
   gitea: "git.example.com"
   traefik: "traefik.example.com"
 
+cloudflare:
+  enabled: true
+
 hardening:
   apparmor:
     enabled: true

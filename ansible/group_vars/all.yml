@@ -37,6 +37,9 @@ pihole:
     - name: "traefik.example.com"
       ip: "{{ admin_node_lan_ip }}"
 
+cloudflare:
+  enabled: true
+
 ci:
   mock_pihole: true
   mock_cloudflare_tunnel: true
