@@ -116,6 +116,14 @@
     - not (gitea_config_test_mode | default(false))
   no_log: true
 
+- name: Extract Gitea OIDC source id
+  ansible.builtin.set_fact:
+    gitea_oidc_source_id: "{{ (gitea_auth_sources.stdout_lines | default([]) | select('match', '^\\s*[0-9]+\\s+' ~ (gitea_oidc_name | regex_escape) ~ '\\s+') | first | default('') | regex_search('^\\s*([0-9]+)', '\\1') | first | default('')) }}"
+  when:
+    - gitea_config.oidc.enabled | default(false)
+    - not (gitea_config_test_mode | default(false))
+  no_log: true
+
 - name: Configure Gitea Keycloak OIDC source
   ansible.builtin.command:
     argv:
@@ -146,7 +154,42 @@
   when:
     - gitea_config.oidc.enabled | default(false)
     - not (gitea_config_test_mode | default(false))
-    - gitea_oidc_name not in (gitea_auth_sources.stdout | default(''))
+    - (gitea_oidc_source_id | default('') | length) == 0
+  no_log: true
+
+- name: Update Gitea Keycloak OIDC source
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - --user
+      - git
+      - gitea
+      - gitea
+      - admin
+      - auth
+      - update-oauth
+      - --id
+      - "{{ gitea_oidc_source_id }}"
+      - --provider
+      - openidConnect
+      - --name
+      - "{{ gitea_oidc_name }}"
+      - --key
+      - "{{ gitea_oidc_client_id }}"
+      - --secret
+      - "{{ gitea_oidc_client_secret }}"
+      - --auto-discover-url
+      - "{{ gitea_oidc_discovery_url }}"
+      - --scopes
+      - "{{ gitea_oidc_scopes }}"
+      - --config
+      - /data/gitea/conf/app.ini
+  changed_when: true
+  when:
+    - gitea_config.oidc.enabled | default(false)
+    - not (gitea_config_test_mode | default(false))
+    - (gitea_oidc_source_id | default('') | length) > 0
   no_log: true
 
 - name: Validate Gitea repository and issue sentinel
