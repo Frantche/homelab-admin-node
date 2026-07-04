@@ -326,8 +326,7 @@
       groups_claim: "{{ item.groups_claim | default(openbao_oidc_default_role_groups_claim) }}"
       allowed_redirect_uris: "{{ item.allowed_redirect_uris | default(openbao_oidc_default_role_allowed_redirect_uris) }}"
       bound_audiences: "{{ item.bound_audiences | default(openbao_oidc_bound_audiences, true) }}"
-      bound_claims:
-        "{{ item.groups_claim | default(openbao_oidc_default_role_groups_claim) }}": "{{ item.group }}"
+      bound_claims: "{{ {item.groups_claim | default(openbao_oidc_default_role_groups_claim): item.group} }}"
       policies:
         - "default"
         - "{{ item.policy }}"
