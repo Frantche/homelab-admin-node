@@ -27,6 +27,31 @@
       KEYCLOAK_ADMIN_PASSWORD={{ keycloak.admin_password | mandatory('keycloak.admin_password is required') }}
   no_log: true
 
+- name: Ensure keycloak database container is running
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/keycloak.env -f compose.yaml up -d keycloak-db
+  args:
+    chdir: "{{ admin_node_root }}/stacks/keycloak"
+  changed_when: false
+
+- name: Wait for keycloak database readiness
+  ansible.builtin.command: docker exec keycloak-db pg_isready -U keycloak -d keycloak
+  register: keycloak_db_readiness
+  until: keycloak_db_readiness.rc == 0
+  retries: 30
+  delay: 2
+  changed_when: false
+
+- name: Align keycloak database password with inventory secret
+  ansible.builtin.shell: |
+    set -euo pipefail
+    docker exec -i -e KEYCLOAK_DB_PASSWORD="{{ keycloak.db_password | mandatory('keycloak.db_password is required') }}" keycloak-db sh -c 'psql -U keycloak -d keycloak -v ON_ERROR_STOP=1 -v pw="$KEYCLOAK_DB_PASSWORD"' <<'SQL'
+    ALTER USER keycloak WITH PASSWORD :'pw';
+    SQL
+  args:
+    executable: /bin/bash
+  changed_when: false
+  no_log: true
+
 - name: Start keycloak stack
   ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/keycloak.env -f compose.yaml up -d
   args:

@@ -63,6 +63,34 @@
   when: not (gitea_test_mode | default(false))
   no_log: true
 
+- name: Ensure Gitea database container is running
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/gitea.env -f compose.yaml up -d gitea-db
+  args:
+    chdir: "{{ admin_node_root }}/stacks/gitea"
+  changed_when: false
+  when: not (gitea_test_mode | default(false))
+
+- name: Wait for Gitea database readiness
+  ansible.builtin.command: docker exec gitea-db pg_isready -U gitea -d gitea
+  register: gitea_db_readiness
+  until: gitea_db_readiness.rc == 0
+  retries: 30
+  delay: 2
+  changed_when: false
+  when: not (gitea_test_mode | default(false))
+
+- name: Align Gitea database password with inventory secret
+  ansible.builtin.shell: |
+    set -euo pipefail
+    docker exec -i -e GITEA_DB_PASSWORD="{{ gitea_runtime.db_password }}" gitea-db sh -c 'psql -U gitea -d gitea -v ON_ERROR_STOP=1 -v pw="$GITEA_DB_PASSWORD"' <<'SQL'
+    ALTER USER gitea WITH PASSWORD :'pw';
+    SQL
+  args:
+    executable: /bin/bash
+  changed_when: false
+  when: not (gitea_test_mode | default(false))
+  no_log: true
+
 - name: Start gitea stack
   ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/gitea.env -f compose.yaml up -d
   args:

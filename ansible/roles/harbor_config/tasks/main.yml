@@ -106,7 +106,7 @@
 
 - name: Read Harbor authentication configuration
   ansible.builtin.uri:
-    url: "https://{{ service_domains.harbor }}/api/v2.0/configurations"
+    url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/configurations"
     method: GET
     user: admin
     password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required')) }}"
