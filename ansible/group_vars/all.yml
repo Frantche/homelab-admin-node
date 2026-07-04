@@ -104,6 +104,7 @@ openbao_config:
       allowed_redirect_uris: []
       bound_audiences: []
       policies: ["default"]
+    roles: []
 
 harbor_config:
   enabled: false

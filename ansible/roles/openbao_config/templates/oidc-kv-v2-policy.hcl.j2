@@ -1,0 +1,24 @@
+{% for engine in item.normalized_secret_engines %}
+path "{{ engine }}data/*" {
+  capabilities = ["create", "read", "update", "delete", "patch"]
+}
+
+path "{{ engine }}metadata/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+
+path "{{ engine }}delete/*" {
+  capabilities = ["update"]
+}
+
+path "{{ engine }}undelete/*" {
+  capabilities = ["update"]
+}
+
+path "{{ engine }}destroy/*" {
+  capabilities = ["update"]
+}
+{% if not loop.last %}
+
+{% endif %}
+{% endfor %}
