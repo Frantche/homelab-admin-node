@@ -42,6 +42,7 @@
         harbor_config: "{{ harbor_config | default({}) | combine(decrypted_inventory_secrets.harbor_config | default({}), recursive=True) }}"
         gitea: "{{ gitea | default({}) | combine(decrypted_inventory_secrets.gitea | default({}), recursive=True) }}"
         gitea_config: "{{ gitea_config | default({}) | combine(decrypted_inventory_secrets.gitea_config | default({}), recursive=True) }}"
+        oidc_clients: "{{ oidc_clients | default({}) | combine(decrypted_inventory_secrets.oidc_clients | default({}), recursive=True) }}"
         observability: "{{ observability | default({}) | combine(decrypted_inventory_secrets.observability | default({}), recursive=True) }}"
         backup: "{{ backup | default({}) | combine(decrypted_inventory_secrets.backup | default({}), recursive=True) }}"
       vars:
