@@ -10,11 +10,17 @@
 - name: Deploy SSH hardening drop-in
   ansible.builtin.template:
     src: sshd-hardening.conf.j2
-    dest: /etc/ssh/sshd_config.d/10-admin-hardening.conf
+    dest: /etc/ssh/sshd_config.d/99-admin-hardening.conf
     owner: root
     group: root
     mode: "0644"
     validate: sshd -t -f %s
+  notify: Restart sshd
+
+- name: Remove legacy SSH hardening drop-in
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d/10-admin-hardening.conf
+    state: absent
   notify: Restart sshd
 
 - name: Deploy sudoers policy
