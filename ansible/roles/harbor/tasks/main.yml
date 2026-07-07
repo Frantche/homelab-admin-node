@@ -208,3 +208,12 @@
     chdir: "{{ admin_node_root }}/stacks/harbor"
   changed_when: true
   when: not (harbor_test_mode | default(false))
+
+- name: Wait for Harbor nginx health after reload
+  ansible.builtin.command: docker inspect -f {% raw %}'{{ .State.Health.Status }}'{% endraw %} harbor-nginx
+  register: harbor_nginx_health
+  changed_when: false
+  until: harbor_nginx_health.stdout | trim == "healthy"
+  retries: 30
+  delay: 2
+  when: not (harbor_test_mode | default(false))

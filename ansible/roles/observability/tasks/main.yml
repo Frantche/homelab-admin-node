@@ -40,4 +40,8 @@
   ansible.builtin.command: docker compose -f compose.yaml up -d
   args:
     chdir: "{{ admin_node_root }}/stacks/observability"
+  register: observability_compose_up
+  until: observability_compose_up.rc == 0
+  retries: 5
+  delay: 10
   changed_when: true

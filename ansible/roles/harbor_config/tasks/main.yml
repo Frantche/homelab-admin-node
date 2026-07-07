@@ -198,7 +198,11 @@
     validate_certs: "{{ harbor_api_validate_certs }}"
     body_format: json
     body: "{{ harbor_oidc_configuration_payload }}"
-    status_code: 200
+    status_code: [200, 404, 502, 503]
+  register: harbor_oidc_configure_response
+  until: harbor_oidc_configure_response.status == 200
+  retries: 12
+  delay: 5
   when:
     - harbor_config.oidc.enabled | default(false)
     - not (harbor_config_test_mode | default(false))

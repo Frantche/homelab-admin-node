@@ -8,6 +8,8 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$REPO_ROOT/ci/assertions.sh"
 
+CONFIG_REPO_DIR="${CONFIG_REPO_DIR:-/etc/admin-config/homelab-node-admin-config}"
+
 export CI_MOCK_PIHOLE="${CI_MOCK_PIHOLE:-true}"
 export CI_MOCK_CLOUDFLARE_TUNNEL="${CI_MOCK_CLOUDFLARE_TUNNEL:-true}"
 export CI_SKIP_PUBLIC_URL_VALIDATION="${CI_SKIP_PUBLIC_URL_VALIDATION:-true}"
@@ -47,11 +49,14 @@ dump_debug() {
 }
 
 run_converge() {
+  local extra_args="${1:-}"
+  local validate_mock_all="${2:-false}"
   local output_file status
   output_file="$(mktemp)"
   set +e
   ADMIN_CONVERGE_SKIP_GIT_PULL=true \
-    ANSIBLE_EXTRA_ARGS="-e admin_ci_disable_auto_converge=true" \
+    ADMIN_NODE_VALIDATE_MOCK_ALL="$validate_mock_all" \
+    ANSIBLE_EXTRA_ARGS="-e admin_ci_disable_auto_converge=true ${extra_args}" \
     "$REPO_ROOT/bin/admin-node" converge run 2>&1 | tee "$output_file"
   status="${PIPESTATUS[0]}"
   set -e
@@ -92,45 +97,88 @@ run_oidc_user_journey() {
   popd >/dev/null
 }
 
+set_service_config_enabled() {
+  local openbao_config_enabled="$1"
+  python3 "$REPO_ROOT/ci/set-bootstrap-service-config.py" \
+    "$CONFIG_REPO_DIR/hosts/group_vars/all.yml" \
+    "$openbao_config_enabled"
+}
+
+commit_config_repo_changes() {
+  local message="$1"
+  if [[ ! -d "$CONFIG_REPO_DIR/.git" ]]; then
+    return 0
+  fi
+  git -C "$CONFIG_REPO_DIR" add hosts/group_vars/all.yml hosts/group_vars/secrets.sops.yaml
+  if ! git -C "$CONFIG_REPO_DIR" diff --cached --quiet; then
+    git -C "$CONFIG_REPO_DIR" \
+      -c user.name="CI Admin" \
+      -c user.email="ci@example.com" \
+      commit -m "$message"
+  fi
+}
+
+setup_prerequisites() {
+  echo "=== Preparing bootstrap CI prerequisites ==="
+  "$REPO_ROOT/ci/setup-ci-env.sh"
+  "$REPO_ROOT/scripts/build-admin-node.sh"
+  start_otel_mock
+  stop_auto_converge
+}
+
+run_init_phase() {
+  echo "=== Running init phase ==="
+  "$REPO_ROOT/bin/admin-node" mode set init
+  assert_contains /etc/admin-node/mode "init"
+
+  echo "=== Running convergence (init mode) via admin-node ==="
+  run_converge "-e harbor_test_mode=true -e gitea_test_mode=true" "true"
+  stop_auto_converge
+}
+
+initialize_openbao_for_normal_mode() {
+  echo "=== Initializing OpenBao and updating encrypted config repo secrets ==="
+  "$REPO_ROOT/bin/admin-node" ci init-openbao
+  OPENBAO_TOKEN="$(cat "$REPO_ROOT/secrets/openbao-root-token")"
+  export OPENBAO_TOKEN
+
+  "$REPO_ROOT/bin/admin-node" ci update-openbao-token
+  set_service_config_enabled false
+  commit_config_repo_changes "Enable service config after CI initialization"
+}
+
+run_normal_phase() {
+  echo "=== Running normal phase ==="
+  stop_auto_converge
+  "$REPO_ROOT/bin/admin-node" mode set normal
+  assert_contains /etc/admin-node/mode "normal"
+  stop_auto_converge
+
+  echo "=== Running convergence (normal mode) via admin-node ==="
+  run_converge
+  stop_auto_converge
+}
+
+run_openbao_config_phase() {
+  echo "=== Enabling OpenBao config after Keycloak convergence ==="
+  set_service_config_enabled true
+  commit_config_repo_changes "Enable OpenBao config after Keycloak convergence"
+  stop_auto_converge
+
+  echo "=== Running convergence (normal mode with OpenBao config) via admin-node ==="
+  run_converge
+  stop_auto_converge
+  "$REPO_ROOT/bin/admin-node" validate observability
+}
+
 trap dump_debug ERR
 trap stop_otel_mock EXIT
 
-# --- CI prerequisites (TLS certs, /etc/hosts, ansible collections) ---
-"$REPO_ROOT/ci/setup-ci-env.sh"
-"$REPO_ROOT/scripts/build-admin-node.sh"
-start_otel_mock
-
-# Prevent the auto-converge timer from interfering with our manual operations
-stop_auto_converge
-
-# --- Set mode to init via admin-node ---
-"$REPO_ROOT/bin/admin-node" mode set init
-assert_contains /etc/admin-node/mode "init"
-
-# --- Run convergence via admin-node (init mode: starts services) ---
-echo "=== Running convergence (init mode) via admin-node ==="
-run_converge
-stop_auto_converge
-
-# --- Initialize and unseal OpenBao ---
-"$REPO_ROOT/bin/admin-node" ci init-openbao
-OPENBAO_TOKEN="$(cat "$REPO_ROOT/secrets/openbao-root-token")"
-export OPENBAO_TOKEN
-
-# Inject the root token into the mock config repo so the normal-mode playbook can use it
-"$REPO_ROOT/bin/admin-node" ci update-openbao-token
-
-# --- Set mode to normal via admin-node ---
-stop_auto_converge
-"$REPO_ROOT/bin/admin-node" mode set normal
-assert_contains /etc/admin-node/mode "normal"
-stop_auto_converge
-
-# --- Run convergence via admin-node (normal mode: validate + backup) ---
-echo "=== Running convergence (normal mode) via admin-node ==="
-run_converge
-stop_auto_converge
-"$REPO_ROOT/bin/admin-node" validate observability
+setup_prerequisites
+run_init_phase
+initialize_openbao_for_normal_mode
+run_normal_phase
+run_openbao_config_phase
 
 # --- Verify final mode is normal ---
 assert_contains /etc/admin-node/mode "normal"
