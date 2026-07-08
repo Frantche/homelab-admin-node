@@ -49,15 +49,6 @@ def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
             "mock_backend_enabled": True,
             "mock_state_dir": "/tmp/admin-node-otel-mock-bootstrap-user-journey",
         },
-        "backup": {
-            "restic_init_repositories": True,
-            "restic_repositories": [
-                {
-                    "name": "local",
-                    "repository": "/srv/admin/backups/restic",
-                }
-            ],
-        },
     }
     with (group_vars / "ci-bootstrap-vars.yml").open("w") as f:
         yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
