@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-import secrets as secretlib
+import secrets
 import shutil
+import string
 import sys
 from pathlib import Path
 
 import yaml
+
+SECRET_PLACEHOLDER = "CHANGE_ME_IN_SOPS"
+SECRET_ALPHABET = string.ascii_letters + string.digits
+SECRET_LENGTH = 32
 
 
 def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
@@ -54,6 +59,22 @@ def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
         yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
 
+def random_ascii_secret() -> str:
+    return "".join(secrets.choice(SECRET_ALPHABET) for _ in range(SECRET_LENGTH))
+
+
+def replace_secret_placeholders(value):
+    if isinstance(value, str):
+        if value == SECRET_PLACEHOLDER:
+            return random_ascii_secret()
+        return value
+    if isinstance(value, list):
+        return [replace_secret_placeholders(item) for item in value]
+    if isinstance(value, dict):
+        return {key: replace_secret_placeholders(item) for key, item in value.items()}
+    return value
+
+
 def main() -> None:
     repo_root = Path(sys.argv[1])
     config_repo = Path(sys.argv[2])
@@ -65,85 +86,12 @@ def main() -> None:
     write_ci_vars(group_vars, admin_repo_url)
 
     with (repo_root / "examples/admin-config/group_vars/secrets.sops.yaml.example").open() as f:
-        secrets = yaml.safe_load(f)
+        secrets_data = yaml.safe_load(f)
 
-    oidc_clients = {
-        name: {
-            "client_id": f"ci-{name}-{secretlib.token_hex(4)}",
-            "client_secret": secretlib.token_hex(32),
-        }
-        for name in ("harbor", "openbao", "gitea")
-    }
-
-    secrets.update(
-        {
-            "vault_oidc_harbor_client_secret": oidc_clients["harbor"]["client_secret"],
-            "vault_oidc_openbao_client_secret": oidc_clients["openbao"]["client_secret"],
-            "vault_oidc_gitea_client_secret": oidc_clients["gitea"]["client_secret"],
-        }
-    )
-    secrets["admin"] = {"traefik_dashboard_basic_auth": "admin:$$apr1$$ci$$fakehash"}
-    secrets["pihole"] = {"api_token": "ci-pihole-api-token"}
-    secrets["cloudflare"] = {
-        "tunnel_id": "fake-tunnel-id",
-        "tunnel_token": "eyJhIjoiZmFrZSIsInQiOiJmYWtlIiwicyI6ImZha2UifQ==",
-        "account_id": "fake-account-id",
-        "dns_api_token": "fake-dns-token",
-        "credentials_json": "{}",
-    }
-    secrets["keycloak"] = {
-        "db_password": "ci-keycloak-db-pass",
-        "admin_user": "admin",
-        "admin_password": "ci-keycloak-admin-pass",
-    }
-    secrets["keycloak_config"] = {
-        "groups": ["harbor-admins"],
-        "users": [
-            {
-                "username": "ci-sso-user",
-                "password": "ci-sso-user-password",
-                "email": "ci-sso-user@example.com",
-                "first_name": "CI",
-                "last_name": "SSO",
-                "email_verified": True,
-                "temporary_password": False,
-                "groups": ["harbor-admins"],
-            }
-        ],
-    }
-    secrets["harbor"] = {
-        "admin_password": "ci-Harbor-admin-p4ss",
-        "db_password": "ci-harbor-db-pass",
-        "core_secret": "ci-harbor-core-secret",
-        "jobservice_secret": "ci-harbor-job-secret",
-        "registry_password": "ci-harbor-registry",
-    }
-    secrets["gitea"] = {
-        "admin_user": "admin",
-        "admin_password": "ci-Gitea-admin-p4ss",
-        "db_password": "ci-gitea-db-pass",
-        "secret_key": "ci-gitea-secret-key-change-me-32chars",
-        "internal_token": "ci-gitea-internal-token-change-me-32chars",
-        "jwt_secret": "ci-gitea-jwt-secret-change-me-32chars",
-    }
-    secrets["openbao"] = {"root_token": ""}
-    secrets["oidc_clients"] = oidc_clients
-    secrets["backup"] = {
-        "restic_init_repositories": True,
-        "restic_local_password": "ci-restic-pass",
-        "restic_default_forget_args": "--keep-last 3 --prune",
-        "restic_require_secure_repositories": True,
-        "restic_repositories": [
-            {
-                "name": "local",
-                "repository": "/srv/admin/backups/restic",
-                "password": "ci-restic-pass",
-            }
-        ],
-    }
+    rendered_secrets = replace_secret_placeholders(secrets_data)
 
     with (group_vars / "secrets.plain.yaml").open("w") as f:
-        yaml.safe_dump(secrets, f, default_flow_style=False, sort_keys=False)
+        yaml.safe_dump(rendered_secrets, f, default_flow_style=False, sort_keys=False)
 
 
 if __name__ == "__main__":
