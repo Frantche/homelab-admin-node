@@ -73,7 +73,7 @@ harbor_config:
       url: "https://hub.docker.com"
       public: true
       validation:
-        enabled: true
+        enabled: false
         image: "library/busybox:latest"
     - name: "quay"
       project_name: "quay"
@@ -81,7 +81,7 @@ harbor_config:
       url: "https://quay.io"
       public: true
       validation:
-        enabled: true
+        enabled: false
         image: "prometheus/busybox:latest"
     - name: "ghcr"
       project_name: "ghcr"
@@ -89,20 +89,8 @@ harbor_config:
       url: "https://ghcr.io"
       public: true
       validation:
-        enabled: true
-        image: "fluxcd/flux-cli:v2.4.0"
-    - name: "private-ghcr"
-      project_name: "private-ghcr"
-      type: "github-ghcr"
-      url: "https://ghcr.io"
-      public: false
-      username: "{{ vault_registry_mirror_private_username }}"
-      password: "{{ vault_registry_mirror_private_password }}"
-      validation:
         enabled: false
-        image: "OWNER/PRIVATE_IMAGE:TAG"
-        username: "admin"
-        password: "{{ harbor.admin_password }}"
+        image: "fluxcd/flux-cli:v2.4.0"
 
 openbao_config:
   enabled: true

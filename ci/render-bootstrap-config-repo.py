@@ -89,8 +89,6 @@ def main() -> None:
             "vault_oidc_harbor_client_secret": oidc_clients["harbor"]["client_secret"],
             "vault_oidc_openbao_client_secret": oidc_clients["openbao"]["client_secret"],
             "vault_oidc_gitea_client_secret": oidc_clients["gitea"]["client_secret"],
-            "vault_registry_mirror_private_username": "ci-registry-user",
-            "vault_registry_mirror_private_password": "ci-registry-password",
         }
     )
     secrets["admin"] = {"traefik_dashboard_basic_auth": "admin:$$apr1$$ci$$fakehash"}
