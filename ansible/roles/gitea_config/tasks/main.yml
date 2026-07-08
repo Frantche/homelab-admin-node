@@ -117,9 +117,17 @@
     - not (gitea_config_test_mode | default(false))
   no_log: true
 
+- name: Extract Gitea OIDC source line
+  ansible.builtin.set_fact:
+    gitea_oidc_source_line: "{{ gitea_auth_sources.stdout_lines | default([]) | select('match', '^\\s*[0-9]+\\s+' ~ (gitea_oidc_name | regex_escape) ~ '\\s+') | first | default('', true) }}"
+  when:
+    - gitea_config.oidc.enabled | default(false)
+    - not (gitea_config_test_mode | default(false))
+  no_log: true
+
 - name: Extract Gitea OIDC source id
   ansible.builtin.set_fact:
-    gitea_oidc_source_id: "{{ (gitea_auth_sources.stdout_lines | default([]) | select('match', '^\\s*[0-9]+\\s+' ~ (gitea_oidc_name | regex_escape) ~ '\\s+') | first | default('') | regex_search('^\\s*([0-9]+)', '\\1') | first | default('')) }}"
+    gitea_oidc_source_id: "{{ (gitea_oidc_source_line | regex_replace('^\\s*([0-9]+).*$', '\\1')) if (gitea_oidc_source_line | default('', true) | length > 0) else '' }}"
   when:
     - gitea_config.oidc.enabled | default(false)
     - not (gitea_config_test_mode | default(false))

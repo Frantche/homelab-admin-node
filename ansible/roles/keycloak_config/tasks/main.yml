@@ -27,6 +27,34 @@
         userinfo.token.claim: "true"
   no_log: true
 
+- name: Build Keycloak-managed OIDC client templates
+  ansible.builtin.set_fact:
+    keycloak_harbor_client_template: >-
+      {{
+        ((keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', 'harbor') | list | first) | default({}, true))
+        | combine(
+            ((keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_harbor_client_id) | list | first) | default({}, true)),
+            recursive=True
+          )
+      }}
+    keycloak_openbao_client_template: >-
+      {{
+        ((keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', 'openbao') | list | first) | default({}, true))
+        | combine(
+            ((keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_openbao_client_id) | list | first) | default({}, true)),
+            recursive=True
+          )
+      }}
+    keycloak_gitea_client_template: >-
+      {{
+        ((keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', 'gitea') | list | first) | default({}, true))
+        | combine(
+            ((keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_gitea_client_id) | list | first) | default({}, true)),
+            recursive=True
+          )
+      }}
+  no_log: true
+
 - name: Validate required Harbor OIDC client settings
   ansible.builtin.assert:
     that:
@@ -99,10 +127,7 @@
         }
         | combine(
             (
-              (
-                (keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_harbor_client_id) | list | first)
-                | default({})
-              )
+              keycloak_harbor_client_template
               | dict2items
               | rejectattr('key', 'equalto', 'client_id')
               | rejectattr('key', 'equalto', 'secret')
@@ -132,10 +157,7 @@
         }
         | combine(
             (
-              (
-                (keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_openbao_client_id) | list | first)
-                | default({})
-              )
+              keycloak_openbao_client_template
               | dict2items
               | rejectattr('key', 'equalto', 'client_id')
               | rejectattr('key', 'equalto', 'secret')
@@ -165,10 +187,7 @@
         }
         | combine(
             (
-              (
-                (keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_gitea_client_id) | list | first)
-                | default({})
-              )
+              keycloak_gitea_client_template
               | dict2items
               | rejectattr('key', 'equalto', 'client_id')
               | rejectattr('key', 'equalto', 'secret')

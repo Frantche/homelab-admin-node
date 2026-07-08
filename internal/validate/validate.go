@@ -269,7 +269,7 @@ func (v Validator) Hardening(ctx context.Context) CheckResult {
 				"tcpkeepalive no",
 			}
 			for _, expected := range expectedSSH {
-				if !containsLine(result.Stdout, expected) {
+				if !containsFieldsLineFold(result.Stdout, expected) {
 					return StatusFail, "sshd option mismatch: expected " + expected
 				}
 			}
@@ -370,6 +370,27 @@ func containsFieldsLine(text string, expected string) bool {
 		matched := true
 		for i := range fields {
 			if fields[i] != expectedFields[i] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
+func containsFieldsLineFold(text string, expected string) bool {
+	expectedFields := strings.Fields(expected)
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != len(expectedFields) {
+			continue
+		}
+		matched := true
+		for i := range fields {
+			if !strings.EqualFold(fields[i], expectedFields[i]) {
 				matched = false
 				break
 			}

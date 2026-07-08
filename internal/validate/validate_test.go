@@ -171,6 +171,20 @@ func TestObservabilityOKWithExpectedMockContent(t *testing.T) {
 	}
 }
 
+func TestContainsFieldsLineFoldMatchesSSHDOutput(t *testing.T) {
+	output := "permitrootlogin no\nloglevel verbose\nclientalivecountmax   2\n"
+
+	for _, expected := range []string{
+		"PermitRootLogin no",
+		"loglevel VERBOSE",
+		"clientalivecountmax 2",
+	} {
+		if !containsFieldsLineFold(output, expected) {
+			t.Fatalf("expected %q to be found in %q", expected, output)
+		}
+	}
+}
+
 func TestObservabilityFailsWhenMetricContentIsMissing(t *testing.T) {
 	mockDir := t.TempDir()
 	t.Setenv("CI_OTEL_MOCK_STATE_DIR", mockDir)

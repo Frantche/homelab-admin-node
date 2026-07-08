@@ -53,6 +53,7 @@ set -euo pipefail
 - Eviter les suppressions larges; si `rm -rf` est necessaire, borner le chemin et construire la liste cible explicitement.
 - Ne pas supposer qu'un conteneur existe: verifier les conteneurs optionnels avant `docker exec`.
 - Garder les scripts utilisables hors GitHub Actions si possible; les specialisations CI doivent etre controlees par variables d'environnement.
+- Garder la logique Python explicite: ne pas integrer de heredocs Python dans les scripts Bash. Placer la logique Python dans des fichiers `.py` dedies et les appeler depuis les scripts d'orchestration Bash.
 
 ## Docker Compose et stacks
 
