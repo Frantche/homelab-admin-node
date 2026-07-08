@@ -137,6 +137,7 @@ initialize_openbao_for_normal_mode() {
   OPENBAO_TOKEN="$(cat "$REPO_ROOT/secrets/openbao-root-token")"
   export OPENBAO_TOKEN
 
+  install -m 0600 /dev/null "$CONFIG_REPO_DIR/hosts/group_vars/ci-openbao-token.yml"
   "$REPO_ROOT/bin/admin-node" ci update-openbao-token --config-path "$CONFIG_REPO_DIR/hosts/group_vars/ci-openbao-token.yml"
   commit_config_repo_changes "Update OpenBao token after CI initialization"
 }
