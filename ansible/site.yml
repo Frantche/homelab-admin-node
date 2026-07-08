@@ -26,25 +26,45 @@
         SOPS_AGE_KEY_FILE: /etc/sops/age/keys.txt
       register: inventory_secrets
       changed_when: false
+      check_mode: false
       when: inventory_secrets_file.stat.exists
       no_log: true
 
-    - name: Merge encrypted inventory secrets
+    - name: Expose encrypted scalar secret references
+      ansible.builtin.set_fact:
+        vault_oidc_harbor_client_secret: "{{ decrypted_inventory_secrets.vault_oidc_harbor_client_secret | default(vault_oidc_harbor_client_secret | default('')) }}"
+        vault_oidc_openbao_client_secret: "{{ decrypted_inventory_secrets.vault_oidc_openbao_client_secret | default(vault_oidc_openbao_client_secret | default('')) }}"
+        vault_oidc_gitea_client_secret: "{{ decrypted_inventory_secrets.vault_oidc_gitea_client_secret | default(vault_oidc_gitea_client_secret | default('')) }}"
+        vault_registry_mirror_private_username: "{{ decrypted_inventory_secrets.vault_registry_mirror_private_username | default(vault_registry_mirror_private_username | default('')) }}"
+        vault_registry_mirror_private_password: "{{ decrypted_inventory_secrets.vault_registry_mirror_private_password | default(vault_registry_mirror_private_password | default('')) }}"
+      vars:
+        decrypted_inventory_secrets: "{{ inventory_secrets.stdout | from_json }}"
+      when: inventory_secrets_file.stat.exists
+      no_log: true
+
+    - name: Merge encrypted service secrets
       ansible.builtin.set_fact:
         admin: "{{ admin | default({}) | combine(decrypted_inventory_secrets.admin | default({}), recursive=True) }}"
         pihole: "{{ pihole | default({}) | combine(decrypted_inventory_secrets.pihole | default({}), recursive=True) }}"
         cloudflare: "{{ cloudflare | default({}) | combine(decrypted_inventory_secrets.cloudflare | default({}), recursive=True) }}"
         openbao: "{{ openbao | default({}) | combine(decrypted_inventory_secrets.openbao | default({}), recursive=True) }}"
-        openbao_config: "{{ openbao_config | default({}) | combine(decrypted_inventory_secrets.openbao_config | default({}), recursive=True) }}"
         keycloak: "{{ keycloak | default({}) | combine(decrypted_inventory_secrets.keycloak | default({}), recursive=True) }}"
-        keycloak_config: "{{ keycloak_config | default({}) | combine(decrypted_inventory_secrets.keycloak_config | default({}), recursive=True) }}"
         harbor: "{{ harbor | default({}) | combine(decrypted_inventory_secrets.harbor | default({}), recursive=True) }}"
-        harbor_config: "{{ harbor_config | default({}) | combine(decrypted_inventory_secrets.harbor_config | default({}), recursive=True) }}"
         gitea: "{{ gitea | default({}) | combine(decrypted_inventory_secrets.gitea | default({}), recursive=True) }}"
+        backup: "{{ backup | default({}) | combine(decrypted_inventory_secrets.backup | default({}), recursive=True) }}"
+      vars:
+        decrypted_inventory_secrets: "{{ inventory_secrets.stdout | from_json }}"
+      when: inventory_secrets_file.stat.exists
+      no_log: true
+
+    - name: Merge encrypted configuration secrets
+      ansible.builtin.set_fact:
+        openbao_config: "{{ openbao_config | default({}) | combine(decrypted_inventory_secrets.openbao_config | default({}), recursive=True) }}"
+        keycloak_config: "{{ keycloak_config | default({}) | combine(decrypted_inventory_secrets.keycloak_config | default({}), recursive=True) }}"
+        harbor_config: "{{ harbor_config | default({}) | combine(decrypted_inventory_secrets.harbor_config | default({}), recursive=True) }}"
         gitea_config: "{{ gitea_config | default({}) | combine(decrypted_inventory_secrets.gitea_config | default({}), recursive=True) }}"
         oidc_clients: "{{ oidc_clients | default({}) | combine(decrypted_inventory_secrets.oidc_clients | default({}), recursive=True) }}"
         observability: "{{ observability | default({}) | combine(decrypted_inventory_secrets.observability | default({}), recursive=True) }}"
-        backup: "{{ backup | default({}) | combine(decrypted_inventory_secrets.backup | default({}), recursive=True) }}"
       vars:
         decrypted_inventory_secrets: "{{ inventory_secrets.stdout | from_json }}"
       when: inventory_secrets_file.stat.exists
