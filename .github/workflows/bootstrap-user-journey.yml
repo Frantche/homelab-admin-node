@@ -295,6 +295,7 @@ jobs:
                            ansible-playbook \
                            -i /etc/admin-config/homelab-node-admin-config/hosts/inventory.ini \
                            /opt/homelab-admin-node/ansible/site.yml \
+                           -e @/etc/admin-config/homelab-node-admin-config/hosts/group_vars/ci-bootstrap-vars.yml \
                            -e admin_apparmor_ci_manage_runtime=true \
                            -e admin_apparmor_ci_defer_reboot=true \
                            -e admin_ci_disable_auto_converge=true"
