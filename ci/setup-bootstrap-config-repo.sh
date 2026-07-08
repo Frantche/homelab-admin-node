@@ -36,7 +36,8 @@ SOPSEOF
 
 python3 "$REPO_ROOT/ci/validate-bootstrap-config-repo.py" \
   /tmp/bootstrap-ci-secrets-decrypted.yaml \
-  "$CONFIG_REPO_DIR/hosts/group_vars/all.yml"
+  "$CONFIG_REPO_DIR/hosts/group_vars/all.yml" \
+  --secrets-example "$REPO_ROOT/examples/admin-config/group_vars/secrets.sops.yaml.example"
 rm -f /tmp/bootstrap-ci-secrets-decrypted.yaml
 
 (

@@ -88,12 +88,17 @@ run_oidc_user_journey() {
   else
     npm install --no-audit --no-fund
   fi
+  eval "$(
+    SOPS_AGE_KEY_FILE=/etc/sops/age/keys.txt \
+      python3 "$REPO_ROOT/ci/read-bootstrap-oidc-user.py" \
+      "$CONFIG_REPO_DIR/hosts/group_vars/secrets.sops.yaml"
+  )"
   CI=true \
     NODE_EXTRA_CA_CERTS=/srv/admin/certs/ca.pem \
     SSL_CERT_FILE=/srv/admin/certs/ca.pem \
     PLAYWRIGHT_CHROMIUM_EXECUTABLE="${PLAYWRIGHT_CHROMIUM_EXECUTABLE:-/usr/bin/chromium}" \
-    OIDC_TEST_USERNAME="${OIDC_TEST_USERNAME:-ci-sso-user}" \
-    OIDC_TEST_PASSWORD="${OIDC_TEST_PASSWORD:-ci-sso-user-password}" \
+    OIDC_TEST_USERNAME="$OIDC_TEST_USERNAME" \
+    OIDC_TEST_PASSWORD="$OIDC_TEST_PASSWORD" \
     npm test
   popd >/dev/null
 }
