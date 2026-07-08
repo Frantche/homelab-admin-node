@@ -9,6 +9,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$REPO_ROOT/ci/assertions.sh"
 
 CONFIG_REPO_DIR="${CONFIG_REPO_DIR:-/etc/admin-config/homelab-node-admin-config}"
+CI_BOOTSTRAP_VARS="$CONFIG_REPO_DIR/hosts/group_vars/ci-bootstrap-vars.yml"
 
 export CI_MOCK_PIHOLE="${CI_MOCK_PIHOLE:-true}"
 export CI_MOCK_CLOUDFLARE_TUNNEL="${CI_MOCK_CLOUDFLARE_TUNNEL:-true}"
@@ -56,7 +57,7 @@ run_converge() {
   set +e
   ADMIN_CONVERGE_SKIP_GIT_PULL=true \
     ADMIN_NODE_VALIDATE_MOCK_ALL="$validate_mock_all" \
-    ANSIBLE_EXTRA_ARGS="-e admin_ci_disable_auto_converge=true ${extra_args}" \
+    ANSIBLE_EXTRA_ARGS="-e @$CI_BOOTSTRAP_VARS ${extra_args}" \
     "$REPO_ROOT/bin/admin-node" converge run 2>&1 | tee "$output_file"
   status="${PIPESTATUS[0]}"
   set -e
@@ -97,19 +98,12 @@ run_oidc_user_journey() {
   popd >/dev/null
 }
 
-set_service_config_enabled() {
-  local openbao_config_enabled="$1"
-  python3 "$REPO_ROOT/ci/set-bootstrap-service-config.py" \
-    "$CONFIG_REPO_DIR/hosts/group_vars/all.yml" \
-    "$openbao_config_enabled"
-}
-
 commit_config_repo_changes() {
   local message="$1"
   if [[ ! -d "$CONFIG_REPO_DIR/.git" ]]; then
     return 0
   fi
-  git -C "$CONFIG_REPO_DIR" add hosts/group_vars/all.yml hosts/group_vars/secrets.sops.yaml
+  git -C "$CONFIG_REPO_DIR" add hosts/group_vars/secrets.sops.yaml
   if ! git -C "$CONFIG_REPO_DIR" diff --cached --quiet; then
     git -C "$CONFIG_REPO_DIR" \
       -c user.name="CI Admin" \
@@ -122,6 +116,7 @@ setup_prerequisites() {
   echo "=== Preparing bootstrap CI prerequisites ==="
   "$REPO_ROOT/ci/setup-ci-env.sh"
   "$REPO_ROOT/scripts/build-admin-node.sh"
+  cmp -s "$REPO_ROOT/examples/admin-config/group_vars/all.yml.example" "$CONFIG_REPO_DIR/hosts/group_vars/all.yml"
   start_otel_mock
   stop_auto_converge
 }
@@ -142,9 +137,8 @@ initialize_openbao_for_normal_mode() {
   OPENBAO_TOKEN="$(cat "$REPO_ROOT/secrets/openbao-root-token")"
   export OPENBAO_TOKEN
 
-  "$REPO_ROOT/bin/admin-node" ci update-openbao-token
-  set_service_config_enabled false
-  commit_config_repo_changes "Enable service config after CI initialization"
+  "$REPO_ROOT/bin/admin-node" ci update-openbao-token --config-path "$CONFIG_REPO_DIR/hosts/group_vars/ci-openbao-token.yml"
+  commit_config_repo_changes "Update OpenBao token after CI initialization"
 }
 
 run_normal_phase() {
@@ -160,9 +154,7 @@ run_normal_phase() {
 }
 
 run_openbao_config_phase() {
-  echo "=== Enabling OpenBao config after Keycloak convergence ==="
-  set_service_config_enabled true
-  commit_config_repo_changes "Enable OpenBao config after Keycloak convergence"
+  echo "=== Re-running normal convergence with OpenBao config validated ==="
   stop_auto_converge
 
   echo "=== Running convergence (normal mode with OpenBao config) via admin-node ==="

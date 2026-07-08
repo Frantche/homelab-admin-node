@@ -1,10 +1,66 @@
 #!/usr/bin/env python3
-import copy
 import secrets as secretlib
+import shutil
 import sys
 from pathlib import Path
 
 import yaml
+
+
+def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
+    data = {
+        "ci_mode": True,
+        "admin_ci_disable_auto_converge": True,
+        "admin_repo_url": admin_repo_url,
+        "admin_node_root": "/srv/admin",
+        "admin_mode_file": "/etc/admin-node/mode",
+        "admin_git_ref_file": "/etc/admin-node/git-ref",
+        "admin_node_lan_ip": "127.0.0.1",
+        "acme_email": "ci@example.com",
+        "traefik": {
+            "dashboard_enabled": True,
+            "dashboard_hostname": "traefik.example.com",
+            "log_level": "INFO",
+            "access_logs": True,
+            "local_tls_enabled": True,
+        },
+        "pihole": {
+            "enabled": True,
+            "api_version": "auto",
+            "url": "http://pihole.local/admin",
+            "api_url": "http://pihole.local",
+            "dns_records": [
+                {"name": "harbor.example.com", "ip": "{{ admin_node_lan_ip }}"},
+                {"name": "bao.example.com", "ip": "{{ admin_node_lan_ip }}"},
+                {"name": "keycloak.example.com", "ip": "{{ admin_node_lan_ip }}"},
+                {"name": "git.example.com", "ip": "{{ admin_node_lan_ip }}"},
+                {"name": "traefik.example.com", "ip": "{{ admin_node_lan_ip }}"},
+            ],
+        },
+        "observability": {
+            "enabled": True,
+            "metrics_endpoint": "http://127.0.0.1:43190/v1/metrics",
+            "logs_endpoint": "http://127.0.0.1:43190/v1/logs",
+            "compression": "none",
+            "otlp_encoding": "json",
+            "collection_interval": "5s",
+            "service_metrics_interval": "5s",
+            "docker_api_version": "1.40",
+            "mock_backend_enabled": True,
+            "mock_state_dir": "/tmp/admin-node-otel-mock-bootstrap-user-journey",
+        },
+        "backup": {
+            "restic_init_repositories": True,
+            "restic_repositories": [
+                {
+                    "name": "local",
+                    "repository": "/srv/admin/backups/restic",
+                }
+            ],
+        },
+    }
+    with (group_vars / "ci-bootstrap-vars.yml").open("w") as f:
+        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
 
 def main() -> None:
@@ -12,105 +68,10 @@ def main() -> None:
     config_repo = Path(sys.argv[2])
     admin_repo_url = sys.argv[3]
     group_vars = config_repo / "hosts" / "group_vars"
+    all_example_path = repo_root / "examples/admin-config/group_vars/all.yml.example"
 
-    with (repo_root / "examples/admin-config/group_vars/all.yml.example").open() as f:
-        all_vars = yaml.safe_load(f)
-
-    all_vars.update(
-        {
-            "ci_mode": True,
-            "admin_ci_disable_auto_converge": True,
-            "admin_repo_url": admin_repo_url,
-            "admin_node_root": "/srv/admin",
-            "admin_mode_file": "/etc/admin-node/mode",
-            "admin_git_ref_file": "/etc/admin-node/git-ref",
-            "admin_node_lan_ip": "127.0.0.1",
-            "acme_email": "ci@example.com",
-            "traefik": {
-                "dashboard_enabled": True,
-                "dashboard_hostname": "traefik.example.com",
-                "log_level": "INFO",
-                "access_logs": True,
-                "local_tls_enabled": True,
-            },
-            "pihole": {
-                "enabled": True,
-                "api_version": "auto",
-                "url": "http://pihole.local/admin",
-                "api_url": "http://pihole.local",
-                "dns_records": [
-                    {"name": "harbor.example.com", "ip": "{{ admin_node_lan_ip }}"},
-                    {"name": "bao.example.com", "ip": "{{ admin_node_lan_ip }}"},
-                    {"name": "keycloak.example.com", "ip": "{{ admin_node_lan_ip }}"},
-                    {"name": "git.example.com", "ip": "{{ admin_node_lan_ip }}"},
-                    {"name": "traefik.example.com", "ip": "{{ admin_node_lan_ip }}"},
-                ],
-            },
-            "observability": {
-                "enabled": True,
-                "metrics_endpoint": "http://127.0.0.1:43190/v1/metrics",
-                "logs_endpoint": "http://127.0.0.1:43190/v1/logs",
-                "compression": "none",
-                "otlp_encoding": "json",
-                "collection_interval": "5s",
-                "service_metrics_interval": "5s",
-                "docker_api_version": "1.40",
-                "mock_backend_enabled": True,
-                "mock_state_dir": "/tmp/admin-node-otel-mock-bootstrap-user-journey",
-            },
-            "backup": {
-                "restic_init_repositories": True,
-                "restic_repositories": [
-                    {
-                        "name": "local",
-                        "repository": "/srv/admin/backups/restic",
-                    }
-                ],
-            },
-        }
-    )
-
-    keycloak_config = copy.deepcopy(all_vars["keycloak_config"])
-    keycloak_config["enabled"] = False
-    keycloak_config["groups"] = ["admin"]
-    keycloak_config["users"] = [
-        {
-            "username": "ci-sso-user",
-            "password": "ci-sso-user-password",
-            "email": "ci-sso-user@example.com",
-            "first_name": "CI",
-            "last_name": "SSO",
-            "email_verified": True,
-            "temporary_password": False,
-            "groups": ["admin"],
-        }
-    ]
-    all_vars["keycloak_config"] = keycloak_config
-
-    harbor_config = copy.deepcopy(all_vars["harbor_config"])
-    harbor_config["enabled"] = False
-    harbor_config["validate_certs"] = False
-    harbor_config["registry_mirrors"] = []
-    harbor_config.setdefault("oidc", {})["admin_group"] = "admin"
-    all_vars["harbor_config"] = harbor_config
-
-    gitea_config = copy.deepcopy(all_vars["gitea_config"])
-    gitea_config["enabled"] = False
-    gitea_config["validate_certs"] = False
-    gitea_config.setdefault("validation", {})["repo"] = "admin-node-validation"
-    gitea_config.setdefault("validation", {})["issue_title"] = "Backup restore sentinel"
-    all_vars["gitea_config"] = gitea_config
-
-    openbao_config = copy.deepcopy(all_vars["openbao_config"])
-    openbao_config["enabled"] = False
-    openbao_config["root_token"] = ""
-    openbao_config["secret_engines"] = [{"path": "secret", "type": "kv-v2"}]
-    all_vars["openbao_config"] = openbao_config
-    all_vars["openbao"] = {"root_token": ""}
-    all_vars.pop("oidc_clients", None)
-
-    with (group_vars / "all.yml").open("w") as f:
-        yaml.safe_dump(all_vars, f, default_flow_style=False, sort_keys=False)
+    shutil.copyfile(all_example_path, group_vars / "all.yml")
+    write_ci_vars(group_vars, admin_repo_url)
 
     with (repo_root / "examples/admin-config/group_vars/secrets.sops.yaml.example").open() as f:
         secrets = yaml.safe_load(f)
@@ -145,6 +106,21 @@ def main() -> None:
         "db_password": "ci-keycloak-db-pass",
         "admin_user": "admin",
         "admin_password": "ci-keycloak-admin-pass",
+    }
+    secrets["keycloak_config"] = {
+        "groups": ["harbor-admins"],
+        "users": [
+            {
+                "username": "ci-sso-user",
+                "password": "ci-sso-user-password",
+                "email": "ci-sso-user@example.com",
+                "first_name": "CI",
+                "last_name": "SSO",
+                "email_verified": True,
+                "temporary_password": False,
+                "groups": ["harbor-admins"],
+            }
+        ],
     }
     secrets["harbor"] = {
         "admin_password": "ci-Harbor-admin-p4ss",

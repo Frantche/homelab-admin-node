@@ -12,6 +12,9 @@ install -d -m 0755 "$CONFIG_REPO_DIR/hosts/group_vars"
 cp "$REPO_ROOT/ansible/inventory.ini" "$CONFIG_REPO_DIR/hosts/inventory.ini"
 
 python3 "$REPO_ROOT/ci/render-bootstrap-config-repo.py" "$REPO_ROOT" "$CONFIG_REPO_DIR" "$ADMIN_REPO_URL"
+cmp -s \
+  "$REPO_ROOT/examples/admin-config/group_vars/all.yml.example" \
+  "$CONFIG_REPO_DIR/hosts/group_vars/all.yml"
 
 age_public="$(age-keygen -y "$SOPS_AGE_KEY_FILE")"
 cat > "$CONFIG_REPO_DIR/.sops.yaml" <<SOPSEOF
@@ -40,7 +43,7 @@ rm -f /tmp/bootstrap-ci-secrets-decrypted.yaml
   cd "$CONFIG_REPO_DIR"
   git init
   git checkout -B main
-  git add .sops.yaml hosts/inventory.ini hosts/group_vars/all.yml hosts/group_vars/secrets.sops.yaml
+  git add .sops.yaml hosts/inventory.ini hosts/group_vars/all.yml hosts/group_vars/ci-bootstrap-vars.yml hosts/group_vars/secrets.sops.yaml
   if ! git diff --cached --quiet; then
     git -c user.name="CI Admin" -c user.email="ci@example.com" commit -m "Initial CI admin config"
   fi
