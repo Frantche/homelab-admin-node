@@ -28,6 +28,7 @@ def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
             "log_level": "INFO",
             "access_logs": True,
             "local_tls_enabled": True,
+            "external_services": [],
         },
         "pihole": {
             "enabled": True,

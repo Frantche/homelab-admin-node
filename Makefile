@@ -44,6 +44,9 @@ validate-observability:
 test-oidc-contracts:
 	@./ci/test-oidc-contracts.sh
 
+test-traefik-external-services:
+	@./ci/test-traefik-external-services.sh
+
 test-restic-config:
 	@./ci/test-restic-config.sh
 

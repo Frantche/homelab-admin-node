@@ -34,7 +34,7 @@
         headers:
           X-FTL-SID: "{{ pihole_v6_auth.json.session.sid }}"
         validate_certs: "{{ pihole_api_validate_certs }}"
-      loop: "{{ pihole.dns_records }}"
+      loop: "{{ pihole_effective_dns_records }}"
       when: (item.ip ~ ' ' ~ item.name) not in (pihole_v6_hosts.json.config.dns.hosts | default([]))
       no_log: true
 

@@ -42,6 +42,24 @@ service_domains:
 | `service_domains.gitea` | `git.example.com` | Gitea UI and API hostname. |
 | `service_domains.traefik` | `traefik.example.com` | Traefik dashboard hostname and default certificate common name. |
 
+## Traefik external services
+
+`traefik.external_services` publishes services outside the admin-node Docker stacks through Traefik.
+
+```yaml
+traefik:
+  external_services:
+    - name: "nas"
+      hostname: "nas.example.com"
+      url: "https://192.168.1.50:8443"
+      pihole_dns: true
+      cloudflare: false
+      tls:
+        verify: false
+```
+
+Use `tls.ca_pem` instead of `tls.verify: false` when the backend has a private CA that should be trusted by Traefik.
+
 ## CI switches
 
 `ci_mode` enables CI-safe defaults. The nested `ci` map controls individual mocks used by validation and convergence tests.

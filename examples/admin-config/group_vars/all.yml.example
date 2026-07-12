@@ -11,6 +11,9 @@ service_domains:
 cloudflare:
   enabled: true
 
+traefik:
+  external_services: []
+
 hardening:
   apparmor:
     enabled: true

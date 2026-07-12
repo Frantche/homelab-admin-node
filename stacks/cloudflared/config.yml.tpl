@@ -21,4 +21,10 @@ ingress:
     service: "https://traefik:443"
     originRequest:
       noTLSVerify: true
+{% for external_service in traefik_external_services | default([]) if external_service.cloudflare | default(false) | bool %}
+  - hostname: "{{ external_service.hostname }}"
+    service: "https://traefik:443"
+    originRequest:
+      noTLSVerify: true
+{% endfor %}
   - service: http_status:404

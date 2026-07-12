@@ -3,6 +3,15 @@
   ansible.builtin.set_fact:
     pihole_api_url: "{{ pihole.api_url | regex_replace('/+$', '') }}"
     pihole_api_validate_certs: "{{ pihole.validate_certs | default(not (ci_mode | default(false))) }}"
+    pihole_effective_dns_records: "{{ pihole.dns_records | default([]) }}"
+
+- name: Add Traefik external services to Pi-hole DNS records
+  ansible.builtin.set_fact:
+    pihole_effective_dns_records: "{{ pihole_effective_dns_records + [{'name': item.hostname, 'ip': admin_node_lan_ip}] }}"
+  loop: "{{ (traefik | default({})).external_services | default([]) }}"
+  loop_control:
+    label: "{{ item.hostname | default(item.name | default('unnamed')) }}"
+  when: item.pihole_dns | default(false) | bool
 
 - name: Probe Pi-hole v6 API when auto-detecting
   ansible.builtin.uri:

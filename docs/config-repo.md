@@ -63,6 +63,14 @@ oidc_clients:
 traefik:
   dashboard_enabled: true
   dashboard_hostname: "traefik.mondomaine.fr"
+  external_services:
+    - name: "nas"
+      hostname: "nas.mondomaine.fr"
+      url: "https://192.168.1.50:8443"
+      pihole_dns: true
+      cloudflare: false
+      tls:
+        verify: false
 
 pihole:
   enabled: true

@@ -1,4 +1,43 @@
 http:
+{% if traefik_external_services | default([]) | length > 0 %}
+  routers:
+{% for external_service in traefik_external_services | default([]) %}
+    {{ external_service.name }}:
+      rule: "Host(`{{ external_service.hostname }}`)"
+      entryPoints:
+        - websecure
+      tls: true
+      service: {{ external_service.name }}
+{% endfor %}
+  services:
+{% for external_service in traefik_external_services | default([]) %}
+    {{ external_service.name }}:
+      loadBalancer:
+{% if ((external_service.tls | default({})).verify | default(true) | bool == false) or (((external_service.tls | default({})).ca_pem | default('', true) | length) > 0) %}
+        serversTransport: {{ external_service.name }}
+{% endif %}
+        servers:
+          - url: "{{ external_service.url }}"
+{% endfor %}
+{% set external_services_with_transport = [] %}
+{% for external_service in traefik_external_services | default([]) %}
+{% if ((external_service.tls | default({})).verify | default(true) | bool == false) or (((external_service.tls | default({})).ca_pem | default('', true) | length) > 0) %}
+{% set _ = external_services_with_transport.append(external_service) %}
+{% endif %}
+{% endfor %}
+{% if external_services_with_transport | length > 0 %}
+  serversTransports:
+{% for external_service in external_services_with_transport %}
+    {{ external_service.name }}:
+{% if (external_service.tls | default({})).verify | default(true) | bool == false %}
+      insecureSkipVerify: true
+{% else %}
+      rootCAs:
+        - /certs/traefik-external-services/{{ external_service.name }}-ca.pem
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
   middlewares:
     dashboard-auth:
       basicAuth:

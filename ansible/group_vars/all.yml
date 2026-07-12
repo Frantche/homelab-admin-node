@@ -12,6 +12,7 @@ traefik:
   log_level: "INFO"
   access_logs: true
   local_tls_enabled: false
+  external_services: []
 
 service_domains:
   harbor: "harbor.example.com"
