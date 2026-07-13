@@ -31,6 +31,13 @@
     mode: "0755"
   when: not (harbor_test_mode | default(false))
 
+- name: Ensure harbor config directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/stacks/harbor/config"
+    state: directory
+    mode: "0755"
+  when: not (harbor_test_mode | default(false))
+
 - name: Ensure Harbor core data directory
   ansible.builtin.file:
     path: "{{ admin_node_root }}/data/harbor/core"
@@ -161,11 +168,19 @@
     - harbor_registry_password_check.rc != 0
   no_log: true
 
-- name: Copy harbor stack files
+- name: Copy Harbor static config files
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../stacks/harbor/"
-    dest: "{{ admin_node_root }}/stacks/harbor/"
+    src: "{{ playbook_dir }}/../stacks/harbor/config/{{ item }}"
+    dest: "{{ admin_node_root }}/stacks/harbor/config/{{ item }}"
     mode: preserve
+  register: harbor_stack_files_copy
+  loop:
+    - core-app.conf
+    - harbor-nginx.conf
+    - jobservice.yml
+    - logrotate.conf
+    - portal-nginx.conf
+    - registryctl.yml
   when: not (harbor_test_mode | default(false))
 
 - name: Ensure Harbor config files are readable by containers
@@ -195,6 +210,7 @@
     src: "{{ playbook_dir }}/../stacks/harbor/compose.yaml"
     dest: "{{ admin_node_root }}/stacks/harbor/compose.yaml"
     mode: "0644"
+  register: harbor_compose_render
   when: not (harbor_test_mode | default(false))
 
 - name: Render harbor env
@@ -207,6 +223,7 @@
       HARBOR_CORE_SECRET={{ harbor_runtime.core_secret }}
       HARBOR_JOBSERVICE_SECRET={{ harbor_runtime.jobservice_secret }}
       HARBOR_REGISTRY_PASSWORD={{ harbor_runtime.registry_password }}
+  register: harbor_env_render
   when: not (harbor_test_mode | default(false))
   no_log: true
 
@@ -242,7 +259,8 @@
   ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up -d
   args:
     chdir: "{{ admin_node_root }}/stacks/harbor"
-  changed_when: true
+  register: harbor_stack_start
+  changed_when: "'Started' in harbor_stack_start.stderr or 'Started' in harbor_stack_start.stdout or 'Created' in harbor_stack_start.stderr or 'Created' in harbor_stack_start.stdout or 'Recreated' in harbor_stack_start.stderr or 'Recreated' in harbor_stack_start.stdout"
   when: not (harbor_test_mode | default(false))
 
 - name: Recreate Harbor registry services after authentication config change
@@ -259,7 +277,9 @@
   args:
     chdir: "{{ admin_node_root }}/stacks/harbor"
   changed_when: true
-  when: not (harbor_test_mode | default(false))
+  when:
+    - not (harbor_test_mode | default(false))
+    - harbor_stack_files_copy.changed or harbor_compose_render.changed or (harbor_env_render.changed | default(false))
 
 - name: Wait for Harbor nginx health after reload
   ansible.builtin.command: docker inspect -f {% raw %}'{{ .State.Health.Status }}'{% endraw %} harbor-nginx
@@ -268,4 +288,6 @@
   until: harbor_nginx_health.stdout | trim == "healthy"
   retries: 30
   delay: 2
-  when: not (harbor_test_mode | default(false))
+  when:
+    - not (harbor_test_mode | default(false))
+    - harbor_stack_files_copy.changed or harbor_compose_render.changed or (harbor_env_render.changed | default(false))
