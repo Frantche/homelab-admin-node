@@ -222,6 +222,45 @@
     - harbor_mirror_item.validation.image | default('', true) | length > 0
   no_log: true
 
+- name: Build expected Harbor repository name for mirror validation
+  ansible.builtin.set_fact:
+    harbor_mirror_validation_repository: >-
+      {{
+        (harbor_mirror_item.project_name | default(harbor_mirror_item.name))
+        ~ '/'
+        ~ (
+          harbor_mirror_item.validation.image
+          | regex_replace('@.*$', '')
+          | regex_replace(':[^/]+$', '')
+        )
+      }}
+  when:
+    - harbor_mirror_item.validation.enabled | default(harbor_config.validate_registry_mirrors | default(false))
+    - harbor_mirror_item.validation.image | default('', true) | length > 0
+
+- name: Wait for pulled image to appear in Harbor project repositories
+  ansible.builtin.uri:
+    url: >-
+      {{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/projects/
+      {{- (harbor_mirror_item.project_name | default(harbor_mirror_item.name)) | urlencode -}}
+      /repositories?page=1&page_size=100&q={{ ('name=' ~ harbor_mirror_validation_repository) | urlencode }}
+    method: GET
+    user: admin
+    password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required for Harbor API operations')) }}"
+    force_basic_auth: true
+    validate_certs: "{{ harbor_api_validate_certs }}"
+    status_code: 200
+  register: harbor_mirror_repository_lookup
+  until:
+    - harbor_mirror_repository_lookup.json | default([]) | selectattr('name', 'equalto', harbor_mirror_validation_repository) | list | length > 0
+    - harbor_mirror_repository_lookup.json | default([]) | selectattr('name', 'equalto', harbor_mirror_validation_repository) | map(attribute='artifact_count') | map('int') | select('greaterthan', 0) | list | length > 0
+  retries: 36
+  delay: 5
+  when:
+    - harbor_mirror_item.validation.enabled | default(harbor_config.validate_registry_mirrors | default(false))
+    - harbor_mirror_item.validation.image | default('', true) | length > 0
+  no_log: true
+
 - name: Remove temporary Docker auth config
   ansible.builtin.file:
     path: "{{ harbor_mirror_auth_config.path }}"
