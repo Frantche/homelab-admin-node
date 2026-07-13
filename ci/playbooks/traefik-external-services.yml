@@ -1,0 +1,86 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    admin_node_lan_ip: "192.0.2.10"
+    service_domains:
+      harbor: "harbor.example.com"
+      openbao: "bao.example.com"
+      keycloak: "keycloak.example.com"
+      gitea: "git.example.com"
+      traefik: "traefik.example.com"
+    admin:
+      traefik_dashboard_basic_auth: "admin:$$apr1$$ci$$fakehash"
+    TRAEFIK_DASHBOARD_BASIC_AUTH: "admin:$$apr1$$ci$$fakehash"
+    traefik:
+      external_services:
+        - name: "insecure-app"
+          hostname: "insecure.example.com"
+          url: "https://192.0.2.20:8443"
+          cloudflare: true
+          pihole_dns: true
+          tls:
+            verify: false
+        - name: "ca-app"
+          hostname: "ca.example.com"
+          url: "https://ca.internal:9443"
+          cloudflare: false
+          pihole_dns: false
+          tls:
+            ca_pem: |
+              -----BEGIN CERTIFICATE-----
+              MIIBtest
+              -----END CERTIFICATE-----
+    pihole:
+      dns_records:
+        - name: "traefik.example.com"
+          ip: "{{ admin_node_lan_ip }}"
+    cloudflare:
+      tunnel_id: "00000000-0000-0000-0000-000000000000"
+  tasks:
+    - name: Set external service facts for template rendering
+      ansible.builtin.set_fact:
+        traefik_external_services: "{{ traefik.external_services }}"
+
+    - name: Render Traefik dynamic config for external services
+      ansible.builtin.set_fact:
+        traefik_dynamic_config: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/dynamic/config.yml') }}"
+
+    - name: Render Cloudflared local ingress config for external services
+      ansible.builtin.set_fact:
+        cloudflared_config: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/cloudflared/config.yml.tpl') }}"
+
+    - name: Build Pi-hole effective DNS records
+      ansible.builtin.set_fact:
+        pihole_effective_dns_records: "{{ pihole.dns_records | default([]) }}"
+
+    - name: Add external services to Pi-hole DNS records
+      ansible.builtin.set_fact:
+        pihole_effective_dns_records: "{{ pihole_effective_dns_records + [{'name': item.hostname, 'ip': admin_node_lan_ip}] }}"
+      loop: "{{ traefik.external_services }}"
+      when: item.pihole_dns | default(false) | bool
+
+    - name: Assert Traefik external service rendering
+      ansible.builtin.assert:
+        that:
+          - "'insecure-app:' in traefik_dynamic_config"
+          - "'rule: \"Host(`insecure.example.com`)\"' in traefik_dynamic_config"
+          - "'serversTransport: insecure-app' in traefik_dynamic_config"
+          - "'insecureSkipVerify: true' in traefik_dynamic_config"
+          - "'ca-app:' in traefik_dynamic_config"
+          - "'serversTransport: ca-app' in traefik_dynamic_config"
+          - "'rootCAs:' in traefik_dynamic_config"
+          - "'/certs/traefik-external-services/ca-app-ca.pem' in traefik_dynamic_config"
+
+    - name: Assert Cloudflared only renders enabled external services
+      ansible.builtin.assert:
+        that:
+          - "'hostname: \"insecure.example.com\"' in cloudflared_config"
+          - "'hostname: \"ca.example.com\"' not in cloudflared_config"
+
+    - name: Assert Pi-hole only includes opted-in external services
+      ansible.builtin.assert:
+        that:
+          - "pihole_effective_dns_records | selectattr('name', 'equalto', 'insecure.example.com') | list | length == 1"
+          - "pihole_effective_dns_records | selectattr('name', 'equalto', 'ca.example.com') | list | length == 0"

@@ -3,10 +3,26 @@
   ansible.builtin.set_fact:
     traefik_letsencrypt_enabled: "{{ (not (ci_mode | default(false))) and (not (traefik.local_tls_enabled | default(false))) and ((cloudflare.enabled | default(true)) | bool) and ((cloudflare.dns_api_token | default('') | length) > 0) and ((acme_email | default('') | length) > 0) }}"
     traefik_local_ca_enabled: "{{ (ci_mode | default(false)) or (traefik.local_tls_enabled | default(false)) or (not ((cloudflare.enabled | default(true)) | bool)) or ((cloudflare.dns_api_token | default('') | length) == 0) or ((acme_email | default('') | length) == 0) }}"
+    traefik_external_services: "{{ (traefik | default({})).external_services | default([]) }}"
+
+- name: Validate Traefik external services
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.name is match('^[A-Za-z0-9][A-Za-z0-9_-]*$')
+      - item.hostname is defined
+      - item.hostname | length > 0
+      - item.url is defined
+      - item.url is match('^https?://')
+      - not (((item.tls | default({})).verify | default(true) | bool == false) and (((item.tls | default({})).ca_pem | default('', true) | length) > 0))
+    fail_msg: "Invalid traefik.external_services item. Required: name, hostname, http(s) url. tls.verify=false cannot be combined with tls.ca_pem."
+  loop: "{{ traefik_external_services }}"
+  loop_control:
+    label: "{{ item.name | default(item.hostname | default('unnamed')) }}"
 
 - name: Compute local TLS expected DNS names
   ansible.builtin.set_fact:
-    traefik_local_tls_expected_dns_names: "{{ ((service_domains | dict2items | map(attribute='value') | list) + (admin_node_fqdn | default('', true)).split() + ['localhost']) | unique }}"
+    traefik_local_tls_expected_dns_names: "{{ ((service_domains | dict2items | map(attribute='value') | list) + (traefik_external_services | map(attribute='hostname') | list) + (admin_node_fqdn | default('', true)).split() + ['localhost']) | unique }}"
   when: not traefik_letsencrypt_enabled
 
 - name: Ensure traefik stack directory
@@ -20,6 +36,34 @@
     path: "{{ admin_node_root }}/stacks/traefik/dynamic"
     state: directory
     mode: "0755"
+
+- name: Ensure Traefik external service CA directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/certs/traefik-external-services"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: >-
+    {{
+      traefik_external_services
+      | selectattr('tls', 'defined')
+      | selectattr('tls.ca_pem', 'defined')
+      | list
+      | length > 0
+    }}
+
+- name: Render Traefik external service CA files
+  ansible.builtin.copy:
+    dest: "{{ admin_node_root }}/certs/traefik-external-services/{{ item.name }}-ca.pem"
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ item.tls.ca_pem }}"
+  loop: "{{ traefik_external_services }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: ((item.tls | default({})).ca_pem | default('', true) | length) > 0
 
 - name: Ensure letsencrypt data directory
   ansible.builtin.file:

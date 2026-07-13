@@ -10,7 +10,7 @@
   ansible.builtin.command: getent ahostsv4 {{ item.name }}
   register: dns_results
   changed_when: false
-  loop: "{{ pihole.dns_records }}"
+  loop: "{{ pihole_effective_dns_records }}"
 
 - name: Assert DNS records resolve to expected IP
   ansible.builtin.assert:

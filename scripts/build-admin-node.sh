@@ -40,7 +40,7 @@ if [[ -x "$BIN_PATH" && -f "$HASH_PATH" ]] && [[ "$(cat "$HASH_PATH")" == "$sour
 fi
 
 echo "admin-node build: compiling"
-"$GO_BIN" build -mod=readonly -o "$TMP_BIN" ./cmd/admin-node
+"$GO_BIN" build -buildvcs=false -mod=readonly -o "$TMP_BIN" ./cmd/admin-node
 "$TMP_BIN" --help >/dev/null
 printf '%s\n' "$source_hash" > "$TMP_HASH"
 mv "$TMP_BIN" "$BIN_PATH"
