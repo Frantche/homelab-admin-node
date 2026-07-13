@@ -173,36 +173,29 @@ func (v Validator) Harbor(ctx context.Context) CheckResult {
 		ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 		defer cancel()
 		rawURL := serviceURL(v.Config.HarborDomain, "/api/v2.0/health")
-		type component struct {
-			Name   string `json:"name"`
-			Status string `json:"status"`
-		}
-		var health struct {
-			Components []component `json:"components"`
-		}
+		var health harborHealth
 		for {
-			health = struct {
-				Components []component `json:"components"`
-			}{}
+			health = harborHealth{}
 			if err := getJSON(ctx, v.Client, rawURL, "", "", &health); err == nil {
-				for _, item := range health.Components {
-					if item.Name == "core" && item.Status == "healthy" {
-						adminPassword := getenv("HARBOR_ADMIN_PASSWORD", "")
-						if adminPassword == "" {
-							adminPassword = readEnvFileValue(filepath.Join(v.Config.AdminRoot, "env/harbor.env"), "HARBOR_ADMIN_PASSWORD")
-						}
-						if adminPassword == "" {
-							return StatusOK, "core healthy"
-						}
-						adminUser := getenv("HARBOR_ADMIN_USER", "admin")
-						var projects []map[string]any
-						projectsURL := serviceURL(v.Config.HarborDomain, "/api/v2.0/projects?page=1&page_size=1")
-						if err := getJSON(ctx, v.Client, projectsURL, adminUser, adminPassword, &projects); err != nil {
-							return StatusFail, "admin API check failed: " + err.Error()
-						}
-						return StatusOK, "core healthy and admin API reachable"
-					}
+				if err := validateHarborHealth(health); err != nil {
+					return StatusFail, err.Error()
 				}
+
+				adminPassword := getenv("HARBOR_ADMIN_PASSWORD", "")
+				if adminPassword == "" {
+					adminPassword = readEnvFileValue(filepath.Join(v.Config.AdminRoot, "env/harbor.env"), "HARBOR_ADMIN_PASSWORD")
+				}
+				if adminPassword == "" {
+					return StatusOK, "all components healthy"
+				}
+				adminUser := getenv("HARBOR_ADMIN_USER", "admin")
+				if err := v.validateHarborAdminAPIs(ctx, adminUser, adminPassword); err != nil {
+					return StatusFail, err.Error()
+				}
+				if err := v.validateHarborRegistryRuntime(ctx); err != nil {
+					return StatusFail, err.Error()
+				}
+				return StatusOK, "components, admin APIs, scanner, registries, replication adapters, and internal registry healthy"
 			}
 			if ctx.Err() != nil {
 				return StatusFail, "core health check failed"
@@ -210,6 +203,128 @@ func (v Validator) Harbor(ctx context.Context) CheckResult {
 			time.Sleep(3 * time.Second)
 		}
 	})
+}
+
+type harborHealth struct {
+	Status     string `json:"status"`
+	Components []struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	} `json:"components"`
+}
+
+func validateHarborHealth(health harborHealth) error {
+	if health.Status != "healthy" {
+		return fmt.Errorf("overall health is %q, want healthy", health.Status)
+	}
+	if len(health.Components) == 0 {
+		return fmt.Errorf("health API returned no components")
+	}
+	for _, component := range health.Components {
+		if component.Status != "healthy" {
+			return fmt.Errorf("component %s is %s", component.Name, component.Status)
+		}
+	}
+	return nil
+}
+
+func (v Validator) validateHarborAdminAPIs(ctx context.Context, user, password string) error {
+	var projects []map[string]any
+	if err := v.harborGetJSON(ctx, "/api/v2.0/projects?page=1&page_size=1", user, password, &projects); err != nil {
+		return fmt.Errorf("projects API check failed: %w", err)
+	}
+
+	var systemInfo struct {
+		HarborVersion               string `json:"harbor_version"`
+		RegistryStorageProviderName string `json:"registry_storage_provider_name"`
+	}
+	if err := v.harborGetJSON(ctx, "/api/v2.0/systeminfo", user, password, &systemInfo); err != nil {
+		return fmt.Errorf("system info API check failed: %w", err)
+	}
+	if systemInfo.HarborVersion == "" || systemInfo.RegistryStorageProviderName == "" {
+		return fmt.Errorf("system info API returned incomplete registry metadata")
+	}
+
+	var volumes struct {
+		Storage []struct {
+			Total int64 `json:"total"`
+			Free  int64 `json:"free"`
+		} `json:"storage"`
+	}
+	if err := v.harborGetJSON(ctx, "/api/v2.0/systeminfo/volumes", user, password, &volumes); err != nil {
+		return fmt.Errorf("storage volumes API check failed: %w", err)
+	}
+	if len(volumes.Storage) == 0 || volumes.Storage[0].Total <= 0 || volumes.Storage[0].Free < 0 {
+		return fmt.Errorf("storage volumes API returned invalid capacity")
+	}
+
+	var statistics map[string]any
+	if err := v.harborGetJSON(ctx, "/api/v2.0/statistics", user, password, &statistics); err != nil {
+		return fmt.Errorf("statistics API check failed: %w", err)
+	}
+	if _, ok := statistics["total_project_count"]; !ok {
+		return fmt.Errorf("statistics API returned no project count")
+	}
+
+	var scanners []struct {
+		Name      string `json:"name"`
+		Disabled  bool   `json:"disabled"`
+		IsDefault bool   `json:"is_default"`
+	}
+	if err := v.harborGetJSON(ctx, "/api/v2.0/scanners?page=1&page_size=100", user, password, &scanners); err != nil {
+		return fmt.Errorf("scanners API check failed: %w", err)
+	}
+	defaultScannerAvailable := false
+	for _, scanner := range scanners {
+		if scanner.IsDefault && !scanner.Disabled {
+			defaultScannerAvailable = true
+			break
+		}
+	}
+	if !defaultScannerAvailable {
+		return fmt.Errorf("scanners API returned no enabled default scanner")
+	}
+
+	var registries []struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	}
+	if err := v.harborGetJSON(ctx, "/api/v2.0/registries?page=1&page_size=100", user, password, &registries); err != nil {
+		return fmt.Errorf("registries API check failed: %w", err)
+	}
+	for _, registry := range registries {
+		if registry.Status != "healthy" {
+			return fmt.Errorf("registry endpoint %s is %s", registry.Name, registry.Status)
+		}
+	}
+
+	var adapters []string
+	if err := v.harborGetJSON(ctx, "/api/v2.0/replication/adapters", user, password, &adapters); err != nil {
+		return fmt.Errorf("replication adapters API check failed: %w", err)
+	}
+	if len(adapters) == 0 {
+		return fmt.Errorf("replication adapters API returned no providers")
+	}
+	return nil
+}
+
+func (v Validator) harborGetJSON(ctx context.Context, path, user, password string, target any) error {
+	return getJSON(ctx, v.Client, serviceURL(v.Config.HarborDomain, path), user, password, target)
+}
+
+func (v Validator) validateHarborRegistryRuntime(ctx context.Context) error {
+	if v.Runner == nil {
+		return nil
+	}
+	storage := v.Runner.Run(ctx, "docker", "exec", "harbor-registry", "sh", "-c", "test -w /storage")
+	if storage.Code != 0 {
+		return fmt.Errorf("registry storage is not writable")
+	}
+	registryAPI := v.Runner.Run(ctx, "docker", "exec", "harbor-core", "sh", "-c", `curl -fsS -u "$REGISTRY_CREDENTIAL_USERNAME:$REGISTRY_CREDENTIAL_PASSWORD" http://harbor-registry:5000/v2/_catalog?n=1 >/dev/null`)
+	if registryAPI.Code != 0 {
+		return fmt.Errorf("internal registry API authentication failed")
+	}
+	return nil
 }
 
 func (v Validator) OpenBao(ctx context.Context) CheckResult {

@@ -100,6 +100,7 @@ services:
     volumes:
       - /srv/admin/data/harbor/registry:/storage
       - ./config/registry.yml:/etc/registry/config.yml:ro
+      - /srv/admin/data/harbor/core/registry.passwd:/etc/registry/passwd:ro
       - /srv/admin/data/harbor/core/token.crt:/etc/registry/root.crt:ro
     depends_on:
       harbor-log:
@@ -130,6 +131,7 @@ services:
     volumes:
       - /srv/admin/data/harbor/registry:/storage
       - ./config/registry.yml:/etc/registry/config.yml:ro
+      - /srv/admin/data/harbor/core/registry.passwd:/etc/registry/passwd:ro
       - /srv/admin/data/harbor/core/token.crt:/etc/registry/root.crt:ro
       - ./config/registryctl.yml:/etc/registryctl/config.yml:ro
     depends_on:
@@ -185,6 +187,7 @@ services:
       TRIVY_ADAPTER_URL: http://harbor-trivy:8080
       REGISTRY_STORAGE_PROVIDER_NAME: filesystem
       PERMITTED_REGISTRY_TYPES_FOR_PROXY_CACHE: docker-hub,harbor,docker-registry,aws-ecr,azure-acr,google-gcr,quay,github-ghcr,jfrog-artifactory
+      REPLICATION_ADAPTER_WHITELIST: ali-acr,aws-ecr,azure-acr,docker-hub,docker-registry,github-ghcr,google-gcr,harbor,huawei-SWR,jfrog-artifactory,tencent-tcr,volcengine-cr
       READ_ONLY: "false"
       LOG_LEVEL: info
       METRIC_ENABLE: "true"

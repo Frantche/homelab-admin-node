@@ -54,6 +54,23 @@ func (r observabilityRunner) Run(_ context.Context, name string, args ...string)
 	}
 }
 
+type harborRuntimeRunner struct {
+	storageCode  int
+	registryCode int
+}
+
+func (r harborRuntimeRunner) Run(_ context.Context, name string, args ...string) runner.Result {
+	command := name + " " + strings.Join(args, " ")
+	switch {
+	case strings.Contains(command, "test -w /storage"):
+		return runner.Result{Code: r.storageCode}
+	case strings.Contains(command, "harbor-registry:5000/v2/_catalog"):
+		return runner.Result{Code: r.registryCode}
+	default:
+		return runner.Result{}
+	}
+}
+
 func TestKeycloakOK(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/realms/master/.well-known/openid-configuration" {
@@ -72,14 +89,13 @@ func TestKeycloakOK(t *testing.T) {
 }
 
 func TestHarborOK(t *testing.T) {
+	t.Setenv("HARBOR_ADMIN_PASSWORD", "")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v2.0/health" {
 			http.NotFound(w, r)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"components": []map[string]string{{"name": "core", "status": "healthy"}},
-		})
+		writeHealthyHarborHealth(w)
 	}))
 	defer server.Close()
 
@@ -93,19 +109,16 @@ func TestHarborOK(t *testing.T) {
 func TestHarborAdminCheckWhenPasswordAvailable(t *testing.T) {
 	t.Setenv("HARBOR_ADMIN_PASSWORD", "password")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/v2.0/health":
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"components": []map[string]string{{"name": "core", "status": "healthy"}},
-			})
-		case "/api/v2.0/projects":
-			user, password, ok := r.BasicAuth()
-			if !ok || user != "admin" || password != "password" {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-			_ = json.NewEncoder(w).Encode([]map[string]string{{"name": "library"}})
-		default:
+		if r.URL.Path == "/api/v2.0/health" {
+			writeHealthyHarborHealth(w)
+			return
+		}
+		user, password, ok := r.BasicAuth()
+		if !ok || user != "admin" || password != "password" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if !writeHealthyHarborAdminAPI(w, r, []string{"docker-registry", "harbor"}, "healthy") {
 			http.NotFound(w, r)
 		}
 	}))
@@ -116,8 +129,75 @@ func TestHarborAdminCheckWhenPasswordAvailable(t *testing.T) {
 	if result.Status != StatusOK {
 		t.Fatalf("status = %s, want %s (%s)", result.Status, StatusOK, result.Message)
 	}
-	if !strings.Contains(result.Message, "admin API") {
-		t.Fatalf("message = %q, want admin API check", result.Message)
+	if !strings.Contains(result.Message, "internal registry healthy") {
+		t.Fatalf("message = %q, want complete Harbor validation", result.Message)
+	}
+}
+
+func TestHarborAdminCheckFailsWhenNoReplicationAdaptersAreAvailable(t *testing.T) {
+	t.Setenv("HARBOR_ADMIN_PASSWORD", "password")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2.0/health" {
+			writeHealthyHarborHealth(w)
+			return
+		}
+		if !writeHealthyHarborAdminAPI(w, r, []string{}, "healthy") {
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	v := Validator{Config: config.Config{HarborDomain: server.URL}, Client: server.Client()}
+	result := v.Harbor(context.Background())
+	if result.Status != StatusFail {
+		t.Fatalf("status = %s, want %s", result.Status, StatusFail)
+	}
+	if !strings.Contains(result.Message, "no providers") {
+		t.Fatalf("message = %q, want missing providers failure", result.Message)
+	}
+}
+
+func TestHarborAdminCheckFailsWithoutEnabledDefaultScanner(t *testing.T) {
+	t.Setenv("HARBOR_ADMIN_PASSWORD", "password")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2.0/health" {
+			writeHealthyHarborHealth(w)
+			return
+		}
+		if r.URL.Path == "/api/v2.0/scanners" {
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
+			return
+		}
+		if !writeHealthyHarborAdminAPI(w, r, []string{"docker-registry"}, "healthy") {
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	v := Validator{Config: config.Config{HarborDomain: server.URL}, Client: server.Client()}
+	result := v.Harbor(context.Background())
+	if result.Status != StatusFail || !strings.Contains(result.Message, "no enabled default scanner") {
+		t.Fatalf("result = %#v, want default scanner failure", result)
+	}
+}
+
+func TestHarborAdminCheckFailsWhenRegistryEndpointIsUnhealthy(t *testing.T) {
+	t.Setenv("HARBOR_ADMIN_PASSWORD", "password")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2.0/health" {
+			writeHealthyHarborHealth(w)
+			return
+		}
+		if !writeHealthyHarborAdminAPI(w, r, []string{"docker-registry"}, "unhealthy") {
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	v := Validator{Config: config.Config{HarborDomain: server.URL}, Client: server.Client()}
+	result := v.Harbor(context.Background())
+	if result.Status != StatusFail || !strings.Contains(result.Message, "registry endpoint dockerhub is unhealthy") {
+		t.Fatalf("result = %#v, want unhealthy registry endpoint failure", result)
 	}
 }
 
@@ -126,9 +206,7 @@ func TestHarborAdminCheckFailsWithBadPassword(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v2.0/health":
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"components": []map[string]string{{"name": "core", "status": "healthy"}},
-			})
+			writeHealthyHarborHealth(w)
 		case "/api/v2.0/projects":
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 		default:
@@ -142,9 +220,87 @@ func TestHarborAdminCheckFailsWithBadPassword(t *testing.T) {
 	if result.Status != StatusFail {
 		t.Fatalf("status = %s, want %s", result.Status, StatusFail)
 	}
-	if !strings.Contains(result.Message, "admin API check failed") {
+	if !strings.Contains(result.Message, "projects API check failed") {
 		t.Fatalf("message = %q, want admin API failure", result.Message)
 	}
+}
+
+func TestHarborFailsWhenAComponentIsUnhealthy(t *testing.T) {
+	t.Setenv("HARBOR_ADMIN_PASSWORD", "")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": "unhealthy",
+			"components": []map[string]string{
+				{"name": "core", "status": "healthy"},
+				{"name": "registry", "status": "unhealthy"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	v := Validator{Config: config.Config{HarborDomain: server.URL}, Client: server.Client()}
+	result := v.Harbor(context.Background())
+	if result.Status != StatusFail || !strings.Contains(result.Message, "overall health") {
+		t.Fatalf("result = %#v, want overall health failure", result)
+	}
+}
+
+func TestHarborRegistryRuntimeChecks(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		runner       harborRuntimeRunner
+		wantError    bool
+		messageMatch string
+	}{
+		{name: "healthy", runner: harborRuntimeRunner{}},
+		{name: "storage read only", runner: harborRuntimeRunner{storageCode: 1}, wantError: true, messageMatch: "not writable"},
+		{name: "registry auth failure", runner: harborRuntimeRunner{registryCode: 1}, wantError: true, messageMatch: "authentication failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			v := Validator{Runner: test.runner}
+			err := v.validateHarborRegistryRuntime(context.Background())
+			if test.wantError && (err == nil || !strings.Contains(err.Error(), test.messageMatch)) {
+				t.Fatalf("error = %v, want match %q", err, test.messageMatch)
+			}
+			if !test.wantError && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func writeHealthyHarborHealth(w http.ResponseWriter) {
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status": "healthy",
+		"components": []map[string]string{
+			{"name": "core", "status": "healthy"},
+			{"name": "database", "status": "healthy"},
+			{"name": "jobservice", "status": "healthy"},
+			{"name": "registry", "status": "healthy"},
+		},
+	})
+}
+
+func writeHealthyHarborAdminAPI(w http.ResponseWriter, r *http.Request, adapters []string, registryStatus string) bool {
+	switch r.URL.Path {
+	case "/api/v2.0/projects":
+		_ = json.NewEncoder(w).Encode([]map[string]string{{"name": "library"}})
+	case "/api/v2.0/systeminfo":
+		_ = json.NewEncoder(w).Encode(map[string]any{"harbor_version": "v2.15.2", "registry_storage_provider_name": "filesystem"})
+	case "/api/v2.0/systeminfo/volumes":
+		_ = json.NewEncoder(w).Encode(map[string]any{"storage": []map[string]int64{{"total": 100, "free": 50}}})
+	case "/api/v2.0/statistics":
+		_ = json.NewEncoder(w).Encode(map[string]int{"total_project_count": 1, "total_repo_count": 1})
+	case "/api/v2.0/scanners":
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"name": "Trivy", "disabled": false, "is_default": true}})
+	case "/api/v2.0/registries":
+		_ = json.NewEncoder(w).Encode([]map[string]string{{"name": "dockerhub", "status": registryStatus}})
+	case "/api/v2.0/replication/adapters":
+		_ = json.NewEncoder(w).Encode(adapters)
+	default:
+		return false
+	}
+	return true
 }
 
 func TestObservabilityOKWhenCollectorIsHealthy(t *testing.T) {

@@ -14,11 +14,14 @@ http:
   addr: :5000
   secret: registry-secret
 auth:
-  token:
-    issuer: harbor-token-issuer
-    realm: https://{{ service_domains.harbor }}/service/token
-    rootcertbundle: /etc/registry/root.crt
-    service: harbor-registry
+  htpasswd:
+    realm: harbor-registry-basic-realm
+    path: /etc/registry/passwd
+validation:
+  disabled: true
+compatibility:
+  schema1:
+    enabled: true
 redis:
   addr: harbor-redis:6379
   db: 1
