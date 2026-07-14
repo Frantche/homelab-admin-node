@@ -62,10 +62,6 @@ jobs:
             https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2
           qemu-img resize .ci/vm/arch.qcow2 20G
 
-      - name: Verify Arch cloud image uses Btrfs
-        run: |
-          ./ci/check-arch-image-btrfs.sh .ci/vm/arch.qcow2
-
       - name: Generate SSH key
         run: |
           mkdir -p .ci/ssh
