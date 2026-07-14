@@ -214,6 +214,56 @@ func TestHarborScannerReportFallsBackToDiscoveredArtifact(t *testing.T) {
 	}
 }
 
+func TestHarborScannerReportAcceptsDiscoveredArtifactWithExistingScan(t *testing.T) {
+	firstScanNotFound := false
+	discoveredScanAttempted := false
+	reportChecked := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, password, ok := r.BasicAuth()
+		if !ok || user != "admin" || password != "password" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts/latest/scan":
+			firstScanNotFound = true
+			http.NotFound(w, r)
+		case "/api/v2.0/projects/dockerhub/repositories":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{"name": "dockerhub/library/busybox", "artifact_count": 1}})
+		case "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts":
+			_ = json.NewEncoder(w).Encode([]map[string]string{{"digest": "sha256:discovered"}})
+		case "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts/sha256:discovered/scan":
+			discoveredScanAttempted = true
+			http.Error(w, "scan is not accepted", http.StatusBadRequest)
+		case "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts/sha256:discovered/additions/vulnerabilities":
+			reportChecked = true
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"application/vnd.security.vulnerability.report; version=1.1": map[string]any{
+					"scanner":         map[string]string{"name": "Trivy"},
+					"vulnerabilities": []any{},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	v := Validator{Config: config.Config{HarborDomain: server.URL}, Client: server.Client()}
+	if err := v.validateHarborScannerReport(context.Background(), "admin", "password"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !firstScanNotFound {
+		t.Fatal("expected configured scan target to be attempted first")
+	}
+	if !discoveredScanAttempted {
+		t.Fatal("expected discovered artifact digest scan to be attempted")
+	}
+	if !reportChecked {
+		t.Fatal("expected discovered artifact vulnerability report to be checked")
+	}
+}
+
 func TestHarborAdminCheckFailsWhenNoReplicationAdaptersAreAvailable(t *testing.T) {
 	t.Setenv("HARBOR_ADMIN_PASSWORD", "password")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

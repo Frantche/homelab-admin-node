@@ -322,17 +322,21 @@ func (v Validator) validateHarborScannerReport(ctx context.Context, user, passwo
 	repository := getenv("HARBOR_VALIDATION_SCAN_REPOSITORY", "library/busybox")
 	reference := getenv("HARBOR_VALIDATION_SCAN_REFERENCE", "latest")
 	artifactPath := harborArtifactPath(project, repository, reference)
+	artifactLabel := fmt.Sprintf("%s/%s:%s", project, repository, reference)
 	if err := v.harborPost(ctx, artifactPath+"/scan", user, password); err != nil {
 		if !harborStatus(err, http.StatusNotFound) {
-			return fmt.Errorf("Trivy validation scan trigger failed for %s/%s:%s: %w", project, repository, reference, err)
+			return fmt.Errorf("Trivy validation scan trigger failed for %s: %w", artifactLabel, err)
 		}
 		discoveredPath, discoveredLabel, discoverErr := v.discoverHarborScanArtifact(ctx, project, repository, user, password)
 		if discoverErr != nil {
-			return fmt.Errorf("Trivy validation scan trigger failed for %s/%s:%s: %w", project, repository, reference, err)
+			return fmt.Errorf("Trivy validation scan trigger failed for %s: %w", artifactLabel, err)
 		}
 		artifactPath = discoveredPath
+		artifactLabel = discoveredLabel
 		if err := v.harborPost(ctx, artifactPath+"/scan", user, password); err != nil {
-			return fmt.Errorf("Trivy validation scan trigger failed for %s: %w", discoveredLabel, err)
+			if !harborStatus(err, http.StatusBadRequest) {
+				return fmt.Errorf("Trivy validation scan trigger failed for %s: %w", discoveredLabel, err)
+			}
 		}
 	}
 
@@ -344,7 +348,7 @@ func (v Validator) validateHarborScannerReport(ctx context.Context, user, passwo
 			return nil
 		}
 		if ctx.Err() != nil {
-			return fmt.Errorf("Trivy vulnerability report is not accessible for %s/%s:%s: %w", project, repository, reference, err)
+			return fmt.Errorf("Trivy vulnerability report is not accessible for %s: %w", artifactLabel, err)
 		}
 		time.Sleep(5 * time.Second)
 	}
