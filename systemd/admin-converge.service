@@ -5,4 +5,5 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment=GOCACHE=/var/cache/admin-node/go-build
 ExecStart=/opt/homelab-admin-node/bin/admin-node converge run
