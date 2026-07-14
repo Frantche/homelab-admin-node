@@ -203,7 +203,6 @@
     - jobservice.yml
     - logrotate.conf
     - portal-nginx.conf
-    - registry.yml
     - registryctl.yml
   when: not (harbor_test_mode | default(false))
 
