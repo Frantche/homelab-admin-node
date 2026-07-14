@@ -14,7 +14,7 @@
       - harbor_mirror_item.name | default('', true) | length > 0
       - harbor_mirror_item.url | default('', true) | length > 0
       - harbor_mirror_item.type | default('docker-hub') in ['docker-hub', 'docker-registry', 'github-ghcr', 'harbor', 'quay']
-      - not (harbor_mirror_item.validation.enabled | default(harbor_validate_registry_mirrors)) or (harbor_mirror_item.validation.image | default('', true) | length > 0)
+      - not ((harbor_validate_registry_mirrors | bool) or (harbor_mirror_item.validation.enabled | default(false) | bool)) or (harbor_mirror_item.validation.image | default('', true) | length > 0)
     fail_msg: "Each harbor_config.registry_mirrors item requires name, url, and a supported type."
   loop: "{{ harbor_registry_mirrors }}"
   loop_control:
