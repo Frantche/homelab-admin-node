@@ -16,6 +16,46 @@ The most important non-secret variables are:
 | `acme_email` | `admin@example.com` | Email used when Traefik can request ACME certificates. |
 | `ci_mode` | `false` | Enables CI defaults and mock behavior for services that need external credentials. |
 
+## Storage isolation
+
+`storage_isolation` can isolate stack data paths so one service cannot consume all available disk space. It is disabled by default in the role defaults, while the public admin-config example enables the Btrfs path so CI exercises quotas on every bootstrap run.
+
+```yaml
+storage_isolation:
+  enabled: true
+  backend: auto # auto, btrfs, lvm
+  migrate_existing: false
+  lvm:
+    volume_group: ""
+    filesystem: ext4
+  entries:
+    - name: harbor
+      path: "{{ admin_node_root }}/data/harbor"
+      size: "40G"
+    - name: backups
+      path: "{{ admin_node_root }}/backups"
+      size: "30G"
+```
+
+| Variable | Default/example | Purpose |
+| --- | --- | --- |
+| `storage_isolation.enabled` | `false` | Enables per-path storage isolation. |
+| `storage_isolation.backend` | `auto` | Chooses `btrfs` on Btrfs filesystems, otherwise uses `lvm` only when a volume group is configured. |
+| `storage_isolation.migrate_existing` | `false` | Allows existing non-empty directories to be copied into isolated storage. Prefer enabling this per entry. |
+| `storage_isolation.lvm.volume_group` | empty string | Existing guest OS LVM volume group used by the `lvm` backend. |
+| `storage_isolation.lvm.filesystem` | `ext4` | Filesystem created on new logical volumes. |
+| `storage_isolation.entries[].name` | `harbor` | Stable identifier used for subvolume or logical volume naming. |
+| `storage_isolation.entries[].path` | `/srv/admin/data/harbor` | Directory to isolate. |
+| `storage_isolation.entries[].size` | `40G` | Btrfs qgroup limit or LVM logical volume size. |
+| `storage_isolation.entries[].migrate_existing` | inherits global value | Opt-in migration for this entry. |
+| `storage_isolation.entries[].stop_units` | `[]` | Systemd units stopped before migrating existing data and started afterwards. |
+
+Btrfs is the preferred backend for the Arch cloud image used by this project. The role verifies `btrfs-progs`, enables Btrfs quotas, creates one subvolume per entry, and applies a qgroup limit.
+
+The LVM backend expects an existing volume group inside the VM. Proxmox storage named `local-lvm` is host-side storage for VM disks; it does not create LVM volume groups inside Arch.
+
+Existing non-empty directories are never migrated unless `migrate_existing=true`. During migration, the role copies data with `rsync -aHAX --numeric-ids`, moves the old directory aside as `.pre-storage-isolation-<timestamp>`, and keeps it for manual rollback.
+
 Example:
 
 ```yaml

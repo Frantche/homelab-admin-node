@@ -1,0 +1,59 @@
+---
+- name: Compute LVM migration paths
+  ansible.builtin.set_fact:
+    storage_isolation_lvm_tmp_path: "{{ storage_isolation_parent }}/.{{ storage_isolation_safe_name }}.storage-isolation-lvm-tmp"
+    storage_isolation_lvm_backup_path: "{{ storage_isolation_parent }}/.{{ storage_isolation_safe_name }}.pre-storage-isolation-{{ ansible_facts.date_time.iso8601_basic_short }}"
+
+- name: Ensure temporary LVM migration mount path exists
+  ansible.builtin.file:
+    path: "{{ storage_isolation_lvm_tmp_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Stop units before LVM storage migration
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+  loop: "{{ storage_isolation_entry.stop_units | default([]) }}"
+
+- name: Mount LVM device on temporary migration path
+  ansible.posix.mount:
+    path: "{{ storage_isolation_lvm_tmp_path }}"
+    src: "{{ storage_isolation_lvm_device }}"
+    fstype: "{{ storage_isolation_lvm_fstype }}"
+    opts: defaults
+    state: mounted
+
+- name: Copy data into temporary LVM mount
+  ansible.builtin.command:
+    argv:
+      - rsync
+      - -aHAX
+      - --numeric-ids
+      - "{{ storage_isolation_path }}/"
+      - "{{ storage_isolation_lvm_tmp_path }}/"
+
+- name: Unmount temporary LVM migration path
+  ansible.posix.mount:
+    path: "{{ storage_isolation_lvm_tmp_path }}"
+    state: unmounted
+
+- name: Move existing directory aside before LVM migration cutover
+  ansible.builtin.command:
+    argv:
+      - mv
+      - "{{ storage_isolation_path }}"
+      - "{{ storage_isolation_lvm_backup_path }}"
+
+- name: Remove temporary LVM migration mount path
+  ansible.builtin.file:
+    path: "{{ storage_isolation_lvm_tmp_path }}"
+    state: absent
+
+- name: Start units after LVM storage migration
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+  loop: "{{ storage_isolation_entry.stop_units | default([]) }}"

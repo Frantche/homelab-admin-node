@@ -1,0 +1,145 @@
+---
+- name: Ensure lvm2 is installed
+  ansible.builtin.package:
+    name: lvm2
+    state: present
+
+- name: Validate LVM volume group configuration
+  ansible.builtin.assert:
+    that:
+      - storage_isolation_cfg.lvm.volume_group | default('', true) | length > 0
+    fail_msg: "storage_isolation.lvm.volume_group is required when backend=lvm"
+
+- name: Check configured LVM volume group
+  ansible.builtin.command:
+    argv:
+      - vgs
+      - --noheadings
+      - -o
+      - vg_name
+      - "{{ storage_isolation_cfg.lvm.volume_group }}"
+  register: storage_isolation_lvm_vg
+  changed_when: false
+
+- name: Compute LVM facts
+  ansible.builtin.set_fact:
+    storage_isolation_lvm_lv_name: "admin_{{ storage_isolation_safe_name | regex_replace('[^A-Za-z0-9_+.-]', '_') }}"
+    storage_isolation_lvm_device: "/dev/{{ storage_isolation_cfg.lvm.volume_group }}/admin_{{ storage_isolation_safe_name | regex_replace('[^A-Za-z0-9_+.-]', '_') }}"
+    storage_isolation_lvm_fstype: "{{ storage_isolation_cfg.lvm.filesystem | default('ext4', true) }}"
+
+- name: Check isolated LVM path
+  ansible.builtin.stat:
+    path: "{{ storage_isolation_path }}"
+  register: storage_isolation_lvm_path
+
+- name: Check whether existing isolated LVM path is a mount point
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - -no
+      - SOURCE
+      - -T
+      - "{{ storage_isolation_path }}"
+  register: storage_isolation_lvm_existing_mount
+  changed_when: false
+  failed_when: false
+  when: storage_isolation_lvm_path.stat.exists
+
+- name: Check whether existing isolated LVM directory is empty
+  ansible.builtin.find:
+    paths: "{{ storage_isolation_path }}"
+    file_type: any
+    hidden: true
+    recurse: false
+  register: storage_isolation_lvm_existing_contents
+  when:
+    - storage_isolation_lvm_path.stat.exists
+    - storage_isolation_lvm_path.stat.isdir | default(false)
+    - storage_isolation_lvm_existing_mount.stdout | default('') != storage_isolation_lvm_device
+
+- name: Reject unsupported existing LVM path
+  ansible.builtin.fail:
+    msg: >-
+      {{ storage_isolation_path }} exists and is not a directory. It cannot be
+      converted to isolated LVM storage.
+  when:
+    - storage_isolation_lvm_path.stat.exists
+    - not (storage_isolation_lvm_path.stat.isdir | default(false))
+    - storage_isolation_lvm_existing_mount.stdout | default('') != storage_isolation_lvm_device
+
+- name: Reject existing LVM path without migration opt-in
+  ansible.builtin.fail:
+    msg: >-
+      {{ storage_isolation_path }} is non-empty and is not mounted from
+      {{ storage_isolation_lvm_device }}. Set migrate_existing=true for this entry to migrate it safely.
+  when:
+    - storage_isolation_lvm_path.stat.exists
+    - storage_isolation_lvm_path.stat.isdir | default(false)
+    - storage_isolation_lvm_existing_mount.stdout | default('') != storage_isolation_lvm_device
+    - storage_isolation_lvm_existing_contents.matched | default(0) > 0
+    - not storage_isolation_migrate_existing
+
+- name: Check LVM logical volume
+  ansible.builtin.command:
+    argv:
+      - lvs
+      - --noheadings
+      - "{{ storage_isolation_cfg.lvm.volume_group }}/{{ storage_isolation_lvm_lv_name }}"
+  register: storage_isolation_lvm_lv
+  changed_when: false
+  failed_when: false
+
+- name: Create LVM logical volume
+  ansible.builtin.command:
+    argv:
+      - lvcreate
+      - -L
+      - "{{ storage_isolation_entry.size }}"
+      - -n
+      - "{{ storage_isolation_lvm_lv_name }}"
+      - "{{ storage_isolation_cfg.lvm.volume_group }}"
+  when: storage_isolation_lvm_lv.rc != 0
+
+- name: Check LVM filesystem
+  ansible.builtin.command:
+    argv:
+      - blkid
+      - -o
+      - value
+      - -s
+      - TYPE
+      - "{{ storage_isolation_lvm_device }}"
+  register: storage_isolation_lvm_blkid
+  changed_when: false
+  failed_when: false
+
+- name: Create LVM filesystem
+  ansible.builtin.filesystem:
+    fstype: "{{ storage_isolation_lvm_fstype }}"
+    dev: "{{ storage_isolation_lvm_device }}"
+  when: storage_isolation_lvm_blkid.rc != 0
+
+- name: Migrate existing directory to LVM mount
+  ansible.builtin.include_tasks: storage-isolation-lvm-migrate.yml
+  when:
+    - storage_isolation_lvm_path.stat.exists
+    - storage_isolation_lvm_path.stat.isdir | default(false)
+    - storage_isolation_lvm_existing_mount.stdout | default('') != storage_isolation_lvm_device
+    - storage_isolation_lvm_existing_contents.matched | default(0) > 0
+    - storage_isolation_migrate_existing
+
+- name: Ensure empty LVM mount path exists
+  ansible.builtin.file:
+    path: "{{ storage_isolation_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Mount LVM isolated storage
+  ansible.posix.mount:
+    path: "{{ storage_isolation_path }}"
+    src: "{{ storage_isolation_lvm_device }}"
+    fstype: "{{ storage_isolation_lvm_fstype }}"
+    opts: defaults
+    state: mounted

@@ -1,0 +1,73 @@
+---
+- name: Validate storage isolation entry
+  ansible.builtin.assert:
+    that:
+      - storage_isolation_entry.name | default('', true) | length > 0
+      - storage_isolation_entry.path | default('', true) | length > 0
+      - storage_isolation_entry.size | default('', true) | length > 0
+    fail_msg: "Each storage_isolation entry must define name, path, and size"
+
+- name: Compute storage isolation entry facts
+  ansible.builtin.set_fact:
+    storage_isolation_path: "{{ storage_isolation_entry.path }}"
+    storage_isolation_parent: "{{ storage_isolation_entry.path | dirname }}"
+    storage_isolation_migrate_existing: "{{ storage_isolation_entry.migrate_existing | default(storage_isolation_cfg.migrate_existing) | bool }}"
+    storage_isolation_safe_name: "{{ storage_isolation_entry.name | regex_replace('[^A-Za-z0-9_+.-]', '-') }}"
+
+- name: Ensure storage isolation parent exists
+  ansible.builtin.file:
+    path: "{{ storage_isolation_parent }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Detect filesystem type for storage isolation parent
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - -no
+      - FSTYPE
+      - -T
+      - "{{ storage_isolation_parent }}"
+  register: storage_isolation_parent_fstype
+  changed_when: false
+
+- name: Detect mount point for storage isolation parent
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - -no
+      - TARGET
+      - -T
+      - "{{ storage_isolation_parent }}"
+  register: storage_isolation_parent_mount
+  changed_when: false
+
+- name: Select storage isolation backend
+  ansible.builtin.set_fact:
+    storage_isolation_backend_effective: >-
+      {% if storage_isolation_cfg.backend == 'auto' and storage_isolation_parent_fstype.stdout | trim == 'btrfs' -%}
+      btrfs
+      {%- elif storage_isolation_cfg.backend == 'auto' and storage_isolation_cfg.lvm.volume_group | default('', true) | length > 0 -%}
+      lvm
+      {%- else -%}
+      {{ storage_isolation_cfg.backend }}
+      {%- endif %}
+
+- name: Validate automatic backend selection
+  ansible.builtin.assert:
+    that:
+      - storage_isolation_backend_effective in ['btrfs', 'lvm']
+      - storage_isolation_backend_effective != 'auto'
+    fail_msg: >-
+      storage_isolation.backend=auto could not select a backend for {{ storage_isolation_path }}.
+      Use Btrfs or configure storage_isolation.lvm.volume_group.
+
+- name: Configure Btrfs isolated storage
+  ansible.builtin.include_tasks: storage-isolation-btrfs.yml
+  when: storage_isolation_backend_effective == 'btrfs'
+
+- name: Configure LVM isolated storage
+  ansible.builtin.include_tasks: storage-isolation-lvm.yml
+  when: storage_isolation_backend_effective == 'lvm'

@@ -29,6 +29,8 @@ wget -O /tmp/arch-cloud.qcow2 \
   https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2
 ```
 
+The current Arch cloud image used by CI has a Btrfs root filesystem. CI verifies this after download because the `latest` image is maintained upstream. The `STORAGE=local-lvm` value below is Proxmox host storage for the VM disk; it does not create LVM inside the guest OS.
+
 ## Create the template VM
 
 ```bash

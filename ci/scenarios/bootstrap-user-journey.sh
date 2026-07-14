@@ -73,6 +73,40 @@ run_converge() {
   rm -f "$output_file"
 }
 
+verify_btrfs_storage_isolation() {
+  echo "=== Verifying Btrfs storage isolation ==="
+  if [[ "$(findmnt -no FSTYPE -T /srv/admin)" != "btrfs" ]]; then
+    echo "ERROR: /srv/admin is not on a Btrfs filesystem" >&2
+    findmnt -T /srv/admin >&2
+    exit 1
+  fi
+
+  local paths=(
+    /srv/admin/data/keycloak
+    /srv/admin/data/openbao
+    /srv/admin/data/gitea
+    /srv/admin/data/gitea-postgres
+    /srv/admin/data/harbor
+    /srv/admin/data/traefik
+    /srv/admin/data/cloudflared
+    /srv/admin/backups
+  )
+
+  local path
+  for path in "${paths[@]}"; do
+    if ! btrfs subvolume show "$path" >/dev/null 2>&1; then
+      echo "ERROR: expected Btrfs subvolume at $path" >&2
+      exit 1
+    fi
+    if ! btrfs qgroup show -reF "$path" | grep -Eq '^[[:space:]]*[0-9]+/[0-9]+'; then
+      echo "ERROR: expected Btrfs qgroup quota output for $path" >&2
+      btrfs qgroup show -reF "$path" >&2 || true
+      exit 1
+    fi
+    echo "Btrfs quota present for $path"
+  done
+}
+
 run_oidc_user_journey() {
   echo "=== Running OIDC user journey via Playwright ==="
   if command -v pacman >/dev/null 2>&1; then
@@ -133,6 +167,7 @@ run_init_phase() {
 
   echo "=== Running convergence (init mode) via admin-node ==="
   run_converge "-e harbor_test_mode=true -e gitea_test_mode=true" "true"
+  verify_btrfs_storage_isolation
   stop_auto_converge
 }
 

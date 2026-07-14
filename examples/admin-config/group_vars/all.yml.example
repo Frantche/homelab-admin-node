@@ -1,6 +1,36 @@
 # Public example only — keep real secrets in group_vars/secrets.sops.yaml
 ci_mode: false
 
+storage_isolation:
+  enabled: true
+  backend: btrfs
+  migrate_existing: false
+  entries:
+    - name: keycloak
+      path: "{{ admin_node_root }}/data/keycloak"
+      size: "2G"
+    - name: openbao
+      path: "{{ admin_node_root }}/data/openbao"
+      size: "1G"
+    - name: gitea
+      path: "{{ admin_node_root }}/data/gitea"
+      size: "3G"
+    - name: gitea-postgres
+      path: "{{ admin_node_root }}/data/gitea-postgres"
+      size: "3G"
+    - name: harbor
+      path: "{{ admin_node_root }}/data/harbor"
+      size: "8G"
+    - name: traefik
+      path: "{{ admin_node_root }}/data/traefik"
+      size: "512M"
+    - name: cloudflared
+      path: "{{ admin_node_root }}/data/cloudflared"
+      size: "512M"
+    - name: backups
+      path: "{{ admin_node_root }}/backups"
+      size: "5G"
+
 service_domains:
   harbor: "harbor.example.com"
   openbao: "bao.example.com"
