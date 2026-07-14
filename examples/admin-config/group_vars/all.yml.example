@@ -77,7 +77,7 @@ harbor_config:
       public: true
       validation:
         enabled: true
-        image: "library/busybox:latest"
+        image: "library/busybox@sha256:1cfa4e2b09e127b9c4ed43578d3f3c18e7d44ea47b9ea98475c0cbe9086525f8"
     - name: "quay"
       project_name: "quay"
       type: "quay"

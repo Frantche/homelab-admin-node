@@ -21,6 +21,9 @@ def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
         "admin_mode_file": "/etc/admin-node/mode",
         "admin_git_ref_file": "/etc/admin-node/git-ref",
         "admin_node_lan_ip": "127.0.0.1",
+        "harbor_validation_scan_project": "dockerhub",
+        "harbor_validation_scan_repository": "library/busybox",
+        "harbor_validation_scan_reference": "sha256:1cfa4e2b09e127b9c4ed43578d3f3c18e7d44ea47b9ea98475c0cbe9086525f8",
         "acme_email": "ci@example.com",
         "traefik": {
             "dashboard_enabled": True,
