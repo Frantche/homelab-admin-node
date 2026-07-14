@@ -188,7 +188,7 @@
     prefix: harbor-mirror-auth-
   register: harbor_mirror_auth_config
   when:
-    - harbor_mirror_item.validation.enabled | default(harbor_config.validate_registry_mirrors | default(false))
+    - harbor_mirror_item.validation.enabled | default(harbor_validate_registry_mirrors)
     - not (harbor_mirror_item.public | default(false))
   no_log: true
 
@@ -218,7 +218,7 @@
   register: harbor_mirror_pull
   changed_when: "'Downloaded newer image' in (harbor_mirror_pull.stdout | default(''))"
   when:
-    - harbor_mirror_item.validation.enabled | default(harbor_config.validate_registry_mirrors | default(false))
+    - harbor_mirror_item.validation.enabled | default(harbor_validate_registry_mirrors)
     - harbor_mirror_item.validation.image | default('', true) | length > 0
   no_log: true
 
@@ -235,7 +235,7 @@
         )
       }}
   when:
-    - harbor_mirror_item.validation.enabled | default(harbor_config.validate_registry_mirrors | default(false))
+    - harbor_mirror_item.validation.enabled | default(harbor_validate_registry_mirrors)
     - harbor_mirror_item.validation.image | default('', true) | length > 0
 
 - name: Wait for pulled image to appear in Harbor project repositories
@@ -257,7 +257,7 @@
   retries: 36
   delay: 5
   when:
-    - harbor_mirror_item.validation.enabled | default(harbor_config.validate_registry_mirrors | default(false))
+    - harbor_mirror_item.validation.enabled | default(harbor_validate_registry_mirrors)
     - harbor_mirror_item.validation.image | default('', true) | length > 0
   no_log: true
 
