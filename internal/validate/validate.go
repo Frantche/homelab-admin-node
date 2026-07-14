@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -170,7 +171,7 @@ func (v Validator) Harbor(ctx context.Context) CheckResult {
 		if v.Config.ValidateMockAll {
 			return StatusSkipped, "ADMIN_NODE_VALIDATE_MOCK_ALL=true"
 		}
-		ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 240*time.Second)
 		defer cancel()
 		rawURL := serviceURL(v.Config.HarborDomain, "/api/v2.0/health")
 		var health harborHealth
@@ -195,7 +196,10 @@ func (v Validator) Harbor(ctx context.Context) CheckResult {
 				if err := v.validateHarborRegistryRuntime(ctx); err != nil {
 					return StatusFail, err.Error()
 				}
-				return StatusOK, "components, admin APIs, scanner, registries, replication adapters, and internal registry healthy"
+				if err := v.validateHarborScannerReport(ctx, adminUser, adminPassword); err != nil {
+					return StatusFail, err.Error()
+				}
+				return StatusOK, "components, admin APIs, scanner, registries, replication adapters, internal registry, and Trivy report access healthy"
 			}
 			if ctx.Err() != nil {
 				return StatusFail, "core health check failed"
@@ -310,6 +314,72 @@ func (v Validator) validateHarborAdminAPIs(ctx context.Context, user, password s
 
 func (v Validator) harborGetJSON(ctx context.Context, path, user, password string, target any) error {
 	return getJSON(ctx, v.Client, serviceURL(v.Config.HarborDomain, path), user, password, target)
+}
+
+func (v Validator) validateHarborScannerReport(ctx context.Context, user, password string) error {
+	project := getenv("HARBOR_VALIDATION_SCAN_PROJECT", "dockerhub")
+	repository := getenv("HARBOR_VALIDATION_SCAN_REPOSITORY", "library/busybox")
+	reference := getenv("HARBOR_VALIDATION_SCAN_REFERENCE", "latest")
+	artifactPath := fmt.Sprintf("/api/v2.0/projects/%s/repositories/%s/artifacts/%s",
+		url.PathEscape(project),
+		url.PathEscape(repository),
+		url.PathEscape(reference),
+	)
+	if err := v.harborPost(ctx, artifactPath+"/scan", user, password); err != nil {
+		return fmt.Errorf("Trivy validation scan trigger failed for %s/%s:%s: %w", project, repository, reference, err)
+	}
+
+	reportPath := artifactPath + "/additions/vulnerabilities"
+	for {
+		var report any
+		err := v.harborGetVulnerabilityReport(ctx, reportPath, user, password, &report)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return fmt.Errorf("Trivy vulnerability report is not accessible for %s/%s:%s: %w", project, repository, reference, err)
+		}
+		time.Sleep(5 * time.Second)
+	}
+}
+
+func (v Validator) harborPost(ctx context.Context, path, user, password string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serviceURL(v.Config.HarborDomain, path), nil)
+	if err != nil {
+		return err
+	}
+	if user != "" || password != "" {
+		req.SetBasicAuth(user, password)
+	}
+	resp, err := v.Client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusConflict {
+		return nil
+	}
+	return fmt.Errorf("POST %s returned HTTP %d", req.URL.String(), resp.StatusCode)
+}
+
+func (v Validator) harborGetVulnerabilityReport(ctx context.Context, path, user, password string, target any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serviceURL(v.Config.HarborDomain, path), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/json")
+	if user != "" || password != "" {
+		req.SetBasicAuth(user, password)
+	}
+	resp, err := v.Client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("GET %s returned HTTP %d", req.URL.String(), resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(target)
 }
 
 func (v Validator) validateHarborRegistryRuntime(ctx context.Context) error {
