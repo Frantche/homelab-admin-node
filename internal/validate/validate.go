@@ -3,6 +3,7 @@ package validate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -320,13 +321,19 @@ func (v Validator) validateHarborScannerReport(ctx context.Context, user, passwo
 	project := getenv("HARBOR_VALIDATION_SCAN_PROJECT", "dockerhub")
 	repository := getenv("HARBOR_VALIDATION_SCAN_REPOSITORY", "library/busybox")
 	reference := getenv("HARBOR_VALIDATION_SCAN_REFERENCE", "latest")
-	artifactPath := fmt.Sprintf("/api/v2.0/projects/%s/repositories/%s/artifacts/%s",
-		url.PathEscape(project),
-		url.PathEscape(repository),
-		url.PathEscape(reference),
-	)
+	artifactPath := harborArtifactPath(project, repository, reference)
 	if err := v.harborPost(ctx, artifactPath+"/scan", user, password); err != nil {
-		return fmt.Errorf("Trivy validation scan trigger failed for %s/%s:%s: %w", project, repository, reference, err)
+		if !harborStatus(err, http.StatusNotFound) {
+			return fmt.Errorf("Trivy validation scan trigger failed for %s/%s:%s: %w", project, repository, reference, err)
+		}
+		discoveredPath, discoveredLabel, discoverErr := v.discoverHarborScanArtifact(ctx, project, repository, user, password)
+		if discoverErr != nil {
+			return fmt.Errorf("Trivy validation scan trigger failed for %s/%s:%s: %w", project, repository, reference, err)
+		}
+		artifactPath = discoveredPath
+		if err := v.harborPost(ctx, artifactPath+"/scan", user, password); err != nil {
+			return fmt.Errorf("Trivy validation scan trigger failed for %s: %w", discoveredLabel, err)
+		}
 	}
 
 	reportPath := artifactPath + "/additions/vulnerabilities"
@@ -341,6 +348,78 @@ func (v Validator) validateHarborScannerReport(ctx context.Context, user, passwo
 		}
 		time.Sleep(5 * time.Second)
 	}
+}
+
+func harborArtifactPath(project, repository, reference string) string {
+	return fmt.Sprintf("/api/v2.0/projects/%s/repositories/%s/artifacts/%s",
+		url.PathEscape(project),
+		url.PathEscape(repository),
+		url.PathEscape(reference),
+	)
+}
+
+func (v Validator) discoverHarborScanArtifact(ctx context.Context, project, preferredRepository, user, password string) (string, string, error) {
+	var repositories []struct {
+		Name          string `json:"name"`
+		ArtifactCount int    `json:"artifact_count"`
+	}
+	repositoriesPath := fmt.Sprintf("/api/v2.0/projects/%s/repositories?page=1&page_size=100", url.PathEscape(project))
+	if err := v.harborGetJSON(ctx, repositoriesPath, user, password, &repositories); err != nil {
+		return "", "", fmt.Errorf("repositories lookup failed: %w", err)
+	}
+
+	projectPrefix := project + "/"
+	preferredFullName := projectPrefix + preferredRepository
+	var selectedRepository string
+	for _, repository := range repositories {
+		if repository.ArtifactCount <= 0 {
+			continue
+		}
+		if repository.Name == preferredFullName {
+			selectedRepository = strings.TrimPrefix(repository.Name, projectPrefix)
+			break
+		}
+		if selectedRepository == "" {
+			selectedRepository = strings.TrimPrefix(repository.Name, projectPrefix)
+		}
+	}
+	if selectedRepository == "" {
+		return "", "", fmt.Errorf("no Harbor repository with artifacts found in project %s", project)
+	}
+
+	var artifacts []struct {
+		Digest string `json:"digest"`
+	}
+	artifactsPath := fmt.Sprintf("/api/v2.0/projects/%s/repositories/%s/artifacts?page=1&page_size=10",
+		url.PathEscape(project),
+		url.PathEscape(selectedRepository),
+	)
+	if err := v.harborGetJSON(ctx, artifactsPath, user, password, &artifacts); err != nil {
+		return "", "", fmt.Errorf("artifacts lookup failed for %s/%s: %w", project, selectedRepository, err)
+	}
+	if len(artifacts) == 0 || artifacts[0].Digest == "" {
+		return "", "", fmt.Errorf("no Harbor artifact digest found for %s/%s", project, selectedRepository)
+	}
+
+	label := fmt.Sprintf("%s/%s@%s", project, selectedRepository, artifacts[0].Digest)
+	return harborArtifactPath(project, selectedRepository, artifacts[0].Digest), label, nil
+}
+
+type harborAPIError struct {
+	URL        string
+	StatusCode int
+}
+
+func (e harborAPIError) Error() string {
+	return fmt.Sprintf("POST %s returned HTTP %d", e.URL, e.StatusCode)
+}
+
+func harborStatus(err error, statusCode int) bool {
+	var apiErr harborAPIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return apiErr.StatusCode == statusCode
 }
 
 func (v Validator) harborPost(ctx context.Context, path, user, password string) error {
@@ -359,7 +438,7 @@ func (v Validator) harborPost(ctx context.Context, path, user, password string) 
 	if resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusConflict {
 		return nil
 	}
-	return fmt.Errorf("POST %s returned HTTP %d", req.URL.String(), resp.StatusCode)
+	return harborAPIError{URL: req.URL.String(), StatusCode: resp.StatusCode}
 }
 
 func (v Validator) harborGetVulnerabilityReport(ctx context.Context, path, user, password string, target any) error {
