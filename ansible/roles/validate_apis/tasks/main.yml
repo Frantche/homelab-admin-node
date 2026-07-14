@@ -4,6 +4,9 @@
   environment:
     ADMIN_NODE_LAN_IP: "{{ admin_node_lan_ip }}"
     HARBOR_DOMAIN: "{{ service_domains.harbor }}"
+    HARBOR_VALIDATION_SCAN_PROJECT: "{{ harbor_validation_scan_project | default('dockerhub') }}"
+    HARBOR_VALIDATION_SCAN_REPOSITORY: "{{ harbor_validation_scan_repository | default('library/busybox') }}"
+    HARBOR_VALIDATION_SCAN_REFERENCE: "{{ harbor_validation_scan_reference | default('latest') }}"
     OPENBAO_DOMAIN: "{{ service_domains.openbao }}"
     KEYCLOAK_DOMAIN: "{{ service_domains.keycloak }}"
     GITEA_DOMAIN: "{{ service_domains.gitea }}"

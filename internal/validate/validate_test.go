@@ -129,8 +129,138 @@ func TestHarborAdminCheckWhenPasswordAvailable(t *testing.T) {
 	if result.Status != StatusOK {
 		t.Fatalf("status = %s, want %s (%s)", result.Status, StatusOK, result.Message)
 	}
-	if !strings.Contains(result.Message, "internal registry healthy") {
+	if !strings.Contains(result.Message, "Trivy report access healthy") {
 		t.Fatalf("message = %q, want complete Harbor validation", result.Message)
+	}
+}
+
+func TestHarborAdminCheckFailsWhenTrivyReportIsUnavailable(t *testing.T) {
+	t.Setenv("HARBOR_ADMIN_PASSWORD", "password")
+	t.Setenv("HARBOR_VALIDATION_SCAN_REFERENCE", "sha256:test")
+	ctx, cancel := context.WithCancel(context.Background())
+	scanTriggered := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, password, ok := r.BasicAuth()
+		if !ok || user != "admin" || password != "password" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path == "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts/sha256:test/scan" && r.Method == http.MethodPost {
+			scanTriggered = true
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		if r.URL.Path == "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts/sha256:test/additions/vulnerabilities" {
+			cancel()
+			http.NotFound(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	v := Validator{Config: config.Config{HarborDomain: server.URL}, Client: server.Client()}
+	err := v.validateHarborScannerReport(ctx, "admin", "password")
+	if err == nil || !strings.Contains(err.Error(), "Trivy vulnerability report is not accessible") {
+		t.Fatalf("error = %v, want inaccessible Trivy report failure", err)
+	}
+	if !scanTriggered {
+		t.Fatal("expected validation scan to be triggered before report check")
+	}
+}
+
+func TestHarborScannerReportFallsBackToDiscoveredArtifact(t *testing.T) {
+	firstScanNotFound := false
+	discoveredScanTriggered := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, password, ok := r.BasicAuth()
+		if !ok || user != "admin" || password != "password" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts/latest/scan":
+			firstScanNotFound = true
+			http.NotFound(w, r)
+		case "/api/v2.0/projects/dockerhub/repositories":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{"name": "dockerhub/library/busybox", "artifact_count": 1}})
+		case "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts":
+			_ = json.NewEncoder(w).Encode([]map[string]string{{"digest": "sha256:discovered"}})
+		case "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts/sha256:discovered/scan":
+			discoveredScanTriggered = true
+			w.WriteHeader(http.StatusAccepted)
+		case "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts/sha256:discovered/additions/vulnerabilities":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"application/vnd.security.vulnerability.report; version=1.1": map[string]any{
+					"scanner":         map[string]string{"name": "Trivy"},
+					"vulnerabilities": []any{},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	v := Validator{Config: config.Config{HarborDomain: server.URL}, Client: server.Client()}
+	if err := v.validateHarborScannerReport(context.Background(), "admin", "password"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !firstScanNotFound {
+		t.Fatal("expected configured scan target to be attempted first")
+	}
+	if !discoveredScanTriggered {
+		t.Fatal("expected discovered artifact digest to be scanned")
+	}
+}
+
+func TestHarborScannerReportAcceptsDiscoveredArtifactWithExistingScan(t *testing.T) {
+	firstScanNotFound := false
+	discoveredScanAttempted := false
+	reportChecked := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, password, ok := r.BasicAuth()
+		if !ok || user != "admin" || password != "password" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts/latest/scan":
+			firstScanNotFound = true
+			http.NotFound(w, r)
+		case "/api/v2.0/projects/dockerhub/repositories":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{"name": "dockerhub/library/busybox", "artifact_count": 1}})
+		case "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts":
+			_ = json.NewEncoder(w).Encode([]map[string]string{{"digest": "sha256:discovered"}})
+		case "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts/sha256:discovered/scan":
+			discoveredScanAttempted = true
+			http.Error(w, "scan is not accepted", http.StatusBadRequest)
+		case "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts/sha256:discovered/additions/vulnerabilities":
+			reportChecked = true
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"application/vnd.security.vulnerability.report; version=1.1": map[string]any{
+					"scanner":         map[string]string{"name": "Trivy"},
+					"vulnerabilities": []any{},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	v := Validator{Config: config.Config{HarborDomain: server.URL}, Client: server.Client()}
+	if err := v.validateHarborScannerReport(context.Background(), "admin", "password"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !firstScanNotFound {
+		t.Fatal("expected configured scan target to be attempted first")
+	}
+	if !discoveredScanAttempted {
+		t.Fatal("expected discovered artifact digest scan to be attempted")
+	}
+	if !reportChecked {
+		t.Fatal("expected discovered artifact vulnerability report to be checked")
 	}
 }
 
@@ -297,6 +427,22 @@ func writeHealthyHarborAdminAPI(w http.ResponseWriter, r *http.Request, adapters
 		_ = json.NewEncoder(w).Encode([]map[string]string{{"name": "dockerhub", "status": registryStatus}})
 	case "/api/v2.0/replication/adapters":
 		_ = json.NewEncoder(w).Encode(adapters)
+	case "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts/latest/scan":
+		if r.Method != http.MethodPost {
+			return false
+		}
+		w.WriteHeader(http.StatusAccepted)
+	case "/api/v2.0/projects/dockerhub/repositories/library%2Fbusybox/artifacts/latest/additions/vulnerabilities":
+		if r.Header.Get("Accept") != "application/json" {
+			http.Error(w, "missing vulnerability report accept header", http.StatusNotAcceptable)
+			return true
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"application/vnd.security.vulnerability.report; version=1.1": map[string]any{
+				"scanner":         map[string]string{"name": "Trivy"},
+				"vulnerabilities": []any{},
+			},
+		})
 	default:
 		return false
 	}

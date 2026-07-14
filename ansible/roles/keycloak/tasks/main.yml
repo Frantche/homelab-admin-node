@@ -33,6 +33,14 @@
     chdir: "{{ admin_node_root }}/stacks/keycloak"
   changed_when: false
 
+- name: Wait for keycloak database container health
+  ansible.builtin.command: docker inspect -f {% raw %}'{{ .State.Health.Status }}'{% endraw %} keycloak-db
+  register: keycloak_db_health
+  until: keycloak_db_health.stdout | trim == "healthy"
+  retries: 60
+  delay: 2
+  changed_when: false
+
 - name: Wait for keycloak database readiness
   ansible.builtin.command: docker exec keycloak-db pg_isready -U keycloak -d keycloak
   register: keycloak_db_readiness
