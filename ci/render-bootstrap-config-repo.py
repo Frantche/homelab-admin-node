@@ -16,7 +16,6 @@ def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
     data = {
         "ci_mode": True,
         "admin_ci_disable_auto_converge": True,
-        "harbor_config_validate_registry_mirrors": True,
         "admin_repo_url": admin_repo_url,
         "admin_node_root": "/srv/admin",
         "admin_mode_file": "/etc/admin-node/mode",

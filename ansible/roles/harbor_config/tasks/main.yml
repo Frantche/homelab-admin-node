@@ -2,7 +2,7 @@
 - name: Build Harbor API TLS validation fact
   ansible.builtin.set_fact:
     harbor_api_validate_certs: "{{ harbor_config.validate_certs | default(not (ci_mode | default(false))) }}"
-    harbor_validate_registry_mirrors: "{{ harbor_config_validate_registry_mirrors | default(harbor_config.validate_registry_mirrors | default(false)) }}"
+    harbor_validate_registry_mirrors: "{{ harbor_config.validate_registry_mirrors | default(false) }}"
     harbor_registry_mirrors: "{{ harbor_config.registry_mirrors | default([]) }}"
     harbor_allowed_auth_modes:
       - "db_auth"

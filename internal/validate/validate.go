@@ -321,51 +321,37 @@ func (v Validator) validateHarborScannerReport(ctx context.Context, user, passwo
 	project := getenv("HARBOR_VALIDATION_SCAN_PROJECT", "dockerhub")
 	repository := getenv("HARBOR_VALIDATION_SCAN_REPOSITORY", "library/busybox")
 	reference := getenv("HARBOR_VALIDATION_SCAN_REFERENCE", "latest")
-	candidates := []harborScanArtifact{{
-		Path:  harborArtifactPath(project, repository, reference),
-		Label: fmt.Sprintf("%s/%s:%s", project, repository, reference),
-	}}
-
-	var lastErr error
-	for index := 0; index < len(candidates); index++ {
-		candidate := candidates[index]
-		if err := v.harborPost(ctx, candidate.Path+"/scan", user, password); err != nil {
-			lastErr = fmt.Errorf("Trivy validation scan trigger failed for %s: %w", candidate.Label, err)
-			if harborStatus(err, http.StatusNotFound) && index == 0 {
-				discovered, discoverErr := v.discoverHarborScanArtifacts(ctx, project, repository, user, password)
-				if discoverErr != nil {
-					return lastErr
-				}
-				candidates = append(candidates, discovered...)
-				continue
-			}
-			if harborStatus(err, http.StatusBadRequest) && index+1 < len(candidates) {
-				continue
-			}
+	artifactPath := harborArtifactPath(project, repository, reference)
+	artifactLabel := fmt.Sprintf("%s/%s:%s", project, repository, reference)
+	if err := v.harborPost(ctx, artifactPath+"/scan", user, password); err != nil {
+		if !harborStatus(err, http.StatusNotFound) {
+			return fmt.Errorf("Trivy validation scan trigger failed for %s: %w", artifactLabel, err)
+		}
+		discoveredPath, discoveredLabel, discoverErr := v.discoverHarborScanArtifact(ctx, project, repository, user, password)
+		if discoverErr != nil {
+			return fmt.Errorf("Trivy validation scan trigger failed for %s: %w", artifactLabel, err)
+		}
+		artifactPath = discoveredPath
+		artifactLabel = discoveredLabel
+		if err := v.harborPost(ctx, artifactPath+"/scan", user, password); err != nil {
 			if !harborStatus(err, http.StatusBadRequest) {
-				return lastErr
+				return fmt.Errorf("Trivy validation scan trigger failed for %s: %w", discoveredLabel, err)
 			}
-		}
-
-		reportPath := candidate.Path + "/additions/vulnerabilities"
-		for {
-			var report any
-			err := v.harborGetVulnerabilityReport(ctx, reportPath, user, password, &report)
-			if err == nil {
-				return nil
-			}
-			lastErr = fmt.Errorf("Trivy vulnerability report is not accessible for %s: %w", candidate.Label, err)
-			if ctx.Err() != nil {
-				return lastErr
-			}
-			time.Sleep(5 * time.Second)
 		}
 	}
 
-	if lastErr != nil {
-		return lastErr
+	reportPath := artifactPath + "/additions/vulnerabilities"
+	for {
+		var report any
+		err := v.harborGetVulnerabilityReport(ctx, reportPath, user, password, &report)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return fmt.Errorf("Trivy vulnerability report is not accessible for %s: %w", artifactLabel, err)
+		}
+		time.Sleep(5 * time.Second)
 	}
-	return fmt.Errorf("no Harbor artifact found for Trivy validation in %s/%s", project, repository)
 }
 
 func harborArtifactPath(project, repository, reference string) string {
@@ -376,64 +362,51 @@ func harborArtifactPath(project, repository, reference string) string {
 	)
 }
 
-type harborScanArtifact struct {
-	Path  string
-	Label string
-}
-
-func (v Validator) discoverHarborScanArtifacts(ctx context.Context, project, preferredRepository, user, password string) ([]harborScanArtifact, error) {
+func (v Validator) discoverHarborScanArtifact(ctx context.Context, project, preferredRepository, user, password string) (string, string, error) {
 	var repositories []struct {
 		Name          string `json:"name"`
 		ArtifactCount int    `json:"artifact_count"`
 	}
 	repositoriesPath := fmt.Sprintf("/api/v2.0/projects/%s/repositories?page=1&page_size=100", url.PathEscape(project))
 	if err := v.harborGetJSON(ctx, repositoriesPath, user, password, &repositories); err != nil {
-		return nil, fmt.Errorf("repositories lookup failed: %w", err)
+		return "", "", fmt.Errorf("repositories lookup failed: %w", err)
 	}
 
 	projectPrefix := project + "/"
 	preferredFullName := projectPrefix + preferredRepository
-	var selectedRepositories []string
+	var selectedRepository string
 	for _, repository := range repositories {
 		if repository.ArtifactCount <= 0 {
 			continue
 		}
 		if repository.Name == preferredFullName {
-			selectedRepositories = append([]string{strings.TrimPrefix(repository.Name, projectPrefix)}, selectedRepositories...)
-			continue
+			selectedRepository = strings.TrimPrefix(repository.Name, projectPrefix)
+			break
 		}
-		selectedRepositories = append(selectedRepositories, strings.TrimPrefix(repository.Name, projectPrefix))
+		if selectedRepository == "" {
+			selectedRepository = strings.TrimPrefix(repository.Name, projectPrefix)
+		}
 	}
-	if len(selectedRepositories) == 0 {
-		return nil, fmt.Errorf("no Harbor repository with artifacts found in project %s", project)
+	if selectedRepository == "" {
+		return "", "", fmt.Errorf("no Harbor repository with artifacts found in project %s", project)
 	}
 
-	var candidates []harborScanArtifact
-	for _, selectedRepository := range selectedRepositories {
-		var artifacts []struct {
-			Digest string `json:"digest"`
-		}
-		artifactsPath := fmt.Sprintf("/api/v2.0/projects/%s/repositories/%s/artifacts?page=1&page_size=10",
-			url.PathEscape(project),
-			url.PathEscape(selectedRepository),
-		)
-		if err := v.harborGetJSON(ctx, artifactsPath, user, password, &artifacts); err != nil {
-			return nil, fmt.Errorf("artifacts lookup failed for %s/%s: %w", project, selectedRepository, err)
-		}
-		for _, artifact := range artifacts {
-			if artifact.Digest == "" {
-				continue
-			}
-			candidates = append(candidates, harborScanArtifact{
-				Path:  harborArtifactPath(project, selectedRepository, artifact.Digest),
-				Label: fmt.Sprintf("%s/%s@%s", project, selectedRepository, artifact.Digest),
-			})
-		}
+	var artifacts []struct {
+		Digest string `json:"digest"`
 	}
-	if len(candidates) == 0 {
-		return nil, fmt.Errorf("no Harbor artifact digest found in project %s", project)
+	artifactsPath := fmt.Sprintf("/api/v2.0/projects/%s/repositories/%s/artifacts?page=1&page_size=10",
+		url.PathEscape(project),
+		url.PathEscape(selectedRepository),
+	)
+	if err := v.harborGetJSON(ctx, artifactsPath, user, password, &artifacts); err != nil {
+		return "", "", fmt.Errorf("artifacts lookup failed for %s/%s: %w", project, selectedRepository, err)
 	}
-	return candidates, nil
+	if len(artifacts) == 0 || artifacts[0].Digest == "" {
+		return "", "", fmt.Errorf("no Harbor artifact digest found for %s/%s", project, selectedRepository)
+	}
+
+	label := fmt.Sprintf("%s/%s@%s", project, selectedRepository, artifacts[0].Digest)
+	return harborArtifactPath(project, selectedRepository, artifacts[0].Digest), label, nil
 }
 
 type harborAPIError struct {

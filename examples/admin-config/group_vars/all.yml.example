@@ -60,7 +60,7 @@ keycloak_config:
 harbor_config:
   enabled: true
   validate_certs: true
-  validate_registry_mirrors: false
+  validate_registry_mirrors: true
   oidc:
     enabled: true
     endpoint: "https://keycloak.example.com/realms/homelab"
@@ -76,7 +76,7 @@ harbor_config:
       url: "https://hub.docker.com"
       public: true
       validation:
-        enabled: false
+        enabled: true
         image: "library/busybox:latest"
     - name: "quay"
       project_name: "quay"
@@ -84,7 +84,7 @@ harbor_config:
       url: "https://quay.io"
       public: true
       validation:
-        enabled: false
+        enabled: true
         image: "prometheus/busybox:latest"
     - name: "ghcr"
       project_name: "ghcr"
@@ -92,7 +92,7 @@ harbor_config:
       url: "https://ghcr.io"
       public: true
       validation:
-        enabled: false
+        enabled: true
         image: "fluxcd/flux-cli:v2.4.0"
 
 openbao_config:
