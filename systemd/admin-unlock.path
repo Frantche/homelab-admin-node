@@ -2,7 +2,7 @@
 Description=Watch for age key installation
 
 [Path]
-PathExists=/etc/sops/age/keys.txt
+PathChanged=/etc/sops/age/keys.txt
 Unit=admin-converge.service
 
 [Install]

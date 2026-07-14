@@ -1,0 +1,5 @@
+---
+admin_node_repo_owner: root
+admin_node_repo_group: homelab
+admin_converge_timer_on_boot_sec: 5m
+admin_converge_timer_on_unit_active_sec: 30m

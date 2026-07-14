@@ -23,10 +23,15 @@ type resticConfig struct {
 	RepoValues         map[string]map[string]string
 }
 
+const defaultResticCacheHome = "/var/cache/admin-node/restic"
+
 func RunRestic(ctx context.Context, envFile string, backupPaths []string) error {
 	if _, err := exec.LookPath("restic"); err != nil {
 		fmt.Println("[restic] restic is not installed, skipping remote backups")
 		return nil
+	}
+	if err := ensureResticCacheEnv(); err != nil {
+		return err
 	}
 	cfg, err := loadResticConfig(envFile)
 	if err != nil {
@@ -55,6 +60,20 @@ func RunRestic(ctx context.Context, envFile string, backupPaths []string) error 
 	}
 	fmt.Println("[restic] no repositories configured, skipping remote backup")
 	return nil
+}
+
+func ensureResticCacheEnv() error {
+	if os.Getenv("XDG_CACHE_HOME") != "" || os.Getenv("HOME") != "" {
+		return nil
+	}
+	cacheHome := os.Getenv("ADMIN_NODE_RESTIC_CACHE_HOME")
+	if cacheHome == "" {
+		cacheHome = defaultResticCacheHome
+	}
+	if err := os.MkdirAll(cacheHome, 0o700); err != nil {
+		return fmt.Errorf("create restic cache directory: %w", err)
+	}
+	return os.Setenv("XDG_CACHE_HOME", cacheHome)
 }
 
 func loadResticConfig(path string) (resticConfig, error) {
