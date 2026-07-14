@@ -45,13 +45,11 @@
     group: root
     mode: "0755"
   when: >-
-    {{
-      traefik_external_services
-      | selectattr('tls', 'defined')
-      | selectattr('tls.ca_pem', 'defined')
-      | list
-      | length > 0
-    }}
+    (traefik_external_services
+    | selectattr('tls', 'defined')
+    | selectattr('tls.ca_pem', 'defined')
+    | list
+    | length) > 0
 
 - name: Render Traefik external service CA files
   ansible.builtin.copy:

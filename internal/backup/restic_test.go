@@ -66,3 +66,27 @@ func TestValidateSecureRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestEnsureResticCacheEnvWithoutUserHome(t *testing.T) {
+	cacheHome := filepath.Join(t.TempDir(), "restic-cache")
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CACHE_HOME", "")
+	t.Setenv("ADMIN_NODE_RESTIC_CACHE_HOME", cacheHome)
+
+	if err := ensureResticCacheEnv(); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("XDG_CACHE_HOME"); got != cacheHome {
+		t.Fatalf("XDG_CACHE_HOME = %q, want %q", got, cacheHome)
+	}
+	info, err := os.Stat(cacheHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%s is not a directory", cacheHome)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("cache mode = %o, want 0700", got)
+	}
+}

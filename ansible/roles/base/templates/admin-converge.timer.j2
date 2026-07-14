@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic admin convergence
+
+[Timer]
+OnBootSec={{ admin_converge_timer_on_boot_sec }}
+OnUnitActiveSec={{ admin_converge_timer_on_unit_active_sec }}
+Unit=admin-converge.service
+
+[Install]
+WantedBy=timers.target

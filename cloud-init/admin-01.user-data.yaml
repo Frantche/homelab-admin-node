@@ -1,7 +1,10 @@
 #cloud-config
+groups:
+  - homelab
+
 users:
   - name: admin
-    groups: [wheel]
+    groups: [wheel, homelab]
     shell: /bin/bash
     sudo: ["ALL=(ALL) NOPASSWD:ALL"]
     ssh_authorized_keys:

@@ -30,6 +30,66 @@
   register: admin_node_build
   changed_when: "'changed=true' in admin_node_build.stdout"
 
+- name: Compute admin repository operator users
+  ansible.builtin.set_fact:
+    admin_node_repo_operator_users_effective: "{{ hardening.ssh.allow_users | default(['admin'], true) }}"
+
+- name: Ensure admin repository operator group exists
+  ansible.builtin.group:
+    name: "{{ admin_node_repo_group }}"
+    state: present
+    system: true
+
+- name: Check admin repository operator users
+  ansible.builtin.command:
+    argv:
+      - getent
+      - passwd
+      - "{{ item }}"
+  loop: "{{ admin_node_repo_operator_users_effective }}"
+  register: admin_node_repo_operator_user_checks
+  changed_when: false
+  failed_when: false
+
+- name: Add existing operator users to admin repository group
+  ansible.builtin.user:
+    name: "{{ item.item }}"
+    groups: "{{ admin_node_repo_group }}"
+    append: true
+  loop: "{{ admin_node_repo_operator_user_checks.results }}"
+  when: item.rc == 0
+
+- name: Make admin repository shared by local operators
+  ansible.builtin.file:
+    path: /opt/homelab-admin-node
+    state: directory
+    owner: "{{ admin_node_repo_owner }}"
+    group: "{{ admin_node_repo_group }}"
+    mode: "u=rwX,g=rwX,o=rX"
+    recurse: true
+
+- name: Keep admin repository directories group-sticky
+  ansible.builtin.command: find /opt/homelab-admin-node -type d -exec chmod g+s {} +
+  changed_when: false
+
+- name: Configure admin repository for shared Git access
+  ansible.builtin.command:
+    argv:
+      - git
+      - --git-dir=/opt/homelab-admin-node/.git
+      - --work-tree=/opt/homelab-admin-node
+      - config
+      - core.sharedRepository
+      - group
+  changed_when: false
+
+- name: Keep admin repository Git config group-writable
+  ansible.builtin.file:
+    path: /opt/homelab-admin-node/.git/config
+    owner: "{{ admin_node_repo_owner }}"
+    group: "{{ admin_node_repo_group }}"
+    mode: "0664"
+
 - name: Deploy systemd unit files
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../systemd/{{ item }}"
@@ -41,11 +101,40 @@
     - admin-stack@.service
     - admin-stacks.target
     - admin-converge.service
-    - admin-converge.timer
     - admin-backup.service
     - admin-backup.timer
     - admin-unlock.path
   notify: systemd daemon-reload
+
+- name: Deploy admin-converge timer
+  ansible.builtin.template:
+    src: admin-converge.timer.j2
+    dest: /etc/systemd/system/admin-converge.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: systemd daemon-reload
+
+- name: Ensure admin-converge drop-in directory is inspectable
+  ansible.builtin.file:
+    path: /etc/systemd/system/admin-converge.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Check admin-converge inventory drop-in
+  ansible.builtin.stat:
+    path: /etc/systemd/system/admin-converge.service.d/10-inventory.conf
+  register: admin_converge_inventory_dropin
+
+- name: Make admin-converge inventory drop-in inspectable
+  ansible.builtin.file:
+    path: /etc/systemd/system/admin-converge.service.d/10-inventory.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: admin_converge_inventory_dropin.stat.exists
 
 - name: Enable and start admin-stacks.target
   ansible.builtin.systemd:

@@ -62,14 +62,14 @@ hardening:
     enforce: true
 ```
 
-The role manages SSH hardening, sudoers, nftables, journald persistence, auditd, fail2ban, sysctl settings, sensitive file permissions, and optional AppArmor profiles.
+The role manages SSH hardening, sudoers, nftables, journald persistence, auditd, fail2ban, sysctl settings, sensitive file permissions, and optional AppArmor profiles. Existing local users listed in `hardening.ssh.allow_users` are also added to the `homelab` group so they can operate the shared Git checkout under `/opt/homelab-admin-node`.
 
 Reference: [Docker Compose documentation](https://docs.docker.com/compose/) for container runtime declarations affected by hardening profiles.
 
 | Variable | Default/example | Purpose |
 | --- | --- | --- |
 | `hardening.enabled` | `true` | Enables the hardening role. |
-| `hardening.ssh.allow_users[]` | `["admin"]` | Users allowed by the managed SSH drop-in. |
+| `hardening.ssh.allow_users[]` | `["admin"]` | Users allowed by the managed SSH drop-in and, when they exist locally, members of the `homelab` operator group for the admin checkout. |
 | `hardening.sudo.nopasswd` | `true` | Controls passwordless sudo for the wheel group. |
 | `hardening.firewall.ssh_allowed_cidrs[]` | `["0.0.0.0/0", "::/0"]` | CIDRs allowed to reach SSH in nftables. |
 | `hardening.firewall.https_allowed_cidrs[]` | `["0.0.0.0/0", "::/0"]` | CIDRs allowed to reach HTTPS in nftables. |
