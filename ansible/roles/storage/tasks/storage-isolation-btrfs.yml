@@ -1,0 +1,138 @@
+---
+- name: Ensure btrfs-progs is installed
+  ansible.builtin.package:
+    name: btrfs-progs
+    state: present
+
+- name: Validate Btrfs filesystem for isolated storage
+  ansible.builtin.assert:
+    that:
+      - storage_isolation_parent_fstype.stdout | trim == 'btrfs'
+    fail_msg: >-
+      storage_isolation entry {{ storage_isolation_entry.name }} requires Btrfs at
+      {{ storage_isolation_parent }}, found {{ storage_isolation_parent_fstype.stdout | trim }}.
+
+- name: Check Btrfs quota support
+  ansible.builtin.command:
+    argv:
+      - btrfs
+      - qgroup
+      - show
+      - "{{ storage_isolation_parent_mount.stdout | trim }}"
+  register: storage_isolation_btrfs_qgroup_show
+  changed_when: false
+  failed_when: false
+
+- name: Enable Btrfs quotas
+  ansible.builtin.command:
+    argv:
+      - btrfs
+      - quota
+      - enable
+      - "{{ storage_isolation_parent_mount.stdout | trim }}"
+  when: storage_isolation_btrfs_qgroup_show.rc != 0
+
+- name: Check isolated Btrfs path
+  ansible.builtin.stat:
+    path: "{{ storage_isolation_path }}"
+  register: storage_isolation_btrfs_path
+
+- name: Check whether isolated Btrfs path is already a subvolume
+  ansible.builtin.command:
+    argv:
+      - btrfs
+      - subvolume
+      - show
+      - "{{ storage_isolation_path }}"
+  register: storage_isolation_btrfs_subvolume
+  changed_when: false
+  failed_when: false
+  when: storage_isolation_btrfs_path.stat.exists
+
+- name: Check whether existing isolated Btrfs directory is empty
+  ansible.builtin.find:
+    paths: "{{ storage_isolation_path }}"
+    file_type: any
+    hidden: true
+    recurse: false
+  register: storage_isolation_btrfs_existing_contents
+  when:
+    - storage_isolation_btrfs_path.stat.exists
+    - storage_isolation_btrfs_path.stat.isdir | default(false)
+    - storage_isolation_btrfs_subvolume.rc != 0
+
+- name: Reject unsupported existing Btrfs path
+  ansible.builtin.fail:
+    msg: >-
+      {{ storage_isolation_path }} exists and is not a directory. It cannot be
+      converted to an isolated Btrfs subvolume.
+  when:
+    - storage_isolation_btrfs_path.stat.exists
+    - not (storage_isolation_btrfs_path.stat.isdir | default(false))
+    - storage_isolation_btrfs_subvolume.rc != 0
+
+- name: Reject non-empty Btrfs path without migration opt-in
+  ansible.builtin.fail:
+    msg: >-
+      {{ storage_isolation_path }} is non-empty and is not a Btrfs subvolume.
+      Set migrate_existing=true for this entry to migrate it safely.
+  when:
+    - storage_isolation_btrfs_path.stat.exists
+    - storage_isolation_btrfs_path.stat.isdir | default(false)
+    - storage_isolation_btrfs_subvolume.rc != 0
+    - storage_isolation_btrfs_existing_contents.matched | default(0) > 0
+    - not storage_isolation_migrate_existing
+
+- name: Migrate existing Btrfs directory to subvolume
+  ansible.builtin.include_tasks: storage-isolation-btrfs-migrate.yml
+  when:
+    - storage_isolation_btrfs_path.stat.exists
+    - storage_isolation_btrfs_path.stat.isdir | default(false)
+    - storage_isolation_btrfs_subvolume.rc != 0
+    - storage_isolation_btrfs_existing_contents.matched | default(0) > 0
+    - storage_isolation_migrate_existing
+
+- name: Remove empty Btrfs directory before subvolume creation
+  ansible.builtin.file:
+    path: "{{ storage_isolation_path }}"
+    state: absent
+  when:
+    - storage_isolation_btrfs_path.stat.exists
+    - storage_isolation_btrfs_path.stat.isdir | default(false)
+    - storage_isolation_btrfs_subvolume.rc != 0
+    - storage_isolation_btrfs_existing_contents.matched | default(0) == 0
+
+- name: Re-check isolated Btrfs path after migration or cleanup
+  ansible.builtin.stat:
+    path: "{{ storage_isolation_path }}"
+  register: storage_isolation_btrfs_path_after_prepare
+
+- name: Create isolated Btrfs subvolume
+  ansible.builtin.command:
+    argv:
+      - btrfs
+      - subvolume
+      - create
+      - "{{ storage_isolation_path }}"
+  when: not storage_isolation_btrfs_path_after_prepare.stat.exists
+
+- name: Apply Btrfs quota limit
+  ansible.builtin.command:
+    argv:
+      - btrfs
+      - qgroup
+      - limit
+      - "{{ storage_isolation_entry.size }}"
+      - "{{ storage_isolation_path }}"
+  changed_when: false
+
+- name: Verify Btrfs quota for isolated storage
+  ansible.builtin.command:
+    argv:
+      - btrfs
+      - qgroup
+      - show
+      - -reF
+      - "{{ storage_isolation_path }}"
+  register: storage_isolation_btrfs_quota_verify
+  changed_when: false

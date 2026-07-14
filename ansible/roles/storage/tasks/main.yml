@@ -1,4 +1,35 @@
 ---
+- name: Build storage isolation configuration
+  ansible.builtin.set_fact:
+    storage_isolation_cfg: >-
+      {{
+        {
+          'enabled': false,
+          'backend': 'auto',
+          'migrate_existing': false,
+          'lvm': {
+            'volume_group': '',
+            'filesystem': 'ext4'
+          },
+          'entries': []
+        } | combine(storage_isolation | default({}), recursive=True)
+      }}
+
+- name: Validate storage isolation backend
+  ansible.builtin.assert:
+    that:
+      - storage_isolation_cfg.backend in ['auto', 'btrfs', 'lvm']
+    fail_msg: "storage_isolation.backend must be one of: auto, btrfs, lvm"
+  when: storage_isolation_cfg.enabled | bool
+
+- name: Configure isolated storage entries
+  ansible.builtin.include_tasks: storage-isolation-entry.yml
+  loop: "{{ storage_isolation_cfg.entries }}"
+  loop_control:
+    loop_var: storage_isolation_entry
+    label: "{{ storage_isolation_entry.name | default(storage_isolation_entry.path | default('unnamed')) }}"
+  when: storage_isolation_cfg.enabled | bool
+
 - name: Ensure data directories exist
   ansible.builtin.file:
     path: "{{ item }}"

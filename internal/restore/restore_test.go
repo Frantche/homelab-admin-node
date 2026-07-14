@@ -209,10 +209,17 @@ func TestRunRestoresGiteaDataAndSetsNormalMode(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(adminRoot, "data/gitea/app.ini"), []byte("old\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(adminRoot, "data/gitea/stale.txt"), []byte("stale\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	beforeStat, err := os.Stat(filepath.Join(adminRoot, "data/gitea"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	modeFile := filepath.Join(root, "mode")
 	validateCalled := false
 
-	err := Run(context.Background(), config.Config{
+	err = Run(context.Background(), config.Config{
 		AdminRoot:  adminRoot,
 		ModeFile:   modeFile,
 		BackupRoot: backupRoot,
@@ -236,9 +243,15 @@ func TestRunRestoresGiteaDataAndSetsNormalMode(t *testing.T) {
 	if string(content) != "restored\n" {
 		t.Fatalf("gitea data = %q", content)
 	}
+	if _, err := os.Stat(filepath.Join(adminRoot, "data/gitea/stale.txt")); !os.IsNotExist(err) {
+		t.Fatalf("stale file should have been removed, err = %v", err)
+	}
 	stat, err := os.Stat(filepath.Join(adminRoot, "data/gitea"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !os.SameFile(beforeStat, stat) {
+		t.Fatal("gitea data directory should be preserved during restore")
 	}
 	if stat.Mode().Perm() != 0o755 {
 		t.Fatalf("gitea data mode = %o", stat.Mode().Perm())

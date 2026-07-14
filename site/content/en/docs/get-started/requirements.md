@@ -21,5 +21,6 @@ The VM should have at least:
 - 2 vCPU for testing, 4 vCPU recommended.
 - 4 GiB RAM minimum.
 - 20 GiB disk minimum, more if Harbor or local backups are used.
+- Btrfs root filesystem for the default storage-isolation example and CI quota path. LVM storage isolation requires an existing guest OS volume group.
 
 Development and CI use mocks for Pi-hole and Cloudflare Tunnel when external infrastructure is unavailable.

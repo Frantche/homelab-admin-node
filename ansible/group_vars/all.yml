@@ -6,6 +6,15 @@ admin_node_lan_ip: "192.168.1.10"
 admin_node_fqdn: ""
 acme_email: "admin@example.com"
 
+storage_isolation:
+  enabled: false
+  backend: auto
+  migrate_existing: false
+  lvm:
+    volume_group: ""
+    filesystem: ext4
+  entries: []
+
 traefik:
   dashboard_enabled: true
   dashboard_hostname: "traefik.example.com"

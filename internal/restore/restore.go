@@ -54,11 +54,7 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 
 	if dirExists(filepath.Join(info.Path, "gitea-data")) {
 		giteaDataPath := filepath.Join(cfg.AdminRoot, "data/gitea")
-		if err := os.RemoveAll(giteaDataPath); err != nil {
-			writeMode(cfg.ModeFile, "restore_failed")
-			return err
-		}
-		if err := copyPath(filepath.Join(info.Path, "gitea-data"), giteaDataPath); err != nil {
+		if err := replaceDirContents(filepath.Join(info.Path, "gitea-data"), giteaDataPath); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return err
 		}
@@ -385,6 +381,56 @@ func copyPath(src, dst string) error {
 		return nil
 	}
 	return copyFile(src, dst, info.Mode())
+}
+
+func replaceDirContents(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("restore source is not a directory: %s", src)
+	}
+
+	if dstInfo, err := os.Stat(dst); err == nil && dstInfo.IsDir() {
+		if err := clearDir(dst); err != nil {
+			return err
+		}
+		if err := os.Chmod(dst, info.Mode()); err != nil {
+			return err
+		}
+	} else {
+		if err := os.RemoveAll(dst); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(dst, info.Mode()); err != nil {
+			return err
+		}
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := copyPath(filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func clearDir(path string) error {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(path, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {

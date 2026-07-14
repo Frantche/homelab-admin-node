@@ -41,6 +41,8 @@ wget -O /tmp/arch-cloud.qcow2 \
 
 > **Astuce** : pour une autre distribution, remplacez l'URL par l'image cloud correspondante (Ubuntu, Debian, etc.).
 
+> **Stockage** : l'image Arch courante utilise généralement une racine Btrfs, mais le rôle d'isolation vérifie le filesystem cible pendant la convergence. Le paramètre Proxmox `local-lvm` désigne le stockage de l'hyperviseur pour le disque de la VM ; il ne crée pas de volumes LVM dans l'OS invité.
+
 ---
 
 ## Étape 2 — Créer la VM template
