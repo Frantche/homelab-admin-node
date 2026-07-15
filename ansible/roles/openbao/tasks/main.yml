@@ -32,6 +32,21 @@
       OPENBAO_ADDR=https://{{ service_domains.openbao }}
   no_log: true
 
+- name: Ensure openbao data directory is writable by the container user
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/data/openbao"
+    state: directory
+    owner: "100"
+    group: "1000"
+    mode: "0750"
+
+- name: Ensure existing openbao data remains writable by the container user
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/data/openbao"
+    owner: "100"
+    group: "1000"
+    recurse: true
+
 - name: Start openbao stack
   ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/openbao.env -f compose.yaml up -d
   args:
