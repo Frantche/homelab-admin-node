@@ -277,6 +277,9 @@ func restoreOpenBao(ctx context.Context, cfg config.Config, compose string, snap
 	if err := run(ctx, nil, "docker", "cp", snapPath, "openbao:/tmp/openbao.snap"); err != nil {
 		return err
 	}
+	if err := run(ctx, nil, "docker", "exec", "--user", "root", "openbao", "chown", "openbao:openbao", "/tmp/openbao.snap"); err != nil {
+		return err
+	}
 	token := os.Getenv("OPENBAO_TOKEN")
 	if token != "" {
 		if err := run(ctx, nil, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN="+token, "openbao", "bao", "operator", "raft", "snapshot", "restore", "-force", "/tmp/openbao.snap"); err != nil {
