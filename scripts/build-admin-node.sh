@@ -13,6 +13,16 @@ if ! command -v "$GO_BIN" >/dev/null 2>&1; then
   exit 127
 fi
 
+if [[ -z "${GOCACHE:-}" && -z "${XDG_CACHE_HOME:-}" && -z "${HOME:-}" ]]; then
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    admin_node_go_cache_default="/var/cache/admin-node/go-build"
+  else
+    admin_node_go_cache_default="${TMPDIR:-/tmp}/admin-node-go-build-${UID:-$(id -u)}"
+  fi
+  export GOCACHE="${ADMIN_NODE_GO_CACHE:-$admin_node_go_cache_default}"
+  mkdir -p "$GOCACHE"
+fi
+
 cd "$REPO_DIR"
 mkdir -p "$BIN_DIR"
 TMP_BIN="$(mktemp "$BIN_DIR/admin-node.tmp.XXXXXX")"

@@ -182,7 +182,7 @@
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../stacks/harbor/config/{{ item }}"
     dest: "{{ admin_node_root }}/stacks/harbor/config/{{ item }}"
-    mode: preserve
+    mode: "0644"
   register: harbor_stack_files_copy
   loop:
     - core-app.conf
