@@ -78,6 +78,7 @@ func TestRestoreOpenBaoUnsealsBeforeSnapshotRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	restoreMarker := filepath.Join(root, "openbao-snapshot-restored")
+	chownMarker := filepath.Join(root, "openbao-snapshot-chowned")
 	fakeDocker := filepath.Join(binDir, "docker")
 	fakeDockerScript := `#!/usr/bin/env bash
 set -euo pipefail
@@ -94,6 +95,10 @@ if [[ "${1:-}" == "exec" && "$*" == *"bao status"* ]]; then
   fi
   echo "Initialized true"
   echo "Sealed false"
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"chown openbao:openbao /tmp/openbao.snap"* ]]; then
+  touch "` + chownMarker + `"
   exit 0
 fi
 if [[ "${1:-}" == "exec" && "$*" == *"snapshot restore"* ]]; then
@@ -121,6 +126,9 @@ exit 1
 	err := restoreOpenBao(context.Background(), config.Config{RepoRoot: repoRoot}, filepath.Join(root, "compose.yaml"), snapPath)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(chownMarker); err != nil {
+		t.Fatal("openbao snapshot ownership was not fixed")
 	}
 	if _, err := os.Stat(restoreMarker); err != nil {
 		t.Fatal("openbao snapshot restore was not called")
