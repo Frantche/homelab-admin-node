@@ -18,6 +18,7 @@ type Info struct {
 	ManifestInvalid bool
 	HasKeycloakDump bool
 	HasGiteaDump    bool
+	HasHarborDump   bool
 	HasOpenBaoSnap  bool
 	HasGiteaData    bool
 	HasOfflineImage bool
@@ -92,8 +93,9 @@ func inspect(path, id string) (Info, error) {
 		SizeBytes:       size,
 		HasManifest:     hasManifest,
 		ManifestInvalid: manifestInvalid,
-		HasKeycloakDump: fileExists(filepath.Join(path, "keycloak.sql")),
-		HasGiteaDump:    fileExists(filepath.Join(path, "gitea.sql")),
+		HasKeycloakDump: fileExists(filepath.Join(path, "keycloak.dump")),
+		HasGiteaDump:    fileExists(filepath.Join(path, "gitea.dump")),
+		HasHarborDump:   fileExists(filepath.Join(path, "harbor.dump")),
 		HasOpenBaoSnap:  fileExists(filepath.Join(path, "openbao.snap")),
 		HasGiteaData:    dirExists(filepath.Join(path, "gitea-data")),
 		HasOfflineImage: fileExists(filepath.Join(path, "offline-images.tar")),

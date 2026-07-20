@@ -52,7 +52,7 @@ Cette validation est appelée par `bin/admin-node backup run` et après restore.
 
 `bin/admin-node backup run` sauvegarde :
 
-- la base PostgreSQL Gitea dans `gitea.sql`;
+- la base PostgreSQL Gitea dans `gitea.dump`, au format custom `pg_dump -Fc`;
 - les données applicatives et repositories depuis `/srv/admin/data/gitea`.
 
-`bin/admin-node restore run` restaure les données applicatives, réimporte `gitea.sql`, redémarre la stack et relance la validation API.
+`bin/admin-node restore run` restaure les données applicatives, réimporte `gitea.dump` avec `pg_restore`, redémarre la stack et relance la validation API.

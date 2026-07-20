@@ -42,13 +42,19 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		return Info{}, err
 	}
 
-	if err := runToFile(ctx, filepath.Join(target, "keycloak.sql"), "docker", "exec", "keycloak-db", "pg_dump", "-U", "keycloak", "keycloak"); err != nil {
+	if err := dumpPostgres(ctx, target, "keycloak.dump", "keycloak-db", "keycloak", "keycloak"); err != nil {
 		return Info{}, fmt.Errorf("dump keycloak: %w", err)
 	}
 
 	if containerExists(ctx, "gitea-db") {
-		if err := runToFile(ctx, filepath.Join(target, "gitea.sql"), "docker", "exec", "gitea-db", "pg_dump", "-U", "gitea", "gitea"); err != nil {
+		if err := dumpPostgres(ctx, target, "gitea.dump", "gitea-db", "gitea", "gitea"); err != nil {
 			return Info{}, fmt.Errorf("dump gitea: %w", err)
+		}
+	}
+
+	if containerExists(ctx, "harbor-db") {
+		if err := dumpPostgres(ctx, target, "harbor.dump", "harbor-db", "postgres", "registry"); err != nil {
+			return Info{}, fmt.Errorf("dump harbor: %w", err)
 		}
 	}
 
@@ -142,6 +148,10 @@ func runToFile(ctx context.Context, path string, name string, args ...string) er
 	return nil
 }
 
+func dumpPostgres(ctx context.Context, target string, filename string, container string, user string, db string) error {
+	return runToFile(ctx, filepath.Join(target, filename), "docker", "exec", container, "pg_dump", "-Fc", "-U", user, "-d", db)
+}
+
 func containerExists(ctx context.Context, name string) bool {
 	cmd := exec.CommandContext(ctx, "docker", "ps", "--format", "{{.Names}}")
 	output, err := cmd.Output()
@@ -214,7 +224,7 @@ func copyFile(src, dst string, mode os.FileMode) error {
 }
 
 func manifestFiles(dir string) []string {
-	names := []string{"keycloak.sql", "gitea.sql", "openbao.snap", "stacks", "env", "gitea-data", "offline-images.tar"}
+	names := []string{"keycloak.dump", "gitea.dump", "harbor.dump", "openbao.snap", "stacks", "env", "gitea-data", "offline-images.tar"}
 	var present []string
 	for _, name := range names {
 		if fileExists(filepath.Join(dir, name)) || dirExists(filepath.Join(dir, name)) {

@@ -374,6 +374,9 @@ func formatDumps(item backup.Info) string {
 	if item.HasGiteaDump {
 		names = append(names, "gitea")
 	}
+	if item.HasHarborDump {
+		names = append(names, "harbor")
+	}
 	if item.HasOpenBaoSnap {
 		names = append(names, "openbao")
 	}

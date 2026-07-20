@@ -4,6 +4,18 @@
 
 Ansible construit `bin/admin-node` pendant le converge. En execution manuelle depuis le depot, lancer `make build-admin-node` si le binaire est absent.
 
+## PostgreSQL
+
+Les bases PostgreSQL applicatives sont exportees avec `pg_dump -Fc` au format custom PostgreSQL :
+
+- `keycloak.dump` pour Keycloak ;
+- `gitea.dump` pour Gitea quand `gitea-db` est present ;
+- `harbor.dump` pour Harbor quand `harbor-db` est present.
+
+Le restore utilise `pg_restore` et recree la base cible avant import. Les anciens backups contenant `keycloak.sql` ou `gitea.sql` ne sont pas supportes par ce flux.
+
+Pour Harbor, `harbor.dump` couvre la base `registry`. Les blobs du registry et les autres donnees fichier restent sous `/srv/admin/data/harbor` et sont inclus dans les chemins Restic par defaut via `/srv/admin/data`.
+
 ## Restic
 
 La configuration Ansible genere `/srv/admin/env/backup.env` depuis `backup.*`.

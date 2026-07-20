@@ -21,13 +21,21 @@ backup_root="$tmp_dir/backups"
 mode_file="$tmp_dir/mode"
 fake_bin="$tmp_dir/bin"
 fake_docker="$fake_bin/docker"
+fake_restic="$fake_bin/restic"
 repo_root="$tmp_dir/repo"
+backup_env="$tmp_dir/backup.env"
 
 mkdir -p "$admin_root/stacks/test" "$admin_root/env" "$admin_root/data/gitea" "$fake_bin" "$repo_root" "$backup_root"
 printf 'normal\n' > "$mode_file"
 printf 'services:\n  app:\n    image: %s\n' "$IMAGE" > "$admin_root/stacks/test/compose.yaml"
 printf 'GITEA_ADMIN_PASSWORD=test\n' > "$admin_root/env/gitea.env"
 printf 'gitea-data\n' > "$admin_root/data/gitea/value.txt"
+cat > "$backup_env" <<EOF
+RESTIC_REPOSITORY="$tmp_dir/restic-repo"
+RESTIC_PASSWORD="secret"
+RESTIC_INIT_REPOSITORIES="true"
+RESTIC_DEFAULT_FORGET_ARGS="none"
+EOF
 
 cat > "$fake_docker" <<EOF
 #!/usr/bin/env bash
@@ -43,7 +51,7 @@ if [[ "\${1:-}" == "compose" ]]; then
   exit 0
 fi
 if [[ "\${1:-}" == "exec" && "\${2:-}" == "keycloak-db" && "\${3:-}" == "pg_dump" ]]; then
-  echo "keycloak-sql"
+  echo "keycloak-dump"
   exit 0
 fi
 if [[ "\${1:-}" == "exec" && "\${2:-}" == "keycloak-db" && "\${3:-}" == "pg_isready" ]]; then
@@ -54,6 +62,10 @@ if [[ "\${1:-}" == "exec" && "\${2:-}" == "keycloak-db" && "\${3:-}" == "psql" ]
   exit 0
 fi
 if [[ "\${1:-}" == "exec" && "\${2:-}" == "-i" && "\${3:-}" == "keycloak-db" && "\${4:-}" == "psql" ]]; then
+  cat >/dev/null
+  exit 0
+fi
+if [[ "\${1:-}" == "exec" && "\${2:-}" == "-i" && "\${3:-}" == "keycloak-db" && "\${4:-}" == "pg_restore" ]]; then
   cat >/dev/null
   exit 0
 fi
@@ -68,6 +80,16 @@ exit 1
 EOF
 chmod +x "$fake_docker"
 
+cat > "$fake_restic" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == "cat config" ]]; then
+  exit 1
+fi
+exit 0
+EOF
+chmod +x "$fake_restic"
+
 echo "[offline-images] pulling $IMAGE"
 "$REAL_DOCKER" pull "$IMAGE" >/dev/null
 
@@ -76,6 +98,7 @@ ADMIN_NODE_REPO_ROOT="$repo_root" \
 ADMIN_NODE_ROOT="$admin_root" \
 ADMIN_BACKUP_ROOT="$backup_root" \
 ADMIN_MODE_FILE="$mode_file" \
+RESTIC_BACKUP_ENV_FILE="$backup_env" \
 ADMIN_NODE_VALIDATE_MOCK_ALL=true \
   "$REPO_ROOT/bin/admin-node" backup run --include-images >/dev/null
 
@@ -99,6 +122,7 @@ ADMIN_NODE_REPO_ROOT="$repo_root" \
 ADMIN_NODE_ROOT="$admin_root" \
 ADMIN_BACKUP_ROOT="$backup_root" \
 ADMIN_MODE_FILE="$mode_file" \
+RESTIC_BACKUP_ENV_FILE="$backup_env" \
 ADMIN_NODE_VALIDATE_MOCK_ALL=true \
   "$REPO_ROOT/bin/admin-node" restore run --id "$backup_id" >/dev/null
 
