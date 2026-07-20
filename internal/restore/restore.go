@@ -64,16 +64,22 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 		}
 	}
 
-	if fileExists(filepath.Join(info.Path, "keycloak.sql")) {
-		if err := restorePostgres(ctx, stackCommand{Compose: set.KeycloakCompose, EnvFile: set.KeycloakEnv}, "keycloak-db", "keycloak", "keycloak", filepath.Join(info.Path, "keycloak.sql")); err != nil {
+	if fileExists(filepath.Join(info.Path, "keycloak.dump")) {
+		if err := restorePostgres(ctx, stackCommand{Compose: set.KeycloakCompose, EnvFile: set.KeycloakEnv}, "keycloak-db", "keycloak", "keycloak", filepath.Join(info.Path, "keycloak.dump")); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore keycloak: %w", err)
 		}
 	}
-	if fileExists(filepath.Join(info.Path, "gitea.sql")) && fileExists(set.GiteaCompose) && fileExists(set.GiteaEnv) {
-		if err := restorePostgres(ctx, stackCommand{Compose: set.GiteaCompose, EnvFile: set.GiteaEnv}, "gitea-db", "gitea", "gitea", filepath.Join(info.Path, "gitea.sql")); err != nil {
+	if fileExists(filepath.Join(info.Path, "gitea.dump")) && fileExists(set.GiteaCompose) && fileExists(set.GiteaEnv) {
+		if err := restorePostgres(ctx, stackCommand{Compose: set.GiteaCompose, EnvFile: set.GiteaEnv}, "gitea-db", "gitea", "gitea", filepath.Join(info.Path, "gitea.dump")); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore gitea: %w", err)
+		}
+	}
+	if fileExists(filepath.Join(info.Path, "harbor.dump")) && fileExists(set.HarborCompose) && fileExists(set.HarborEnv) {
+		if err := restorePostgres(ctx, stackCommand{Compose: set.HarborCompose, EnvFile: set.HarborEnv}, "harbor-db", "postgres", "registry", filepath.Join(info.Path, "harbor.dump")); err != nil {
+			writeMode(cfg.ModeFile, "restore_failed")
+			return fmt.Errorf("restore harbor: %w", err)
 		}
 	}
 	if fileExists(filepath.Join(info.Path, "openbao.snap")) {
@@ -216,13 +222,18 @@ func restorePostgres(ctx context.Context, command stackCommand, container string
 	if err := dockerCompose(ctx, command, "up", "-d", container); err != nil {
 		return err
 	}
+	ready := false
 	for range 30 {
 		if err := run(ctx, nil, "docker", "exec", container, "pg_isready", "-U", user); err == nil {
+			ready = true
 			break
 		}
 		time.Sleep(time.Second)
 	}
-	if err := run(ctx, nil, "docker", "exec", container, "psql", "-U", user, db, "-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"); err != nil {
+	if !ready {
+		return fmt.Errorf("%s did not become ready", container)
+	}
+	if err := recreatePostgresDatabase(ctx, container, user, db); err != nil {
 		return err
 	}
 	file, err := os.Open(dumpPath)
@@ -230,11 +241,33 @@ func restorePostgres(ctx context.Context, command stackCommand, container string
 		return err
 	}
 	defer file.Close()
-	if err := run(ctx, file, "docker", "exec", "-i", container, "psql", "-U", user, db); err != nil {
+	if err := run(ctx, file, "docker", "exec", "-i", container, "pg_restore", "--exit-on-error", "--no-owner", "--no-privileges", "-U", user, "-d", db); err != nil {
 		return err
 	}
 	_ = dockerCompose(ctx, command, "down")
 	return nil
+}
+
+func recreatePostgresDatabase(ctx context.Context, container string, user string, db string) error {
+	terminate := fmt.Sprintf("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = %s AND pid <> pg_backend_pid();", postgresQuoteLiteral(db))
+	if err := run(ctx, nil, "docker", "exec", container, "psql", "-U", user, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", terminate); err != nil {
+		return err
+	}
+	if err := run(ctx, nil, "docker", "exec", container, "psql", "-U", user, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", "DROP DATABASE IF EXISTS "+postgresQuoteIdentifier(db)+";"); err != nil {
+		return err
+	}
+	if err := run(ctx, nil, "docker", "exec", container, "psql", "-U", user, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", "CREATE DATABASE "+postgresQuoteIdentifier(db)+" OWNER "+postgresQuoteIdentifier(user)+";"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func postgresQuoteIdentifier(value string) string {
+	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+}
+
+func postgresQuoteLiteral(value string) string {
+	return `'` + strings.ReplaceAll(value, `'`, `''`) + `'`
 }
 
 func fixGiteaDataPermissions(path string) error {

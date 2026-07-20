@@ -13,7 +13,10 @@ func TestListBackupsWithoutManifest(t *testing.T) {
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "keycloak.sql"), []byte("sql"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "keycloak.dump"), []byte("dump"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "harbor.dump"), []byte("dump"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -29,6 +32,9 @@ func TestListBackupsWithoutManifest(t *testing.T) {
 	}
 	if !backups[0].HasKeycloakDump {
 		t.Fatal("HasKeycloakDump = false, want true")
+	}
+	if !backups[0].HasHarborDump {
+		t.Fatal("HasHarborDump = false, want true")
 	}
 }
 

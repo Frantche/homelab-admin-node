@@ -14,3 +14,5 @@ bin/admin-node restore run --id <backup-id>
 ```
 
 Si `offline-images.tar` est present dans le backup, le restore charge les images Docker avec `docker load` avant de redemarrer les stacks.
+
+Les bases PostgreSQL sont restaurees depuis les archives custom `keycloak.dump`, `gitea.dump` et `harbor.dump` avec `pg_restore`. Le restore recree la base cible avant import et ne prend pas en charge les anciens dumps SQL plats.

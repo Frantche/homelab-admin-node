@@ -38,14 +38,19 @@ func TestRunCreatesBackupWithManifest(t *testing.T) {
 set -euo pipefail
 if [[ "$1 $2" == "ps --format" ]]; then
   echo "gitea-db"
+  echo "harbor-db"
   exit 0
 fi
-if [[ "${1:-} ${2:-} ${3:-} ${4:-}" == "exec keycloak-db pg_dump -U" ]]; then
-  echo "keycloak-sql"
+if [[ "${1:-} ${2:-} ${3:-} ${4:-}" == "exec keycloak-db pg_dump -Fc" ]]; then
+  echo "keycloak-dump"
   exit 0
 fi
-if [[ "${1:-} ${2:-} ${3:-} ${4:-}" == "exec gitea-db pg_dump -U" ]]; then
-  echo "gitea-sql"
+if [[ "${1:-} ${2:-} ${3:-} ${4:-}" == "exec gitea-db pg_dump -Fc" ]]; then
+  echo "gitea-dump"
+  exit 0
+fi
+if [[ "${1:-} ${2:-} ${3:-} ${4:-}" == "exec harbor-db pg_dump -Fc" ]]; then
+  echo "harbor-dump"
   exit 0
 fi
 if [[ "${1:-}" == "exec" && "$*" == *"operator raft snapshot save"* ]]; then
@@ -140,7 +145,7 @@ RESTIC_DEFAULT_FORGET_ARGS="--keep-last 2 --prune"
 	if info.ID != "20260625-120000" {
 		t.Fatalf("ID = %q", info.ID)
 	}
-	for _, name := range []string{"keycloak.sql", "gitea.sql", "openbao.snap", "stacks", "env", "gitea-data", "offline-images.tar", ManifestName} {
+	for _, name := range []string{"keycloak.dump", "gitea.dump", "harbor.dump", "openbao.snap", "stacks", "env", "gitea-data", "offline-images.tar", ManifestName} {
 		if !fileExists(filepath.Join(info.Path, name)) && !dirExists(filepath.Join(info.Path, name)) {
 			t.Fatalf("expected %s in backup", name)
 		}

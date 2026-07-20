@@ -13,6 +13,14 @@ sudo /opt/homelab-admin-node/bin/admin-node backup run
 
 The backup flow validates service health, prepares local backup data, and applies restic retention to configured repositories.
 
+PostgreSQL databases are exported with `pg_dump -Fc`:
+
+- `keycloak.dump` for Keycloak.
+- `gitea.dump` for Gitea when `gitea-db` is running.
+- `harbor.dump` for Harbor when `harbor-db` is running.
+
+Harbor registry blobs and other file data remain under `/srv/admin/data/harbor`; the default restic path set includes `/srv/admin/data`.
+
 Useful checks:
 
 ```bash
@@ -50,3 +58,5 @@ Typical recovery flow:
    ```
 
 If restore fails, the node can remain in `restore_failed` while logs and restored files are inspected.
+
+Database restore uses `pg_restore` against the custom-format dumps and recreates the target database before import. Legacy flat SQL dumps are not supported by this restore flow.
