@@ -121,89 +121,104 @@
     - keycloak.admin_recover_password | default(true)
   no_log: true
   block:
-    - name: Generate temporary Keycloak recovery admin credentials
-      ansible.builtin.set_fact:
-        keycloak_recovery_admin_user: "admin-recovery-{{ ansible_date_time.epoch }}"
-        keycloak_recovery_admin_password: "{{ lookup('password', '/dev/null length=40 chars=ascii_letters,digits') }}"
+    - name: Generate temporary Keycloak recovery admin username suffix
+      ansible.builtin.command: openssl rand -hex 6
+      register: keycloak_recovery_admin_suffix
+      changed_when: false
 
-    - name: Stop Keycloak before bootstrapping recovery admin
-      ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/keycloak.env -f compose.yaml stop keycloak
+    - name: Generate temporary Keycloak recovery admin password
+      ansible.builtin.command: openssl rand -hex 24
+      register: keycloak_recovery_admin_password_generated
+      changed_when: false
+
+    - name: Store temporary Keycloak recovery admin credentials
+      ansible.builtin.set_fact:
+        keycloak_recovery_admin_user: "admin-recovery-{{ keycloak_recovery_admin_suffix.stdout | trim }}"
+        keycloak_recovery_admin_password: "{{ keycloak_recovery_admin_password_generated.stdout | trim }}"
+
+    - name: Remove stale Keycloak recovery admins before bootstrapping
+      ansible.builtin.command: docker exec -i keycloak-db psql -U keycloak -d keycloak -v ON_ERROR_STOP=1
       args:
-        chdir: "{{ admin_node_root }}/stacks/keycloak"
+        stdin: |
+          CREATE TEMP TABLE recovery_user_ids AS
+            SELECT u.id
+            FROM user_entity u
+            JOIN realm r ON r.id = u.realm_id
+            WHERE r.name = 'master'
+              AND u.username LIKE 'admin-recovery-%';
+          DELETE FROM federated_identity WHERE user_id IN (SELECT id FROM recovery_user_ids);
+          DELETE FROM user_attribute WHERE user_id IN (SELECT id FROM recovery_user_ids);
+          DELETE FROM user_required_action WHERE user_id IN (SELECT id FROM recovery_user_ids);
+          DELETE FROM user_role_mapping WHERE user_id IN (SELECT id FROM recovery_user_ids);
+          DELETE FROM user_consent WHERE user_id IN (SELECT id FROM recovery_user_ids);
+          DELETE FROM issued_ver_credential WHERE user_id IN (SELECT id FROM recovery_user_ids);
+          DELETE FROM credential WHERE user_id IN (SELECT id FROM recovery_user_ids);
+          DELETE FROM user_group_membership WHERE user_id IN (SELECT id FROM recovery_user_ids);
+          DELETE FROM user_ver_credential WHERE user_id IN (SELECT id FROM recovery_user_ids);
+          DELETE FROM user_entity WHERE id IN (SELECT id FROM recovery_user_ids);
       changed_when: true
 
     - name: Bootstrap temporary Keycloak recovery admin
       ansible.builtin.command:
         argv:
           - docker
-          - compose
-          - --env-file
-          - "{{ admin_node_root }}/env/keycloak.env"
-          - -f
-          - compose.yaml
-          - run
-          - --rm
-          - --no-deps
+          - exec
           - -e
-          - KEYCLOAK_RECOVERY_ADMIN
+          - "KEYCLOAK_RECOVERY_ADMIN={{ keycloak_recovery_admin_user }}"
           - -e
-          - KEYCLOAK_RECOVERY_PASSWORD
+          - "KEYCLOAK_RECOVERY_PASSWORD={{ keycloak_recovery_admin_password }}"
           - keycloak
+          - /opt/keycloak/bin/kc.sh
           - bootstrap-admin
           - user
-          - --username:env
-          - KEYCLOAK_RECOVERY_ADMIN
-          - --password:env
-          - KEYCLOAK_RECOVERY_PASSWORD
+          - --username:env=KEYCLOAK_RECOVERY_ADMIN
+          - --password:env=KEYCLOAK_RECOVERY_PASSWORD
           - --no-prompt
       args:
         chdir: "{{ admin_node_root }}/stacks/keycloak"
-      environment:
-        KEYCLOAK_RECOVERY_ADMIN: "{{ keycloak_recovery_admin_user }}"
-        KEYCLOAK_RECOVERY_PASSWORD: "{{ keycloak_recovery_admin_password }}"
       changed_when: true
 
-    - name: Restart Keycloak after bootstrapping recovery admin
-      ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/keycloak.env -f compose.yaml up -d keycloak
-      args:
-        chdir: "{{ admin_node_root }}/stacks/keycloak"
-      changed_when: true
-
-    - name: Wait for keycloak HTTP readiness after recovery bootstrap
+    - name: Wait for temporary Keycloak recovery admin authentication
       ansible.builtin.command:
         argv:
           - docker
           - exec
+          - -e
+          - "KC_CLI_PASSWORD={{ keycloak_recovery_admin_password }}"
           - keycloak
-          - bash
-          - -lc
-          - |
-            exec 3<>/dev/tcp/127.0.0.1/8080
-            printf 'GET /realms/master/.well-known/openid-configuration HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n' >&3
-            IFS= read -r status <&3
-            case "$status" in
-              *" 200 "*) exit 0 ;;
-              *) echo "$status"; exit 1 ;;
-            esac
-      register: keycloak_recovery_http_ready
-      until: keycloak_recovery_http_ready.rc == 0
-      retries: 60
-      delay: 2
+          - /opt/keycloak/bin/kcadm.sh
+          - get
+          - serverinfo
+          - --no-config
+          - --server
+          - http://127.0.0.1:8080
+          - --realm
+          - master
+          - --user
+          - "{{ keycloak_recovery_admin_user }}"
+          - --password
+          - "{{ keycloak_recovery_admin_password }}"
+          - -r
+          - master
+      register: keycloak_recovery_admin_auth
+      until: keycloak_recovery_admin_auth.rc == 0
+      retries: 12
+      delay: 5
       changed_when: false
 
-    - name: Reset permanent Keycloak admin password and remove recovery admin
+    - name: Reset permanent Keycloak admin password through recovery admin
       ansible.builtin.command:
         argv:
           - docker
           - exec
           - -e
-          - KC_CLI_PASSWORD
+          - "KC_CLI_PASSWORD={{ keycloak_recovery_admin_password }}"
           - -e
-          - KEYCLOAK_RECOVERY_ADMIN
+          - "KEYCLOAK_RECOVERY_ADMIN={{ keycloak_recovery_admin_user }}"
           - -e
-          - KEYCLOAK_TARGET_ADMIN
+          - "KEYCLOAK_TARGET_ADMIN={{ keycloak.admin_user | default('admin') }}"
           - -e
-          - KEYCLOAK_TARGET_PASSWORD
+          - "KEYCLOAK_TARGET_PASSWORD={{ keycloak.admin_password | mandatory('keycloak.admin_password is required') }}"
           - keycloak
           - bash
           - -lc
@@ -213,7 +228,8 @@
               --no-config \
               --server http://127.0.0.1:8080 \
               --realm master \
-              --user "$KEYCLOAK_RECOVERY_ADMIN")
+              --user "$KEYCLOAK_RECOVERY_ADMIN" \
+              --password "$KC_CLI_PASSWORD")
             target_admin_id="$(
               /opt/keycloak/bin/kcadm.sh get users \
                 "${kcadm_auth[@]}" \
@@ -222,7 +238,7 @@
                 --fields id \
                 --format csv \
                 --noquotes \
-              | tail -n +2 \
+              | sed -n '/^[0-9a-fA-F-]\{36\}$/p' \
               | head -n 1
             )"
             if [ -z "$target_admin_id" ]; then
@@ -239,7 +255,7 @@
                   --fields id \
                   --format csv \
                   --noquotes \
-                | tail -n +2 \
+                | sed -n '/^[0-9a-fA-F-]\{36\}$/p' \
                 | head -n 1
               )"
               if [ -z "$target_admin_id" ]; then
@@ -257,24 +273,20 @@
               -r master \
               --userid "$target_admin_id" \
               --new-password "$KEYCLOAK_TARGET_PASSWORD"
-            recovery_id="$(
-              /opt/keycloak/bin/kcadm.sh get users \
-                "${kcadm_auth[@]}" \
-                -r master \
-                -q username="$KEYCLOAK_RECOVERY_ADMIN" \
-                --fields id \
-                --format csv \
-                --noquotes \
-              | tail -n +2 \
-              | head -n 1
-            )"
-            test -n "$recovery_id"
-            /opt/keycloak/bin/kcadm.sh delete "users/$recovery_id" "${kcadm_auth[@]}" -r master
-      environment:
-        KC_CLI_PASSWORD: "{{ keycloak_recovery_admin_password }}"
-        KEYCLOAK_RECOVERY_ADMIN: "{{ keycloak_recovery_admin_user }}"
-        KEYCLOAK_TARGET_ADMIN: "{{ keycloak.admin_user | default('admin') }}"
-        KEYCLOAK_TARGET_PASSWORD: "{{ keycloak.admin_password | mandatory('keycloak.admin_password is required') }}"
+            /opt/keycloak/bin/kcadm.sh get users \
+              "${kcadm_auth[@]}" \
+              -r master \
+              -q search=admin-recovery- \
+              --fields id,username \
+              --format csv \
+              --noquotes \
+            | while IFS= read -r recovery_line; do
+                recovery_id="${recovery_line%%,*}"
+                recovery_username="${recovery_line#*,}"
+                case "$recovery_id:$recovery_username" in
+                  ????????-????-????-????-????????????:admin-recovery-*) /opt/keycloak/bin/kcadm.sh delete "users/$recovery_id" "${kcadm_auth[@]}" -r master ;;
+                esac
+              done
       changed_when: true
 
 - name: Fail when Keycloak admin password differs from inventory and recovery is disabled
