@@ -103,6 +103,8 @@
     - admin-converge.service
     - admin-backup.service
     - admin-backup.timer
+    - admin-gitea-process-backup.service
+    - admin-gitea-process-backup.timer
     - admin-unlock.path
   notify: systemd daemon-reload
 
@@ -147,6 +149,13 @@
     name: admin-backup.timer
     enabled: true
     state: started
+
+- name: Configure Gitea process backup timer
+  ansible.builtin.systemd:
+    name: admin-gitea-process-backup.timer
+    enabled: "{{ ((backup | default({})).gitea_process.enabled | default(false) | bool) }}"
+    state: "{{ ((backup | default({})).gitea_process.enabled | default(false) | bool) | ternary('started', 'stopped') }}"
+    daemon_reload: true
 
 - name: Enable admin-converge.timer
   ansible.builtin.systemd:

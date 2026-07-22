@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Gitea backup via gitea-backup-restore-process
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+Unit=admin-gitea-process-backup.service
+
+[Install]
+WantedBy=timers.target

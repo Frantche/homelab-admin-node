@@ -28,6 +28,51 @@
     mode: "0600"
   no_log: true
 
+- name: Validate Gitea process backup configuration
+  ansible.builtin.assert:
+    that:
+      - backup.gitea_process.method | default('') in ['s3', 'ftp']
+      - >
+        (backup.gitea_process.method | default('')) != 's3'
+        or (
+          backup.gitea_process.endpoint_url | default('') | length > 0
+          and backup.gitea_process.bucket | default('') | length > 0
+          and backup.gitea_process.aws_access_key_id | default('') | length > 0
+          and backup.gitea_process.aws_secret_access_key | default('') | length > 0
+        )
+      - >
+        (backup.gitea_process.method | default('')) != 'ftp'
+        or (
+          backup.gitea_process.ftp_host | default('') | length > 0
+          and backup.gitea_process.ftp_user | default('') | length > 0
+          and backup.gitea_process.ftp_password | default('') | length > 0
+        )
+    fail_msg: "backup.gitea_process is enabled but its backend configuration is incomplete."
+  when: backup.gitea_process.enabled | default(false) | bool
+  no_log: true
+
+- name: Render Gitea process backup environment
+  ansible.builtin.template:
+    src: gitea-process-backup-env.j2
+    dest: /srv/admin/env/gitea-process-backup.env
+    owner: root
+    group: root
+    mode: "0600"
+  when: backup.gitea_process.enabled | default(false) | bool
+  no_log: true
+
+- name: Ensure Gitea process backup scratch directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop:
+    - "{{ backup.gitea_process.tmp_folder | default('/srv/admin/backups/gitea-process/tmp') }}"
+    - "{{ backup.gitea_process.restore_tmp_folder | default('/srv/admin/backups/gitea-process/restore-tmp') }}"
+  when: backup.gitea_process.enabled | default(false) | bool
+
 - name: Trigger backup
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node backup run
   environment:
