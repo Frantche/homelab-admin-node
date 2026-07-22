@@ -16,7 +16,7 @@ services:
     ports:
       - "127.0.0.1:1514:10514"
     healthcheck:
-      test: ["CMD", "nc", "-z", "127.0.0.1", "10514"]
+      test: ["CMD-SHELL", "nc -w 1 127.0.0.1 10514 < /dev/null"]
       interval: 5s
       timeout: 3s
       retries: 30
