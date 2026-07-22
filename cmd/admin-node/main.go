@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -59,6 +62,8 @@ func (a app) run(ctx context.Context, args []string) int {
 		return a.runMode(ctx, args[1:])
 	case "converge":
 		return a.runConverge(ctx, args[1:])
+	case "gitea":
+		return a.runGitea(ctx, args[1:])
 	case "secret":
 		return a.runSecret(ctx, args[1:])
 	case "openbao":
@@ -81,6 +86,7 @@ func (a app) printRootUsage() {
 	fmt.Fprintln(a.out, "  restore    Restore backups")
 	fmt.Fprintln(a.out, "  mode       Manage admin-node mode")
 	fmt.Fprintln(a.out, "  converge   Run Ansible convergence")
+	fmt.Fprintln(a.out, "  gitea      Manage Gitea operations")
 	fmt.Fprintln(a.out, "  secret     Manage local secret material")
 	fmt.Fprintln(a.out, "  openbao    Initialize and unseal OpenBao")
 	fmt.Fprintln(a.out, "  ci         Run CI helper operations")
@@ -237,6 +243,164 @@ func (a app) runConverge(ctx context.Context, args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func (a app) runGitea(ctx context.Context, args []string) int {
+	subcommand, rest := splitSubcommand(args, "")
+	if subcommand != "restore-process" {
+		fmt.Fprintf(a.errOut, "unknown gitea command: %s\n", subcommand)
+		return 2
+	}
+	fs := flag.NewFlagSet("gitea restore-process", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	backupFilename := fs.String("backup-filename", getenv("BACKUP_FILENAME", ""), "exact gitea-backup-restore-process archive filename")
+	processEnv := fs.String("process-env", getenv("GITEA_PROCESS_BACKUP_ENV", "/srv/admin/env/gitea-process-backup.env"), "gitea process backup environment file")
+	giteaEnv := fs.String("gitea-env", getenv("GITEA_ENV", "/srv/admin/env/gitea.env"), "Gitea compose environment file")
+	giteaCompose := fs.String("gitea-compose", getenv("GITEA_COMPOSE", "/srv/admin/stacks/gitea/compose.yaml"), "Gitea compose file")
+	preRestoreDir := fs.String("pre-restore-dir", getenv("GITEA_PROCESS_PRE_RESTORE_DIR", "/srv/admin/backups/pre-gitea-process-restore"), "local safety copy directory")
+	runConverge := fs.Bool("converge", envBoolDefault("GITEA_PROCESS_RESTORE_CONVERGE", true), "run normal convergence after restore")
+	inventory := fs.String("inventory", getenv("INVENTORY_PATH", "/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini"), "inventory path used for post-restore convergence")
+	skipGitPull := fs.Bool("skip-git-pull", envBool("ADMIN_CONVERGE_SKIP_GIT_PULL"), "skip git pull before post-restore convergence")
+	if err := fs.Parse(rest); err != nil {
+		return 2
+	}
+	if *backupFilename == "" {
+		fmt.Fprintln(a.errOut, "usage: admin-node gitea restore-process --backup-filename <gitea-backup-YYYY-MM-DD-HH-MM-SS.zip>")
+		return 2
+	}
+	if err := a.runGiteaProcessRestore(ctx, giteaProcessRestoreOptions{
+		BackupFilename: *backupFilename,
+		ProcessEnv:     *processEnv,
+		GiteaEnv:       *giteaEnv,
+		GiteaCompose:   *giteaCompose,
+		PreRestoreDir:  *preRestoreDir,
+		RunConverge:    *runConverge,
+		Inventory:      *inventory,
+		SkipGitPull:    *skipGitPull,
+	}); err != nil {
+		fmt.Fprintf(a.errOut, "gitea restore-process: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+type giteaProcessRestoreOptions struct {
+	BackupFilename string
+	ProcessEnv     string
+	GiteaEnv       string
+	GiteaCompose   string
+	PreRestoreDir  string
+	RunConverge    bool
+	Inventory      string
+	SkipGitPull    bool
+}
+
+func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestoreOptions) error {
+	env, err := readEnvFile(opts.ProcessEnv)
+	if err != nil {
+		return err
+	}
+	image := envValue(env, "GITEA_PROCESS_BACKUP_IMAGE", "ghcr.io/frantche/gitea-backup-restore-process:0.3.6")
+	network := envValue(env, "GITEA_PROCESS_BACKUP_NETWORK", "admin-net")
+	restoreTmp := envValue(env, "RESTORE_TMP_FOLDER", "/srv/admin/backups/gitea-process/restore-tmp")
+
+	fmt.Fprintf(a.out, "[gitea-restore-process] restoring %s\n", opts.BackupFilename)
+	if err := mode.Set(a.cfg.ModeFile, "restore"); err != nil {
+		return fmt.Errorf("set restore mode: %w", err)
+	}
+
+	restoreComplete := false
+	defer func() {
+		if !restoreComplete {
+			_ = mode.Set(a.cfg.ModeFile, "restore_failed")
+		}
+	}()
+
+	if err := a.execLogged(ctx, "systemctl", "stop", "admin-gitea-process-backup.timer"); err != nil {
+		fmt.Fprintf(a.errOut, "[gitea-restore-process] warning: %v\n", err)
+	}
+
+	commands := [][]string{
+		{"docker", "compose", "--env-file", opts.GiteaEnv, "-f", opts.GiteaCompose, "up", "-d", "gitea-db"},
+		{"docker", "compose", "--env-file", opts.GiteaEnv, "-f", opts.GiteaCompose, "stop", "gitea"},
+		{"install", "-d", "-m", "0700", opts.PreRestoreDir},
+		{"rsync", "-a", "--delete", filepath.Join(a.cfg.AdminRoot, "data/gitea") + "/", filepath.Join(opts.PreRestoreDir, "gitea-data") + "/"},
+		{"install", "-d", "-m", "0700", restoreTmp},
+		{"find", restoreTmp, "-mindepth", "1", "-maxdepth", "1", "-exec", "rm", "-rf", "{}", "+"},
+		{"docker", "run", "--rm",
+			"--network", network,
+			"--env-file", opts.ProcessEnv,
+			"-e", "BACKUP_FILENAME=" + opts.BackupFilename,
+			"-v", filepath.Join(a.cfg.AdminRoot, "data/gitea") + ":/data",
+			"-v", restoreTmp + ":" + restoreTmp,
+			image,
+			"gitea-restore"},
+		{"docker", "compose", "--env-file", opts.GiteaEnv, "-f", opts.GiteaCompose, "up", "-d"},
+	}
+	for _, command := range commands {
+		if err := a.execLogged(ctx, command[0], command[1:]...); err != nil {
+			return err
+		}
+	}
+
+	restoreComplete = true
+	if err := mode.Set(a.cfg.ModeFile, "normal"); err != nil {
+		return fmt.Errorf("set normal mode: %w", err)
+	}
+	fmt.Fprintln(a.out, "[gitea-restore-process] restore completed and mode set to normal")
+
+	if !opts.RunConverge {
+		return nil
+	}
+	return converge.Run(ctx, converge.Options{
+		RepoDir:       a.cfg.RepoRoot,
+		InventoryPath: opts.Inventory,
+		PlaybookPath:  getenv("PLAYBOOK_PATH", a.cfg.RepoRoot+"/ansible/site.yml"),
+		SkipGitPull:   opts.SkipGitPull,
+	})
+}
+
+func (a app) execLogged(ctx context.Context, name string, args ...string) error {
+	fmt.Fprintf(a.out, "[gitea-restore-process] running %s %s\n", name, strings.Join(args, " "))
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdout = a.out
+	cmd.Stderr = a.errOut
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
+	}
+	return nil
+}
+
+func readEnvFile(path string) (map[string]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("read process env: %w", err)
+	}
+	defer file.Close()
+	values := map[string]string{}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		values[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(value), `"'`)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read process env: %w", err)
+	}
+	return values, nil
+}
+
+func envValue(values map[string]string, key, fallback string) string {
+	if value := values[key]; value != "" {
+		return value
+	}
+	return fallback
 }
 
 func (a app) runSecret(_ context.Context, args []string) int {
@@ -462,4 +626,12 @@ func getenv(key, fallback string) string {
 
 func envBool(key string) bool {
 	return strings.EqualFold(os.Getenv(key), "true")
+}
+
+func envBoolDefault(key string, fallback bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	return strings.EqualFold(value, "true")
 }
