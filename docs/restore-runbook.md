@@ -35,9 +35,12 @@ docker compose --env-file /srv/admin/env/gitea.env -f compose.yaml stop gitea
 install -d -m 0700 /srv/admin/backups/pre-gitea-process-restore
 rsync -a --delete /srv/admin/data/gitea/ /srv/admin/backups/pre-gitea-process-restore/gitea-data/
 
+export BACKUP_FILENAME="gitea-backup-YYYY-MM-DD-HH-MM-SS.zip"
+
 docker run --rm \
   --network admin-net \
   --env-file /srv/admin/env/gitea-process-backup.env \
+  -e BACKUP_FILENAME="$BACKUP_FILENAME" \
   -v /srv/admin/data/gitea:/data \
   -v /srv/admin/backups/gitea-process/restore-tmp:/srv/admin/backups/gitea-process/restore-tmp \
   ghcr.io/frantche/gitea-backup-restore-process:0.3.6 \
@@ -52,4 +55,6 @@ bin/admin-node converge run
 Garder `gitea-db` demarre pendant le restore : le helper restaure la base detectee
 depuis `/data/gitea/conf/app.ini`. Adapter l'image, le network et
 `RESTORE_TMP_FOLDER` si ces valeurs ont ete personnalisees dans
-`/srv/admin/env/gitea-process-backup.env`.
+`/srv/admin/env/gitea-process-backup.env`. `BACKUP_FILENAME` doit etre le nom
+exact du fichier `.zip` distant a restaurer et n'est requis que pour ce restore
+manuel.
