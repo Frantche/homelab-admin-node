@@ -97,17 +97,25 @@ manual:
    sudo rsync -a --delete /srv/admin/data/gitea/ /srv/admin/backups/pre-gitea-process-restore/gitea-data/
    ```
 
-4. Run `gitea-restore` with the Ansible-rendered backend environment.
+4. Set the remote backup filename to restore, then run `gitea-restore` with the
+   Ansible-rendered backend environment.
 
    ```bash
+   export BACKUP_FILENAME="gitea-backup-YYYY-MM-DD-HH-MM-SS.zip"
+
    sudo docker run --rm \
      --network admin-net \
      --env-file /srv/admin/env/gitea-process-backup.env \
+     -e BACKUP_FILENAME="$BACKUP_FILENAME" \
      -v /srv/admin/data/gitea:/data \
      -v /srv/admin/backups/gitea-process/restore-tmp:/srv/admin/backups/gitea-process/restore-tmp \
      ghcr.io/frantche/gitea-backup-restore-process:0.3.6 \
      gitea-restore
    ```
+
+   `BACKUP_FILENAME` must match the exact remote `.zip` filename in the S3
+   bucket or FTP directory. It is only needed for manual restore, not for the
+   daily backup job.
 
 5. Restart and validate Gitea.
 

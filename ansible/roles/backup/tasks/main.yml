@@ -37,6 +37,7 @@
         or (
           backup.gitea_process.endpoint_url | default('') | length > 0
           and backup.gitea_process.bucket | default('') | length > 0
+          and backup.gitea_process.region | default('') | length > 0
           and backup.gitea_process.aws_access_key_id | default('') | length > 0
           and backup.gitea_process.aws_secret_access_key | default('') | length > 0
         )

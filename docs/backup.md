@@ -102,6 +102,7 @@ backup:
     method: s3
     endpoint_url: "https://s3.example.com"
     bucket: "gitea-backups"
+    region: "us-east-1"
     aws_access_key_id: "CHANGE_ME"
     aws_secret_access_key: "CHANGE_ME"
     max_retention: 7
@@ -155,17 +156,25 @@ Ce restore doit rester une operation manuelle et controlee :
    sudo rsync -a --delete /srv/admin/data/gitea/ /srv/admin/backups/pre-gitea-process-restore/gitea-data/
    ```
 
-4. Lancer le conteneur de restore avec le fichier d'environnement genere par Ansible.
+4. Indiquer le fichier de backup distant a restaurer, puis lancer le conteneur de
+   restore avec le fichier d'environnement genere par Ansible.
 
    ```bash
+   export BACKUP_FILENAME="gitea-backup-YYYY-MM-DD-HH-MM-SS.zip"
+
    sudo docker run --rm \
      --network admin-net \
      --env-file /srv/admin/env/gitea-process-backup.env \
+     -e BACKUP_FILENAME="$BACKUP_FILENAME" \
      -v /srv/admin/data/gitea:/data \
      -v /srv/admin/backups/gitea-process/restore-tmp:/srv/admin/backups/gitea-process/restore-tmp \
      ghcr.io/frantche/gitea-backup-restore-process:0.3.6 \
      gitea-restore
    ```
+
+   `BACKUP_FILENAME` doit correspondre au nom exact du fichier `.zip` present
+   dans le bucket S3 ou le repertoire FTP. Cette variable n'est necessaire que
+   pour le restore manuel, pas pour le backup quotidien.
 
    Si `backup.gitea_process.image`, `network` ou `restore_tmp_folder` ont ete
    personnalises, reprendre les memes valeurs que dans
