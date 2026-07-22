@@ -130,70 +130,20 @@ Elle utilise les memes variables backend que le backup (`BACKUP_METHODE`, S3 ou 
 `APP_INI_PATH`, `RESTORE_TMP_FOLDER`) et restaure les fichiers Gitea ainsi que la
 base detectee depuis `/data/gitea/conf/app.ini`.
 
-Ce restore doit rester une operation manuelle et controlee :
-
-1. Passer le noeud en mode restore pour eviter les convergences applicatives normales.
-
-   ```bash
-   sudo /opt/homelab-admin-node/bin/admin-node mode set restore
-   ```
-
-2. Arreter le timer de backup Gitea et le conteneur applicatif Gitea.
+Ce restore doit passer par le binaire `admin-node` pour eviter d'enchainer par
+erreur avec le restore homelab complet :
 
    ```bash
-   sudo systemctl stop admin-gitea-process-backup.timer
-   cd /srv/admin/stacks/gitea
-   sudo docker compose --env-file /srv/admin/env/gitea.env -f compose.yaml stop gitea
+   sudo /opt/homelab-admin-node/bin/admin-node gitea restore-process \
+     --backup-filename gitea-backup-YYYY-MM-DD-HH-MM-SS.zip \
+     --inventory /etc/admin-config/homelab-node-admin-config/di/inventory.ini
    ```
 
-   Garder `gitea-db` demarre : le restore PostgreSQL du helper a besoin de joindre
-   la base indiquee par `app.ini`.
-
-3. Faire une copie locale de securite de l'etat courant avant ecrasement.
-
-   ```bash
-   sudo install -d -m 0700 /srv/admin/backups/pre-gitea-process-restore
-   sudo rsync -a --delete /srv/admin/data/gitea/ /srv/admin/backups/pre-gitea-process-restore/gitea-data/
-   ```
-
-4. Indiquer le fichier de backup distant a restaurer, puis lancer le conteneur de
-   restore avec le fichier d'environnement genere par Ansible.
-
-   ```bash
-   export BACKUP_FILENAME="gitea-backup-YYYY-MM-DD-HH-MM-SS.zip"
-
-   sudo docker run --rm \
-     --network admin-net \
-     --env-file /srv/admin/env/gitea-process-backup.env \
-     -e BACKUP_FILENAME="$BACKUP_FILENAME" \
-     -v /srv/admin/data/gitea:/data \
-     -v /srv/admin/backups/gitea-process/restore-tmp:/srv/admin/backups/gitea-process/restore-tmp \
-     ghcr.io/frantche/gitea-backup-restore-process:0.3.6 \
-     gitea-restore
-   ```
-
-   `BACKUP_FILENAME` doit correspondre au nom exact du fichier `.zip` present
-   dans le bucket S3 ou le repertoire FTP. Cette variable n'est necessaire que
-   pour le restore manuel, pas pour le backup quotidien.
-
-   Si `backup.gitea_process.image`, `network` ou `restore_tmp_folder` ont ete
-   personnalises, reprendre les memes valeurs que dans
-   `/srv/admin/env/gitea-process-backup.env`.
-
-5. Redemarrer Gitea puis valider.
-
-   ```bash
-   cd /srv/admin/stacks/gitea
-   sudo docker compose --env-file /srv/admin/env/gitea.env -f compose.yaml up -d
-   sudo /opt/homelab-admin-node/bin/admin-node validate apis
-   ```
-
-6. Une fois le service verifie, revenir en mode normal et relancer la convergence.
-
-   ```bash
-   sudo /opt/homelab-admin-node/bin/admin-node mode set normal
-   sudo /opt/homelab-admin-node/bin/admin-node converge run
-   ```
+La commande stoppe le timer de backup Gitea, garde `gitea-db` disponible, fait
+une copie locale de securite de `/srv/admin/data/gitea`, execute `gitea-restore`,
+redemarre Gitea, repasse en mode `normal`, puis lance la convergence normale par
+defaut. `BACKUP_FILENAME` doit correspondre au nom exact du fichier `.zip`
+present dans le bucket S3 ou le repertoire FTP.
 
 Le restore integre du binaire `admin-node` reste le chemin recommande pour restaurer
 un backup homelab complet. Le restore `gitea-restore` est reserve aux restaurations
