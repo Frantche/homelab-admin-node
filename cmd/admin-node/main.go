@@ -305,14 +305,14 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 	restoreTmp := envValue(env, "RESTORE_TMP_FOLDER", "/srv/admin/backups/gitea-process/restore-tmp")
 
 	fmt.Fprintf(a.out, "[gitea-restore-process] restoring %s\n", opts.BackupFilename)
-	if err := mode.Set(a.cfg.ModeFile, "restore"); err != nil {
-		return fmt.Errorf("set restore mode: %w", err)
+	if err := mode.Set(a.cfg.ModeFile, "locked"); err != nil {
+		return fmt.Errorf("set locked mode: %w", err)
 	}
 
 	restoreComplete := false
 	defer func() {
 		if !restoreComplete {
-			_ = mode.Set(a.cfg.ModeFile, "restore_failed")
+			_ = mode.Set(a.cfg.ModeFile, "locked")
 		}
 	}()
 
