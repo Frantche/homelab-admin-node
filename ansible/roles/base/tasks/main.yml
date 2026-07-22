@@ -104,8 +104,16 @@
     - admin-backup.service
     - admin-backup.timer
     - admin-gitea-process-backup.service
-    - admin-gitea-process-backup.timer
     - admin-unlock.path
+  notify: systemd daemon-reload
+
+- name: Deploy Gitea process backup timer
+  ansible.builtin.template:
+    src: admin-gitea-process-backup.timer.j2
+    dest: /etc/systemd/system/admin-gitea-process-backup.timer
+    owner: root
+    group: root
+    mode: "0644"
   notify: systemd daemon-reload
 
 - name: Deploy admin-converge timer

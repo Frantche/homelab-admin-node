@@ -84,7 +84,10 @@ Ansible deploie alors :
 
 - `/srv/admin/env/gitea-process-backup.env` avec les secrets backend ;
 - `admin-gitea-process-backup.service` ;
-- `admin-gitea-process-backup.timer`, programme chaque jour a `03:30`.
+- `admin-gitea-process-backup.timer`, programme par defaut chaque jour a `03:30`.
+
+Le calendrier systemd est parametrable depuis l'inventaire avec
+`backup.gitea_process.on_calendar`. Exemple : `*-*-* 02:15:00`.
 
 Le service verifie `gitea-db` et `gitea` avant de lancer le conteneur. Si l'un des deux
 conteneurs n'est pas `healthy`, le backup est ignore proprement pour cette execution.
@@ -95,6 +98,7 @@ Exemple S3 :
 backup:
   gitea_process:
     enabled: true
+    on_calendar: "*-*-* 03:30:00"
     method: s3
     endpoint_url: "https://s3.example.com"
     bucket: "gitea-backups"

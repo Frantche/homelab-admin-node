@@ -14,9 +14,10 @@ sudo /opt/homelab-admin-node/bin/admin-node backup run
 The backup flow validates service health, prepares local backup data, and applies restic retention to configured repositories.
 
 When `backup.gitea_process.enabled` is true, a separate
-`admin-gitea-process-backup.timer` also runs daily at 03:30 using
-`Frantche/gitea-backup-restore-process`. It runs only when both `gitea-db` and
-`gitea` report `healthy`; otherwise that execution is skipped.
+`admin-gitea-process-backup.timer` also runs daily at 03:30 by default using
+`Frantche/gitea-backup-restore-process`. The schedule is configurable through
+`backup.gitea_process.on_calendar`. It runs only when both `gitea-db` and `gitea`
+report `healthy`; otherwise that execution is skipped.
 
 PostgreSQL databases are exported with `pg_dump -Fc`:
 
