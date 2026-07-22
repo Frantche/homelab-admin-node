@@ -4,7 +4,24 @@
   "labels": ["dependencies", "renovate", "admin-critical", "requires-lifecycle-ci"],
   "semanticCommits": "enabled",
   "semanticCommitType": "fix",
-  "enabledManagers": ["docker-compose", "dockerfile", "github-actions"],
+  "enabledManagers": ["docker-compose", "dockerfile", "github-actions", "custom.regex"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update the Gitea backup-restore-process GHCR image tag in scripts, templates, and docs.",
+      "managerFilePatterns": [
+        "/(^|/)scripts/gitea-process-backup\\.sh$/",
+        "/(^|/)ansible/roles/backup/templates/gitea-process-backup-env\\.j2$/",
+        "/(^|/)docs/(backup|restore-runbook)\\.md$/",
+        "/(^|/)site/content/en/docs/(configuration/backup-hardening-observability|operations/backup-restore)\\.md$/"
+      ],
+      "matchStrings": [
+        "(?<depName>ghcr\\.io/frantche/gitea-backup-restore-process):(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    }
+  ],
   "ignorePaths": [
     "**/*.sops.yaml",
     "**/*.sops.yaml.example",
@@ -19,6 +36,11 @@
     {
       "matchFileNames": ["stacks/harbor/**"],
       "groupName": "harbor stack"
+    },
+    {
+      "matchPackageNames": ["ghcr.io/frantche/gitea-backup-restore-process"],
+      "groupName": "gitea backup restore process",
+      "automerge": false
     },
     {
       "matchPackageNames": ["traefik", "cloudflare/cloudflared"],
