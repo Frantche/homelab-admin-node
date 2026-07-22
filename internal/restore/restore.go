@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Frantche/homelab-admin-node/internal/backup"
@@ -19,12 +20,27 @@ import (
 )
 
 type Options struct {
-	ID       string
-	Validate func(context.Context) error
-	Out      io.Writer
+	ID            string
+	Validate      func(context.Context) error
+	Out           io.Writer
+	LockFile      string
+	SystemdTimers []string
 }
 
 func Run(ctx context.Context, cfg config.Config, opts Options) error {
+	unlock, err := acquireLock(opts.LockFile)
+	if err != nil {
+		writeMode(cfg.ModeFile, "restore_failed")
+		return err
+	}
+	defer unlock()
+	resumeTimers, err := suspendSystemdTimers(ctx, opts.SystemdTimers)
+	if err != nil {
+		writeMode(cfg.ModeFile, "restore_failed")
+		return err
+	}
+	defer resumeTimers()
+
 	id := opts.ID
 	if id == "" {
 		id = restoreIDFromFile(cfg.RestoreIDFile)
@@ -97,6 +113,12 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 	if err := startStacks(ctx, cfg, set); err != nil {
 		writeMode(cfg.ModeFile, "restore_failed")
 		return err
+	}
+	if fileExists(set.OpenBaoCompose) {
+		if err := unsealOpenBao(ctx, cfg); err != nil {
+			writeMode(cfg.ModeFile, "restore_failed")
+			return err
+		}
 	}
 	if opts.Validate != nil {
 		if err := opts.Validate(ctx); err != nil {
@@ -215,12 +237,62 @@ func startStacks(ctx context.Context, cfg config.Config, set stacks) error {
 	}
 	for _, command := range commands {
 		if fileExists(command.Compose) {
+			if command.Compose == set.CloudflaredCompose {
+				_ = removeStoppedContainer(ctx, "cloudflared")
+			}
 			if err := dockerCompose(ctx, command, "up", "-d"); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func acquireLock(path string) (func(), error) {
+	if path == "" {
+		return func() {}, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	lock, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		lock.Close()
+		return nil, err
+	}
+	return func() {
+		_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+		_ = lock.Close()
+	}, nil
+}
+
+func suspendSystemdTimers(ctx context.Context, timers []string) (func(), error) {
+	if len(timers) == 0 {
+		return func() {}, nil
+	}
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return func() {}, nil
+	}
+	var active []string
+	for _, timer := range timers {
+		if exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", timer).Run() == nil {
+			active = append(active, timer)
+		}
+	}
+	if len(active) == 0 {
+		return func() {}, nil
+	}
+	args := append([]string{"stop"}, active...)
+	if out, err := exec.CommandContext(ctx, "systemctl", args...).CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("stop restore timers: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return func() {
+		args := append([]string{"start"}, active...)
+		_ = exec.CommandContext(context.Background(), "systemctl", args...).Run()
+	}, nil
 }
 
 func restorePostgres(ctx context.Context, command stackCommand, container string, user string, db string, dumpPath string) error {
@@ -265,6 +337,18 @@ func recreatePostgresDatabase(ctx context.Context, container string, user string
 		return err
 	}
 	return nil
+}
+
+func removeStoppedContainer(ctx context.Context, name string) error {
+	cmd := exec.CommandContext(ctx, "docker", "inspect", "-f", "{{.State.Running}}", name)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	if strings.TrimSpace(string(out)) == "true" {
+		return nil
+	}
+	return run(ctx, nil, "docker", "rm", name)
 }
 
 func postgresQuoteIdentifier(value string) string {
