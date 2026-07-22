@@ -335,12 +335,20 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 			"-v", restoreTmp + ":" + restoreTmp,
 			image,
 			"gitea-restore"},
-		{"docker", "compose", "--env-file", opts.GiteaEnv, "-f", opts.GiteaCompose, "up", "-d"},
 	}
 	for _, command := range commands {
 		if err := a.execLogged(ctx, command[0], command[1:]...); err != nil {
 			return err
 		}
+	}
+	if err := a.restoreGiteaProcessDatabase(ctx, filepath.Join(restoreTmp, "dump.postgres.sql")); err != nil {
+		return err
+	}
+	if err := a.normalizeGiteaProcessRestorePermissions(ctx); err != nil {
+		return err
+	}
+	if err := a.execLogged(ctx, "docker", "compose", "--env-file", opts.GiteaEnv, "-f", opts.GiteaCompose, "up", "-d"); err != nil {
+		return err
 	}
 
 	restoreComplete = true
@@ -358,6 +366,59 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 		PlaybookPath:  getenv("PLAYBOOK_PATH", a.cfg.RepoRoot+"/ansible/site.yml"),
 		SkipGitPull:   opts.SkipGitPull,
 	})
+}
+
+func (a app) restoreGiteaProcessDatabase(ctx context.Context, dumpPath string) error {
+	if _, err := os.Stat(dumpPath); err != nil {
+		return fmt.Errorf("gitea process dump not found: %w", err)
+	}
+	if err := a.execLogged(ctx, "docker", "exec", "-i", "gitea-db", "psql", "-U", "gitea", "-d", "gitea", "-v", "ON_ERROR_STOP=1", "-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION gitea; GRANT ALL ON SCHEMA public TO gitea; GRANT ALL ON SCHEMA public TO public;"); err != nil {
+		return fmt.Errorf("reset gitea database schema: %w", err)
+	}
+	script := `sed -e 's/OWNER TO app/OWNER TO gitea/g' "$1" | docker exec -i gitea-db psql -U gitea -d gitea -v ON_ERROR_STOP=1`
+	if err := a.execLogged(ctx, "sh", "-c", script, "gitea-process-db-restore", dumpPath); err != nil {
+		return fmt.Errorf("restore gitea process database dump: %w", err)
+	}
+	return nil
+}
+
+func (a app) normalizeGiteaProcessRestorePermissions(ctx context.Context) error {
+	paths := []string{
+		filepath.Join(a.cfg.AdminRoot, "data/gitea/git"),
+		filepath.Join(a.cfg.AdminRoot, "data/gitea/gitea/avatars"),
+		filepath.Join(a.cfg.AdminRoot, "data/gitea/gitea/repo-avatars"),
+		filepath.Join(a.cfg.AdminRoot, "data/gitea/gitea/attachments"),
+		filepath.Join(a.cfg.AdminRoot, "data/gitea/gitea/packages"),
+		filepath.Join(a.cfg.AdminRoot, "data/gitea/gitea/repo-archive"),
+	}
+	existing := existingPaths(paths)
+	if len(existing) == 0 {
+		return fmt.Errorf("no gitea restore paths found under %s", filepath.Join(a.cfg.AdminRoot, "data/gitea"))
+	}
+	if err := a.execLogged(ctx, "chown", append([]string{"-R", "1000:1000"}, existing...)...); err != nil {
+		return fmt.Errorf("normalize gitea restore ownership: %w", err)
+	}
+	findArgs := append([]string{}, existing...)
+	findArgs = append(findArgs, "-type", "d", "-exec", "chmod", "0700", "{}", "+")
+	if err := a.execLogged(ctx, "find", findArgs...); err != nil {
+		return fmt.Errorf("normalize gitea restore directory modes: %w", err)
+	}
+	findArgs = append([]string{}, existing...)
+	findArgs = append(findArgs, "-type", "f", "-exec", "chmod", "u+rw,go-rwx", "{}", "+")
+	if err := a.execLogged(ctx, "find", findArgs...); err != nil {
+		return fmt.Errorf("normalize gitea restore file modes: %w", err)
+	}
+	return nil
+}
+
+func existingPaths(paths []string) []string {
+	var existing []string
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			existing = append(existing, path)
+		}
+	}
+	return existing
 }
 
 func (a app) execLogged(ctx context.Context, name string, args ...string) error {
