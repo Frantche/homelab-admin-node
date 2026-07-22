@@ -36,5 +36,6 @@ depuis `/data/gitea/conf/app.ini`. Adapter l'image, le network et
 `RESTORE_TMP_FOLDER` si ces valeurs ont ete personnalisees dans
 `/srv/admin/env/gitea-process-backup.env`. `BACKUP_FILENAME` doit etre le nom
 exact du fichier `.zip` distant a restaurer et n'est requis que pour ce restore
-dedie. Cette commande repasse en mode `normal` avant de lancer la convergence,
-ce qui evite d'executer le restore homelab complet.
+dedie. Cette commande passe le noeud en mode `locked` pendant l'execution de
+`gitea-restore`, puis repasse en mode `normal` avant de lancer la convergence.
+Cela evite d'executer le restore homelab complet.

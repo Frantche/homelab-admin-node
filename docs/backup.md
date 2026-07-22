@@ -139,11 +139,12 @@ erreur avec le restore homelab complet :
      --inventory /etc/admin-config/homelab-node-admin-config/di/inventory.ini
    ```
 
-La commande stoppe le timer de backup Gitea, garde `gitea-db` disponible, fait
-une copie locale de securite de `/srv/admin/data/gitea`, execute `gitea-restore`,
-redemarre Gitea, repasse en mode `normal`, puis lance la convergence normale par
-defaut. `BACKUP_FILENAME` doit correspondre au nom exact du fichier `.zip`
-present dans le bucket S3 ou le repertoire FTP.
+La commande passe le noeud en mode `locked`, stoppe le timer de backup Gitea,
+garde `gitea-db` disponible, fait une copie locale de securite de
+`/srv/admin/data/gitea`, execute `gitea-restore`, redemarre Gitea, repasse en
+mode `normal`, puis lance la convergence normale par defaut. Si le restore
+echoue, le noeud reste en mode `locked`. `BACKUP_FILENAME` doit correspondre au
+nom exact du fichier `.zip` present dans le bucket S3 ou le repertoire FTP.
 
 Le restore integre du binaire `admin-node` reste le chemin recommande pour restaurer
 un backup homelab complet. Le restore `gitea-restore` est reserve aux restaurations
