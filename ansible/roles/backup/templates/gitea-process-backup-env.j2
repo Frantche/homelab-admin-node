@@ -13,6 +13,7 @@ ENDPOINT_URL={{ backup.gitea_process.endpoint_url }}
 AWS_ACCESS_KEY_ID={{ backup.gitea_process.aws_access_key_id }}
 AWS_SECRET_ACCESS_KEY={{ backup.gitea_process.aws_secret_access_key }}
 BUCKET={{ backup.gitea_process.bucket }}
+REGION={{ backup.gitea_process.region }}
 S3_LOG_DEBUG={{ (backup.gitea_process.s3_log_debug | default(false) | bool) | ternary('true', 'false') }}
 {% endif %}
 {% if backup.gitea_process.method == 'ftp' %}

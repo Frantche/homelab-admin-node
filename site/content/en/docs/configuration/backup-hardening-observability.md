@@ -51,6 +51,7 @@ backup:
     method: s3
     endpoint_url: "https://s3.example.com"
     bucket: "gitea-backups"
+    region: "us-east-1"
     aws_access_key_id: "CHANGE_ME"
     aws_secret_access_key: "CHANGE_ME"
     max_retention: 7
@@ -71,6 +72,7 @@ container is not healthy, that execution is skipped.
 | `backup.gitea_process.max_retention` | `5` | Maximum number of backups retained by the helper. |
 | `backup.gitea_process.endpoint_url` | required for S3 | S3-compatible endpoint URL. |
 | `backup.gitea_process.bucket` | required for S3 | S3 bucket name. |
+| `backup.gitea_process.region` | required for S3 | S3 region passed as `REGION`; use your provider's expected value, such as `us-east-1`. |
 | `backup.gitea_process.aws_access_key_id` | required for S3 | S3 access key. Store encrypted. |
 | `backup.gitea_process.aws_secret_access_key` | required for S3 | S3 secret key. Store encrypted. |
 | `backup.gitea_process.ftp_host` | required for FTP | FTP host and port. |

@@ -102,6 +102,7 @@ backup:
     method: s3
     endpoint_url: "https://s3.example.com"
     bucket: "gitea-backups"
+    region: "us-east-1"
     aws_access_key_id: "CHANGE_ME"
     aws_secret_access_key: "CHANGE_ME"
     max_retention: 7
