@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -44,6 +45,10 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 
 	set := stackSet(cfg.AdminRoot)
 	stopStacks(ctx, cfg, set)
+	if err := fixOpenBaoDataPermissions(cfg.AdminRoot); err != nil {
+		writeMode(cfg.ModeFile, "restore_failed")
+		return err
+	}
 
 	if fileExists(filepath.Join(info.Path, "offline-images.tar")) {
 		if err := run(ctx, nil, "docker", "load", "-i", filepath.Join(info.Path, "offline-images.tar")); err != nil {
@@ -297,7 +302,46 @@ func fixGiteaDataPermissions(path string) error {
 	return nil
 }
 
+func fixOpenBaoDataPermissions(adminRoot string) error {
+	if adminRoot == "" {
+		return nil
+	}
+	path := filepath.Join(adminRoot, "data/openbao")
+	if !dirExists(path) {
+		return nil
+	}
+	if err := os.Chmod(path, 0o750); err != nil {
+		return fmt.Errorf("fix openbao data root permissions: %w", err)
+	}
+	if os.Geteuid() != 0 {
+		return nil
+	}
+	return filepath.WalkDir(path, func(item string, _ os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		info, err := os.Stat(item)
+		if err != nil {
+			return err
+		}
+		if err := os.Chown(item, 100, 1000); err != nil {
+			return fmt.Errorf("chown %s: %w", item, err)
+		}
+		mode := os.FileMode(0o600)
+		if info.IsDir() {
+			mode = 0o750
+		}
+		if err := os.Chmod(item, mode); err != nil {
+			return fmt.Errorf("chmod %s: %w", item, err)
+		}
+		return nil
+	})
+}
+
 func restoreOpenBao(ctx context.Context, cfg config.Config, compose string, snapPath string) error {
+	if err := fixOpenBaoDataPermissions(cfg.AdminRoot); err != nil {
+		return err
+	}
 	if err := dockerCompose(ctx, stackCommand{Compose: compose}, "up", "-d"); err != nil {
 		return err
 	}
@@ -313,14 +357,68 @@ func restoreOpenBao(ctx context.Context, cfg config.Config, compose string, snap
 	if err := run(ctx, nil, "docker", "exec", "--user", "root", "openbao", "chown", "openbao:openbao", "/tmp/openbao.snap"); err != nil {
 		return err
 	}
-	token := os.Getenv("OPENBAO_TOKEN")
-	if token != "" {
-		if err := run(ctx, nil, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN="+token, "openbao", "bao", "operator", "raft", "snapshot", "restore", "-force", "/tmp/openbao.snap"); err != nil {
-			return err
-		}
+	token, err := openBaoToken(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	if token == "" {
+		return fmt.Errorf("openbao snapshot restore requires OPENBAO_TOKEN or secrets/openbao-root-token")
+	}
+	if err := run(ctx, nil, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN="+token, "openbao", "bao", "operator", "raft", "snapshot", "restore", "-force", "/tmp/openbao.snap"); err != nil {
+		return err
 	}
 	_ = dockerCompose(ctx, stackCommand{Compose: compose}, "down")
 	return nil
+}
+
+func openBaoToken(ctx context.Context, cfg config.Config) (string, error) {
+	if token := strings.TrimSpace(os.Getenv("OPENBAO_TOKEN")); token != "" {
+		return token, nil
+	}
+	for _, path := range []string{
+		filepath.Join(cfg.RepoRoot, "secrets/openbao-root-token"),
+		"/opt/homelab-admin-node/secrets/openbao-root-token",
+	} {
+		data, err := os.ReadFile(path)
+		if err == nil && strings.TrimSpace(string(data)) != "" {
+			return strings.TrimSpace(string(data)), nil
+		}
+	}
+	token, err := openBaoTokenFromSOPS(ctx, filepath.Join(cfg.RepoRoot, "secrets/openbao-unseal.sops.yaml"))
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func openBaoTokenFromSOPS(ctx context.Context, path string) (string, error) {
+	if !fileExists(path) {
+		return "", nil
+	}
+	cmd := exec.CommandContext(ctx, "sops", "--decrypt", "--output-type", "json", path)
+	cmd.Env = append(os.Environ(), "SOPS_AGE_KEY_FILE=/etc/sops/age/keys.txt")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("decrypt openbao token from %s: %w: %s", path, err, strings.TrimSpace(string(out)))
+	}
+	var data struct {
+		OpenBao struct {
+			RootToken string `json:"root_token"`
+		} `json:"openbao"`
+		OpenBaoConfig struct {
+			RootToken string `json:"root_token"`
+		} `json:"openbao_config"`
+	}
+	if err := json.Unmarshal(out, &data); err != nil {
+		return "", fmt.Errorf("parse openbao token from %s: %w", path, err)
+	}
+	if token := strings.TrimSpace(data.OpenBao.RootToken); token != "" {
+		return token, nil
+	}
+	if token := strings.TrimSpace(data.OpenBaoConfig.RootToken); token != "" {
+		return token, nil
+	}
+	return "", nil
 }
 
 func waitOpenBaoInitialized(ctx context.Context) error {

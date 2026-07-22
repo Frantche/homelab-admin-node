@@ -46,6 +46,29 @@
     - "{{ admin_node_root }}/data/traefik"
     - "{{ admin_node_root }}/data/cloudflared"
 
+- name: Ensure openbao data directory is writable before restore can start
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/data/openbao"
+    state: directory
+    owner: "100"
+    group: "1000"
+    mode: "0750"
+
+- name: Ensure existing openbao data ownership before restore can start
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/data/openbao"
+    owner: "100"
+    group: "1000"
+    recurse: true
+
+- name: Normalize openbao data directory modes before restore can start
+  ansible.builtin.command: find {{ admin_node_root }}/data/openbao -type d -exec chmod 0750 {} +
+  changed_when: false
+
+- name: Normalize openbao data file modes before restore can start
+  ansible.builtin.command: find {{ admin_node_root }}/data/openbao -type f -exec chmod 0600 {} +
+  changed_when: false
+
 - name: Ensure letsencrypt storage directory
   ansible.builtin.file:
     path: "{{ admin_node_root }}/data/traefik/letsencrypt"

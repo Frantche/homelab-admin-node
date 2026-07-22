@@ -877,7 +877,7 @@ func (v Validator) Traefik(ctx context.Context) CheckResult {
 	})
 }
 
-func (v Validator) DNS(_ context.Context) CheckResult {
+func (v Validator) DNS(ctx context.Context) CheckResult {
 	return timed("DNS", func() (Status, string) {
 		if v.Config.PiholeDisabled {
 			return StatusSkipped, "PIHOLE_ENABLED=false"
@@ -888,9 +888,11 @@ func (v Validator) DNS(_ context.Context) CheckResult {
 		if v.Config.CIMockPihole {
 			return StatusSkipped, "CI_MOCK_PIHOLE=true"
 		}
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
 		for _, host := range []string{v.Config.HarborDomain, v.Config.OpenBaoDomain, v.Config.KeycloakDomain, v.Config.GiteaDomain, v.Config.TraefikDomain} {
 			cleanHost := strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
-			addrs, err := net.LookupHost(cleanHost)
+			addrs, err := net.DefaultResolver.LookupHost(ctx, cleanHost)
 			if err != nil || len(addrs) == 0 {
 				return StatusFail, "cannot resolve " + cleanHost
 			}

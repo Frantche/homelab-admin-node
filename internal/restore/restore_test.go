@@ -136,6 +136,131 @@ exit 1
 	}
 }
 
+func TestRestoreOpenBaoReadsTokenFromSecretFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	restoreMarker := filepath.Join(root, "openbao-snapshot-restored")
+	fakeDocker := filepath.Join(binDir, "docker")
+	fakeDockerScript := `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "compose" ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "cp" ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"bao status"* ]]; then
+  if [[ "$*" == *"-format=json"* ]]; then
+    echo '{"initialized": true, "sealed": false}'
+    exit 0
+  fi
+  echo "Initialized true"
+  echo "Sealed false"
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"chown openbao:openbao /tmp/openbao.snap"* ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"VAULT_TOKEN=file-token"* && "$*" == *"snapshot restore"* ]]; then
+  touch "` + restoreMarker + `"
+  exit 0
+fi
+echo unexpected docker "$@" >&2
+exit 1
+`
+	if err := os.WriteFile(fakeDocker, []byte(fakeDockerScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("OPENBAO_TOKEN", "")
+
+	repoRoot := filepath.Join(root, "repo")
+	if err := os.MkdirAll(filepath.Join(repoRoot, "secrets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "secrets/openbao-root-token"), []byte("file-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snapPath := filepath.Join(root, "openbao.snap")
+	if err := os.WriteFile(snapPath, []byte("snapshot"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := restoreOpenBao(context.Background(), config.Config{RepoRoot: repoRoot}, filepath.Join(root, "compose.yaml"), snapPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(restoreMarker); err != nil {
+		t.Fatal("openbao snapshot restore did not use token file")
+	}
+}
+
+func TestFixOpenBaoDataPermissionsSetsRootMode(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "data/openbao")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixOpenBaoDataPermissions(root); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o750 {
+		t.Fatalf("mode=%#o, want 0750", info.Mode().Perm())
+	}
+}
+
+func TestOpenBaoTokenReadsSOPSSecret(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake sops script is unix-specific")
+	}
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeSOPS := filepath.Join(binDir, "sops")
+	fakeSOPSScript := `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"--decrypt --output-type json"* ]]; then
+  printf '{"openbao":{"root_token":"sops-token"},"openbao_config":{"root_token":"config-token"}}'
+  exit 0
+fi
+echo unexpected sops "$@" >&2
+exit 1
+`
+	if err := os.WriteFile(fakeSOPS, []byte(fakeSOPSScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("OPENBAO_TOKEN", "")
+
+	repoRoot := filepath.Join(root, "repo")
+	if err := os.MkdirAll(filepath.Join(repoRoot, "secrets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "secrets/openbao-unseal.sops.yaml"), []byte("encrypted"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	token, err := openBaoToken(context.Background(), config.Config{RepoRoot: repoRoot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "sops-token" {
+		t.Fatalf("token=%q, want sops-token", token)
+	}
+}
+
 func TestRunRestoresHarborDumpWithPgRestore(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fake docker script is unix-specific")

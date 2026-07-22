@@ -404,6 +404,8 @@ func (a app) runRestore(_ context.Context, args []string) int {
 			ID:  *restoreID,
 			Out: a.out,
 			Validate: func(ctx context.Context) error {
+				ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+				defer cancel()
 				validator := validate.NewValidator(a.cfg, a.runner)
 				previous := os.Getenv("GITEA_VALIDATION_CREATE")
 				os.Setenv("GITEA_VALIDATION_CREATE", "false")
