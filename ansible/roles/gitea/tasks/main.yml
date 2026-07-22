@@ -64,7 +64,7 @@
   no_log: true
 
 - name: Ensure Gitea database container is running
-  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/gitea.env -f compose.yaml up -d gitea-db
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/gitea.env -f compose.yaml up --wait --wait-timeout 300 gitea-db
   args:
     chdir: "{{ admin_node_root }}/stacks/gitea"
   changed_when: false
@@ -92,7 +92,7 @@
   no_log: true
 
 - name: Start gitea stack
-  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/gitea.env -f compose.yaml up -d
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/gitea.env -f compose.yaml up --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/gitea"
   changed_when: true

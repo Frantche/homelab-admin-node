@@ -48,16 +48,50 @@
     recurse: true
 
 - name: Start openbao stack
-  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/openbao.env -f compose.yaml up -d
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/openbao.env -f compose.yaml up --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/openbao"
   changed_when: true
+
+- name: Wait for openbao container to be running
+  ansible.builtin.command: docker inspect -f {% raw %}'{{ .State.Status }}'{% endraw %} openbao
+  register: openbao_container_status
+  changed_when: false
+  until: openbao_container_status.stdout == "running"
+  retries: 30
+  delay: 2
+
+- name: Wait for openbao healthcheck
+  ansible.builtin.command: docker inspect -f {% raw %}'{{ .State.Health.Status }}'{% endraw %} openbao
+  register: openbao_container_health
+  changed_when: false
+  until: openbao_container_health.stdout == "healthy"
+  retries: 30
+  delay: 5
 
 - name: Initialize openbao when entering init mode
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node openbao init-if-needed
   register: openbao_init_result
   changed_when: "'wrote encrypted unseal secrets' in openbao_init_result.stdout"
   when: admin_mode == 'init' and not (ci_mode | default(false))
+
+- name: Check openbao unseal secrets
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/../secrets/openbao-unseal.sops.yaml"
+  register: openbao_unseal_secrets
+  when: admin_mode != 'init' or not (ci_mode | default(false))
+
+- name: Wait for openbao initialized state before unseal
+  ansible.builtin.command: docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json
+  register: openbao_initialized_status
+  changed_when: false
+  failed_when: openbao_initialized_status.rc not in [0, 2]
+  until: (openbao_initialized_status.stdout | from_json).initialized | default(false)
+  retries: 60
+  delay: 2
+  when:
+    - admin_mode != 'init' or not (ci_mode | default(false))
+    - openbao_unseal_secrets.stat.exists | default(false)
 
 - name: Unseal openbao
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node openbao unseal

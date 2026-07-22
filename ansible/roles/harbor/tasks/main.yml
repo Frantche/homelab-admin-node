@@ -237,7 +237,7 @@
   no_log: true
 
 - name: Ensure Harbor database container is running
-  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up -d harbor-db
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up --wait --wait-timeout 300 harbor-db
   args:
     chdir: "{{ admin_node_root }}/stacks/harbor"
   changed_when: false
@@ -265,7 +265,7 @@
   no_log: true
 
 - name: Start harbor stack
-  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up -d
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/harbor"
   register: harbor_stack_start
@@ -273,7 +273,7 @@
   when: not (harbor_test_mode | default(false))
 
 - name: Recreate Harbor registry services after authentication config change
-  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up -d --force-recreate harbor-registry harbor-registryctl
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up --wait --wait-timeout 300 --force-recreate harbor-registry harbor-registryctl
   args:
     chdir: "{{ admin_node_root }}/stacks/harbor"
   changed_when: true

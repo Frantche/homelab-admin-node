@@ -127,3 +127,56 @@ exit 1
 		t.Fatalf("backup content = %q", backupContent)
 	}
 }
+
+func TestUnsealWaitsForStatusBeforeSkippingAlreadyUnsealed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	counter := filepath.Join(root, "status-count")
+	fakeDocker := filepath.Join(binDir, "docker")
+	if err := os.WriteFile(fakeDocker, []byte(`#!/usr/bin/env bash
+set -euo pipefail
+counter="`+counter+`"
+if [[ "${1:-}" == "exec" && "$*" == *"bao status -format=json"* ]]; then
+  count=0
+  if [[ -f "$counter" ]]; then
+    count="$(cat "$counter")"
+  fi
+  count=$((count + 1))
+  echo "$count" > "$counter"
+  if [[ "$count" -eq 1 ]]; then
+    echo "OpenBao API not ready yet" >&2
+    exit 1
+  fi
+  cat <<'JSON'
+{"initialized":true,"sealed":false}
+JSON
+  exit 0
+fi
+echo unexpected docker "$@" >&2
+exit 1
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	err := Unseal(context.Background(), Options{
+		SecretsFile: filepath.Join(root, "missing.sops.yaml"),
+		Container:   "openbao",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(counter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(content)) != "2" {
+		t.Fatalf("status attempts = %s, want 2", content)
+	}
+}

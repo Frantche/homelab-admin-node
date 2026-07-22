@@ -19,6 +19,11 @@ services:
       POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
     volumes:
       - /srv/admin/data/keycloak/postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "keycloak", "-d", "keycloak"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     networks:
       - admin-net
 
@@ -35,8 +40,15 @@ services:
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000; printf \"GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3; head -1 <&3 | grep -q \"200\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
     depends_on:
-      - keycloak-db
+      keycloak-db:
+        condition: service_healthy
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=admin-net"

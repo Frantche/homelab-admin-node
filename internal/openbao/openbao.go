@@ -102,16 +102,19 @@ func backupExistingFile(path string) (string, error) {
 
 func Unseal(ctx context.Context, opts Options) error {
 	opts = defaults(opts)
-	st, err := getStatus(ctx, opts.Container)
+	st, err := waitStatus(ctx, opts.Container)
 	if err != nil {
 		return err
 	}
 	if !st.Initialized {
-		if _, err := os.Stat(opts.SecretsFile); os.IsNotExist(err) {
+		if !fileExists(opts.SecretsFile) {
 			fmt.Println("OpenBao is not initialized yet; skipping unseal")
 			return nil
 		}
-		return fmt.Errorf("OpenBao is not initialized")
+		st, err = waitInitialized(ctx, opts.Container)
+		if err != nil {
+			return err
+		}
 	}
 	if !st.Sealed {
 		fmt.Println("OpenBao already unsealed")
@@ -236,6 +239,22 @@ func waitStatus(ctx context.Context, container string) (status, error) {
 		time.Sleep(2 * time.Second)
 	}
 	return status{}, fmt.Errorf("OpenBao did not become reachable: %w", last)
+}
+
+func waitInitialized(ctx context.Context, container string) (status, error) {
+	var last status
+	for range 60 {
+		st, err := waitStatus(ctx, container)
+		if err != nil {
+			return status{}, err
+		}
+		if st.Initialized {
+			return st, nil
+		}
+		last = st
+		time.Sleep(2 * time.Second)
+	}
+	return last, fmt.Errorf("OpenBao did not report initialized before unseal")
 }
 
 func getStatus(ctx context.Context, container string) (status, error) {

@@ -97,8 +97,6 @@
       when: admin_mode == 'locked'
     - role: init
       when: admin_mode == 'init'
-    - role: normal
-      when: admin_mode == 'normal'
     - role: restore
       when: admin_mode in ['restore', 'restore_failed']
     - role: observability
