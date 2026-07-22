@@ -40,7 +40,7 @@ docker run --rm \
   --env-file /srv/admin/env/gitea-process-backup.env \
   -v /srv/admin/data/gitea:/data \
   -v /srv/admin/backups/gitea-process/restore-tmp:/srv/admin/backups/gitea-process/restore-tmp \
-  harbor.frantchenco.page/library/gitea-backup:latest \
+  ghcr.io/frantche/gitea-backup-restore-process:0.3.6 \
   gitea-restore
 
 docker compose --env-file /srv/admin/env/gitea.env -f compose.yaml up -d

@@ -59,7 +59,7 @@ backup:
 When enabled, Ansible starts `admin-gitea-process-backup.timer`, which runs daily
 at 03:30 by default. The systemd calendar can be customized with
 `backup.gitea_process.on_calendar`. The service checks that both `gitea-db` and `gitea` are healthy before
-running `harbor.frantchenco.page/library/gitea-backup:latest`; if either
+running `ghcr.io/frantche/gitea-backup-restore-process:0.3.6`; if either
 container is not healthy, that execution is skipped.
 
 | Variable | Default/example | Purpose |
@@ -67,7 +67,7 @@ container is not healthy, that execution is skipped.
 | `backup.gitea_process.enabled` | `false` | Enables the additional Gitea backup timer. |
 | `backup.gitea_process.on_calendar` | `*-*-* 03:30:00` | systemd `OnCalendar` schedule for the timer. |
 | `backup.gitea_process.method` | `s3` or `ftp` | Storage backend passed as `BACKUP_METHODE`. |
-| `backup.gitea_process.image` | `harbor.frantchenco.page/library/gitea-backup:latest` | Backup container image. |
+| `backup.gitea_process.image` | `ghcr.io/frantche/gitea-backup-restore-process:0.3.6` | Backup container image. |
 | `backup.gitea_process.max_retention` | `5` | Maximum number of backups retained by the helper. |
 | `backup.gitea_process.endpoint_url` | required for S3 | S3-compatible endpoint URL. |
 | `backup.gitea_process.bucket` | required for S3 | S3 bucket name. |

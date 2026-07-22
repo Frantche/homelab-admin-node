@@ -18,7 +18,7 @@ require_healthy() {
 require_healthy gitea-db
 require_healthy gitea
 
-image="${GITEA_PROCESS_BACKUP_IMAGE:-harbor.frantchenco.page/library/gitea-backup:latest}"
+image="${GITEA_PROCESS_BACKUP_IMAGE:-ghcr.io/frantche/gitea-backup-restore-process:0.3.6}"
 network="${GITEA_PROCESS_BACKUP_NETWORK:-admin-net}"
 backup_tmp="${BACKUP_TMP_FOLDER:-/tmp/backup}"
 restore_tmp="${RESTORE_TMP_FOLDER:-/tmp/restore}"
