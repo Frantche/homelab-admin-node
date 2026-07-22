@@ -37,7 +37,7 @@
     mode: "0644"
 
 - name: Start observability collector
-  ansible.builtin.command: docker compose -f compose.yaml up -d
+  ansible.builtin.command: docker compose -f compose.yaml up --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/observability"
   register: observability_compose_up

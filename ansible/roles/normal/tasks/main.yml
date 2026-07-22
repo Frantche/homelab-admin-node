@@ -1,6 +1,0 @@
----
-- name: Run OpenBao unseal in normal mode
-  ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node openbao unseal
-  register: unseal_result
-  changed_when: false
-  when: not (ci_mode | default(false))

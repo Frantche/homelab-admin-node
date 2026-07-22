@@ -18,6 +18,12 @@ services:
       - /srv/admin/certs:/certs:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     env_file: /srv/admin/env/traefik.env
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=admin-net"

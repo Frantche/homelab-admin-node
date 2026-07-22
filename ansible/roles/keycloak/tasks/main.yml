@@ -28,7 +28,7 @@
   no_log: true
 
 - name: Ensure keycloak database container is running
-  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/keycloak.env -f compose.yaml up -d keycloak-db
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/keycloak.env -f compose.yaml up --wait --wait-timeout 300 keycloak-db
   args:
     chdir: "{{ admin_node_root }}/stacks/keycloak"
   changed_when: false
@@ -61,7 +61,7 @@
   no_log: true
 
 - name: Start keycloak stack
-  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/keycloak.env -f compose.yaml up -d
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/keycloak.env -f compose.yaml up --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/keycloak"
   changed_when: true

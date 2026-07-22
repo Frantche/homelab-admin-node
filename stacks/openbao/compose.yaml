@@ -16,6 +16,12 @@ services:
     volumes:
       - ./openbao.hcl:/etc/openbao/openbao.hcl:ro
       - /srv/admin/data/openbao:/openbao/file
+    healthcheck:
+      test: ["CMD-SHELL", "BAO_ADDR=http://127.0.0.1:8200 bao status -format=json >/dev/null; rc=$$?; [ $$rc -eq 0 ] || [ $$rc -eq 2 ]"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=admin-net"

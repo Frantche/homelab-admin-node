@@ -343,7 +343,7 @@
   no_log: true
 
 - name: Start traefik stack
-  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/traefik.env -f compose.yaml up -d
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/traefik.env -f compose.yaml up --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/traefik"
   changed_when: true

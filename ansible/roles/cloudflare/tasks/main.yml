@@ -97,7 +97,7 @@
   changed_when: mock_cloudflared.rc == 0
 
 - name: Start cloudflared stack (production)
-  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/cloudflared.env -f compose.yaml up -d
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/cloudflared.env -f compose.yaml up --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/cloudflared"
   when:

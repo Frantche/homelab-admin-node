@@ -36,6 +36,12 @@ services:
     user: "0:0"
     command:
       - --config=/etc/otelcol/config.yaml
+    healthcheck:
+      test: ["CMD", "/otelcol-contrib", "validate", "--config=/etc/otelcol/config.yaml"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
     volumes:
       - /srv/admin/config/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
       - /proc:/hostfs/proc:ro

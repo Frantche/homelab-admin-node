@@ -4,17 +4,23 @@ services:
     container_name: cloudflared
     restart: unless-stopped
 {% if cloudflare_local_ingress_enabled | default(false) | bool %}
-    command: tunnel --config /etc/cloudflared/config.yml run
+    command: tunnel --metrics 0.0.0.0:20241 --config /etc/cloudflared/config.yml run
     volumes:
       - ./config.yml:/etc/cloudflared/config.yml:ro
       - ./credentials.json:/etc/cloudflared/credentials.json:ro
 {% else %}
-    command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --metrics 0.0.0.0:20241 run --token ${CLOUDFLARE_TUNNEL_TOKEN}
 {% endif %}
 {% if (hardening.apparmor.enabled | default(true) | bool) and (admin_apparmor_runtime_active | default(false) | bool) and ((hardening.apparmor.profiles | default({})).cloudflared | default(true) | bool) %}
     security_opt:
       - "apparmor=admin-node-cloudflared"
 {% endif %}
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:20241", "ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
     networks:
       - admin-net
 

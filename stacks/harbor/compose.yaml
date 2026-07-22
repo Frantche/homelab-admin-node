@@ -15,6 +15,11 @@ services:
       - ./config/logrotate.conf:/etc/logrotate.d/logrotate.conf:ro
     ports:
       - "127.0.0.1:1514:10514"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "10514"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     networks:
       - admin-net
 
@@ -51,7 +56,8 @@ services:
       timeout: 3s
       retries: 30
     depends_on:
-      - harbor-log
+      harbor-log:
+        condition: service_healthy
     logging:
       driver: "syslog"
       options:
@@ -78,7 +84,8 @@ services:
       timeout: 3s
       retries: 30
     depends_on:
-      - harbor-log
+      harbor-log:
+        condition: service_healthy
     logging:
       driver: "syslog"
       options:
@@ -102,9 +109,14 @@ services:
       - ./config/registry.yml:/etc/registry/config.yml:ro
       - /srv/admin/data/harbor/core/registry.passwd:/etc/registry/passwd:ro
       - /srv/admin/data/harbor/core/token.crt:/etc/registry/root.crt:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
     depends_on:
       harbor-log:
-        condition: service_started
+        condition: service_healthy
       harbor-redis:
         condition: service_healthy
     logging:
@@ -134,9 +146,16 @@ services:
       - /srv/admin/data/harbor/core/registry.passwd:/etc/registry/passwd:ro
       - /srv/admin/data/harbor/core/token.crt:/etc/registry/root.crt:ro
       - ./config/registryctl.yml:/etc/registryctl/config.yml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
     depends_on:
-      - harbor-log
-      - harbor-registry
+      harbor-log:
+        condition: service_healthy
+      harbor-registry:
+        condition: service_healthy
     logging:
       driver: "syslog"
       options:
@@ -206,17 +225,23 @@ services:
 {% if traefik_local_ca_enabled | default(ci_mode | default(false)) | bool %}
       - /srv/admin/certs/ca.pem:/etc/ssl/certs/admin-node-ca.pem:ro
 {% endif %}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/v2.0/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
     depends_on:
       harbor-db:
         condition: service_healthy
       harbor-log:
-        condition: service_started
+        condition: service_healthy
       harbor-redis:
         condition: service_healthy
       harbor-registry:
-        condition: service_started
+        condition: service_healthy
       harbor-registryctl:
-        condition: service_started
+        condition: service_healthy
     logging:
       driver: "syslog"
       options:
@@ -238,9 +263,16 @@ services:
       - NET_BIND_SERVICE
     volumes:
       - ./config/portal-nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
     depends_on:
-      - harbor-core
-      - harbor-log
+      harbor-core:
+        condition: service_healthy
+      harbor-log:
+        condition: service_healthy
     logging:
       driver: "syslog"
       options:
@@ -276,11 +308,21 @@ services:
     volumes:
       - /srv/admin/data/harbor/job_logs:/var/log/jobs
       - ./config/jobservice.yml:/etc/jobservice/config.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "code=$$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/); [ \"$$code\" = \"200\" ] || [ \"$$code\" = \"401\" ]"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
     depends_on:
-      - harbor-core
-      - harbor-log
-      - harbor-redis
-      - harbor-registryctl
+      harbor-core:
+        condition: service_healthy
+      harbor-log:
+        condition: service_healthy
+      harbor-redis:
+        condition: service_healthy
+      harbor-registryctl:
+        condition: service_healthy
     logging:
       driver: "syslog"
       options:
@@ -322,9 +364,17 @@ services:
     volumes:
       - /srv/admin/data/harbor/trivy-adapter/trivy:/home/scanner/.cache/trivy
       - /srv/admin/data/harbor/trivy-adapter/reports:/home/scanner/.cache/reports
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
     depends_on:
-      - harbor-log
-      - harbor-redis
+      harbor-log:
+        condition: service_healthy
+      harbor-redis:
+        condition: service_healthy
     logging:
       driver: "syslog"
       options:
@@ -364,9 +414,17 @@ services:
       HARBOR_DATABASE_CONN_MAX_LIFETIME: 5m
       HARBOR_DATABASE_CONN_MAX_IDLE_TIME: 0
     depends_on:
-      - harbor-core
-      - harbor-db
-      - harbor-log
+      harbor-core:
+        condition: service_healthy
+      harbor-db:
+        condition: service_healthy
+      harbor-log:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
     logging:
       driver: "syslog"
       options:
@@ -388,11 +446,20 @@ services:
       - NET_BIND_SERVICE
     volumes:
       - ./config/harbor-nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
     depends_on:
-      - harbor-core
-      - harbor-log
-      - harbor-portal
-      - harbor-registry
+      harbor-core:
+        condition: service_healthy
+      harbor-log:
+        condition: service_healthy
+      harbor-portal:
+        condition: service_healthy
+      harbor-registry:
+        condition: service_healthy
     logging:
       driver: "syslog"
       options:

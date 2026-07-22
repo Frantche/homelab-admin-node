@@ -8,7 +8,7 @@ Type=oneshot
 RemainAfterExit=true
 WorkingDirectory=/srv/admin/stacks/%i
 EnvironmentFile=-/srv/admin/env/%i.env
-ExecStart=/usr/bin/docker compose -f compose.yaml up -d
+ExecStart=/usr/bin/docker compose -f compose.yaml up --wait --wait-timeout 300
 ExecStop=/usr/bin/docker compose -f compose.yaml down
 
 [Install]
