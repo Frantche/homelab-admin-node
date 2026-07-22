@@ -1,0 +1,28 @@
+# Managed by Ansible.
+BACKUP_ENABLE="true"
+BACKUP_METHODE={{ backup.gitea_process.method | quote }}
+GITEA_PROCESS_BACKUP_IMAGE={{ (backup.gitea_process.image | default('ghcr.io/frantche/gitea-backup-restore-process:0.3.6')) | quote }}
+GITEA_PROCESS_BACKUP_NETWORK={{ (backup.gitea_process.network | default('admin-net')) | quote }}
+APP_INI_PATH={{ (backup.gitea_process.app_ini_path | default('/data/gitea/conf/app.ini')) | quote }}
+BACKUP_PREFIX={{ (backup.gitea_process.prefix | default('gitea-backup')) | quote }}
+BACKUP_MAX_RETENTION={{ (backup.gitea_process.max_retention | default(5)) | quote }}
+BACKUP_TMP_FOLDER={{ (backup.gitea_process.tmp_folder | default('/srv/admin/backups/gitea-process/tmp')) | quote }}
+RESTORE_TMP_FOLDER={{ (backup.gitea_process.restore_tmp_folder | default('/srv/admin/backups/gitea-process/restore-tmp')) | quote }}
+{% if backup.gitea_process.method == 's3' %}
+ENDPOINT_URL={{ backup.gitea_process.endpoint_url | quote }}
+AWS_ACCESS_KEY_ID={{ backup.gitea_process.aws_access_key_id | quote }}
+AWS_SECRET_ACCESS_KEY={{ backup.gitea_process.aws_secret_access_key | quote }}
+BUCKET={{ backup.gitea_process.bucket | quote }}
+S3_LOG_DEBUG={{ ((backup.gitea_process.s3_log_debug | default(false) | bool) | ternary('true', 'false')) | quote }}
+{% endif %}
+{% if backup.gitea_process.method == 'ftp' %}
+BACKUP_FTP_HOST={{ backup.gitea_process.ftp_host | quote }}
+BACKUP_FTP_USER={{ backup.gitea_process.ftp_user | quote }}
+BACKUP_FTP_PASSWORD={{ backup.gitea_process.ftp_password | quote }}
+{% if backup.gitea_process.ftp_dir is defined %}
+BACKUP_FTP_DIR={{ backup.gitea_process.ftp_dir | quote }}
+{% endif %}
+{% endif %}
+{% for key, value in (backup.gitea_process.env | default({}) | dictsort) %}
+{{ key }}={{ value | quote }}
+{% endfor %}

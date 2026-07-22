@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Gitea backup via gitea-backup-restore-process
+
+[Timer]
+OnCalendar={{ ((backup | default({})).gitea_process.on_calendar | default('*-*-* 03:30:00', true)) }}
+Persistent=true
+Unit=admin-gitea-process-backup.service
+
+[Install]
+WantedBy=timers.target

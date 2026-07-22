@@ -38,6 +38,46 @@ Repositories can be local, SFTP, S3, or any restic-supported backend.
 | `backup.restic_require_secure_repositories` | `true` | Rejects insecure repository declarations when enabled. |
 | `backup.restic_backup_paths` | tool default | Optional explicit backup path list passed to the backup environment. |
 
+### Gitea Backup-Restore-Process
+
+The standard local/restic backup remains enabled. A second Gitea-specific job can
+be enabled with `backup.gitea_process.enabled`.
+
+```yaml
+backup:
+  gitea_process:
+    enabled: true
+    on_calendar: "*-*-* 03:30:00"
+    method: s3
+    endpoint_url: "https://s3.example.com"
+    bucket: "gitea-backups"
+    aws_access_key_id: "CHANGE_ME"
+    aws_secret_access_key: "CHANGE_ME"
+    max_retention: 7
+```
+
+When enabled, Ansible starts `admin-gitea-process-backup.timer`, which runs daily
+at 03:30 by default. The systemd calendar can be customized with
+`backup.gitea_process.on_calendar`. The service checks that both `gitea-db` and `gitea` are healthy before
+running `ghcr.io/frantche/gitea-backup-restore-process:0.3.6`; if either
+container is not healthy, that execution is skipped.
+
+| Variable | Default/example | Purpose |
+| --- | --- | --- |
+| `backup.gitea_process.enabled` | `false` | Enables the additional Gitea backup timer. |
+| `backup.gitea_process.on_calendar` | `*-*-* 03:30:00` | systemd `OnCalendar` schedule for the timer. |
+| `backup.gitea_process.method` | `s3` or `ftp` | Storage backend passed as `BACKUP_METHODE`. |
+| `backup.gitea_process.image` | `ghcr.io/frantche/gitea-backup-restore-process:0.3.6` | Backup container image. |
+| `backup.gitea_process.max_retention` | `5` | Maximum number of backups retained by the helper. |
+| `backup.gitea_process.endpoint_url` | required for S3 | S3-compatible endpoint URL. |
+| `backup.gitea_process.bucket` | required for S3 | S3 bucket name. |
+| `backup.gitea_process.aws_access_key_id` | required for S3 | S3 access key. Store encrypted. |
+| `backup.gitea_process.aws_secret_access_key` | required for S3 | S3 secret key. Store encrypted. |
+| `backup.gitea_process.ftp_host` | required for FTP | FTP host and port. |
+| `backup.gitea_process.ftp_user` | required for FTP | FTP username. Store encrypted when sensitive. |
+| `backup.gitea_process.ftp_password` | required for FTP | FTP password. Store encrypted. |
+| `backup.gitea_process.env` | `{}` | Extra environment variables passed to the helper. |
+
 ## Hardening
 
 Hardening is enabled by default.

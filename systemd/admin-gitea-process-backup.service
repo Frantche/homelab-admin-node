@@ -1,0 +1,9 @@
+[Unit]
+Description=Gitea backup via gitea-backup-restore-process
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/srv/admin/env/gitea-process-backup.env
+ExecStart=/opt/homelab-admin-node/scripts/gitea-process-backup.sh
