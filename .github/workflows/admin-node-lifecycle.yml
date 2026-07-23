@@ -120,6 +120,7 @@ jobs:
             - git
             - docker
             - docker-compose
+            - go
             - openssh
             - sops
             - age
