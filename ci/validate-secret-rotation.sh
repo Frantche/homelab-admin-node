@@ -43,13 +43,15 @@ expect_db_password() {
 
   image="$(docker inspect --format '{{.Config.Image}}' "$container")"
 
-  if docker run --rm --network "$network" -e "PGPASSWORD=$old_password" "$image" \
-    psql -h "$container" -U "$user" -d "$database" -Atqc "select 1" >/dev/null 2>&1; then
+  if docker run --rm --network "$network" --entrypoint psql \
+    -e "PGPASSWORD=$old_password" "$image" \
+    -h "$container" -U "$user" -d "$database" -Atqc "select 1" >/dev/null 2>&1; then
     echo "ERROR: $label still accepts the previous database password" >&2
     return 1
   fi
-  docker run --rm --network "$network" -e "PGPASSWORD=$new_password" "$image" \
-    psql -h "$container" -U "$user" -d "$database" -Atqc "select 1" >/dev/null
+  docker run --rm --network "$network" --entrypoint psql \
+    -e "PGPASSWORD=$new_password" "$image" \
+    -h "$container" -U "$user" -d "$database" -Atqc "select 1" >/dev/null
 }
 
 old_keycloak_admin="$(secret old keycloak.admin_password)"
