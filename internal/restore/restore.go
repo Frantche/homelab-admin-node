@@ -203,7 +203,7 @@ func RestoreHarborWritable(ctx context.Context, cfg config.Config) error {
 	if password == "" {
 		return fmt.Errorf("Harbor admin password is unavailable")
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	var lastErr error
 	for {
