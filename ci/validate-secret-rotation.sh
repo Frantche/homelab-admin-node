@@ -34,18 +34,22 @@ expect_http_auth() {
 expect_db_password() {
   local label="$1"
   local container="$2"
-  local user="$3"
-  local database="$4"
-  local old_password="$5"
-  local new_password="$6"
+  local network="$3"
+  local user="$4"
+  local database="$5"
+  local old_password="$6"
+  local new_password="$7"
+  local image
 
-  if docker exec -e "PGPASSWORD=$old_password" "$container" \
-    psql -h 127.0.0.1 -U "$user" -d "$database" -Atqc "select 1" >/dev/null 2>&1; then
+  image="$(docker inspect --format '{{.Config.Image}}' "$container")"
+
+  if docker run --rm --network "$network" -e "PGPASSWORD=$old_password" "$image" \
+    psql -h "$container" -U "$user" -d "$database" -Atqc "select 1" >/dev/null 2>&1; then
     echo "ERROR: $label still accepts the previous database password" >&2
     return 1
   fi
-  docker exec -e "PGPASSWORD=$new_password" "$container" \
-    psql -h 127.0.0.1 -U "$user" -d "$database" -Atqc "select 1" >/dev/null
+  docker run --rm --network "$network" -e "PGPASSWORD=$new_password" "$image" \
+    psql -h "$container" -U "$user" -d "$database" -Atqc "select 1" >/dev/null
 }
 
 old_keycloak_admin="$(secret old keycloak.admin_password)"
@@ -79,11 +83,11 @@ expect_http_auth Gitea \
   "https://git.example.com/api/v1/user" \
   admin "$old_gitea_admin" "$new_gitea_admin"
 
-expect_db_password Keycloak keycloak-db keycloak keycloak \
+expect_db_password Keycloak keycloak-db keycloak-db keycloak keycloak \
   "$(secret old keycloak.db_password)" "$(secret new keycloak.db_password)"
-expect_db_password Gitea gitea-db gitea gitea \
+expect_db_password Gitea gitea-db gitea-db gitea gitea \
   "$(secret old gitea.db_password)" "$(secret new gitea.db_password)"
-expect_db_password Harbor harbor-db postgres registry \
+expect_db_password Harbor harbor-db harbor-internal postgres registry \
   "$(secret old harbor.db_password)" "$(secret new harbor.db_password)"
 
 for client in harbor openbao gitea; do
