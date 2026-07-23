@@ -136,6 +136,71 @@
   delay: 5
   no_log: true
 
+- name: Configure OpenBao backup snapshot policy
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/policies/acl/admin-node-backup"
+    method: PUT
+    headers:
+      X-Vault-Token: "{{ openbao_config_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      policy: 'path "sys/storage/raft/snapshot" { capabilities = ["read"] }'
+    status_code: [200, 204]
+  no_log: true
+
+- name: Configure OpenBao restore snapshot policy
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/policies/acl/admin-node-restore"
+    method: PUT
+    headers:
+      X-Vault-Token: "{{ openbao_config_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      policy: 'path "sys/storage/raft/snapshot" { capabilities = ["update"] } path "sys/storage/raft/snapshot-force" { capabilities = ["update"] }'
+    status_code: [200, 204]
+  no_log: true
+
+- name: Inspect dedicated OpenBao operation tokens
+  ansible.builtin.stat:
+    path: "{{ admin_node_root }}/env/openbao-{{ item }}-token"
+  loop: [backup, restore]
+  register: openbao_operation_token_files
+  no_log: true
+
+- name: Create dedicated OpenBao operation tokens
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/auth/token/create-orphan"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_config_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      policies: ["admin-node-{{ item.item }}"]
+      display_name: "admin-node-{{ item.item }}"
+      ttl: "8760h"
+      renewable: false
+    status_code: 200
+  loop: "{{ openbao_operation_token_files.results }}"
+  when: not item.stat.exists
+  register: openbao_operation_tokens_created
+  no_log: true
+
+- name: Persist dedicated OpenBao operation tokens
+  ansible.builtin.copy:
+    dest: "{{ admin_node_root }}/env/openbao-{{ item.item.item }}-token"
+    content: "{{ ((item.json | default({})).auth | default({})).client_token | default('') }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ openbao_operation_tokens_created.results | default([]) }}"
+  when:
+    - not (item.skipped | default(false))
+    - ((item.json | default({})).auth | default({})).client_token | default('') | length > 0
+  no_log: true
+
 - name: Read enabled OpenBao secret engines
   ansible.builtin.uri:
     url: "{{ openbao_config_url }}/v1/sys/mounts"

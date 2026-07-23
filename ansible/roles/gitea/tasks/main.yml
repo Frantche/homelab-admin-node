@@ -38,8 +38,8 @@
     state: directory
     mode: "0755"
   loop:
-    - "{{ admin_node_root }}/data/gitea"
-    - "{{ admin_node_root }}/data/gitea-postgres"
+    - "{{ admin_node_root }}/data/gitea-stack/gitea"
+    - "{{ admin_node_root }}/data/gitea-stack/postgres"
   when: not (gitea_test_mode | default(false))
 
 - name: Render gitea compose
@@ -54,12 +54,12 @@
     dest: "{{ admin_node_root }}/env/gitea.env"
     mode: "0600"
     content: |
-      GITEA_ADMIN_USER={{ gitea_runtime.admin_user }}
-      GITEA_ADMIN_PASSWORD={{ gitea_runtime.admin_password }}
-      GITEA_DB_PASSWORD={{ gitea_runtime.db_password }}
-      GITEA_SECRET_KEY={{ gitea_runtime.secret_key }}
-      GITEA_INTERNAL_TOKEN={{ gitea_runtime.internal_token }}
-      GITEA_JWT_SECRET={{ gitea_runtime.jwt_secret }}
+      GITEA_ADMIN_USER={{ gitea_runtime.admin_user | to_json }}
+      GITEA_ADMIN_PASSWORD={{ gitea_runtime.admin_password | to_json }}
+      GITEA_DB_PASSWORD={{ gitea_runtime.db_password | to_json }}
+      GITEA_SECRET_KEY={{ gitea_runtime.secret_key | to_json }}
+      GITEA_INTERNAL_TOKEN={{ gitea_runtime.internal_token | to_json }}
+      GITEA_JWT_SECRET={{ gitea_runtime.jwt_secret | to_json }}
   when: not (gitea_test_mode | default(false))
   no_log: true
 
@@ -68,7 +68,9 @@
   args:
     chdir: "{{ admin_node_root }}/stacks/gitea"
   changed_when: false
-  when: not (gitea_test_mode | default(false))
+  when:
+    - not (gitea_test_mode | default(false))
+    - admin_mode != 'restore'
 
 - name: Wait for Gitea database readiness
   ansible.builtin.command: docker exec gitea-db pg_isready -U gitea -d gitea
@@ -77,23 +79,40 @@
   retries: 30
   delay: 2
   changed_when: false
-  when: not (gitea_test_mode | default(false))
+  when:
+    - not (gitea_test_mode | default(false))
+    - admin_mode != 'restore'
 
 - name: Align Gitea database password with inventory secret
-  ansible.builtin.shell: |
-    set -euo pipefail
-    docker exec -i -e GITEA_DB_PASSWORD="{{ gitea_runtime.db_password }}" gitea-db sh -c 'psql -U gitea -d gitea -v ON_ERROR_STOP=1 -v pw="$GITEA_DB_PASSWORD"' <<'SQL'
-    ALTER USER gitea WITH PASSWORD :'pw';
-    SQL
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - -i
+      - -e
+      - GITEA_DB_PASSWORD
+      - gitea-db
+      - sh
+      - -c
+      - 'exec psql -U gitea -d gitea -v ON_ERROR_STOP=1 -v pw="$GITEA_DB_PASSWORD"'
   args:
-    executable: /bin/bash
+    stdin: "ALTER USER gitea WITH PASSWORD :'pw';"
+  environment:
+    GITEA_DB_PASSWORD: "{{ gitea_runtime.db_password }}"
   changed_when: false
-  when: not (gitea_test_mode | default(false))
+  when:
+    - not (gitea_test_mode | default(false))
+    - admin_mode != 'restore'
   no_log: true
 
 - name: Start gitea stack
   ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/gitea.env -f compose.yaml up --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/gitea"
-  changed_when: true
-  when: not (gitea_test_mode | default(false))
+  register: gitea_stack_start
+  changed_when: >-
+    'Created' in gitea_stack_start.stderr or 'Recreated' in gitea_stack_start.stderr or
+    'Started' in gitea_stack_start.stderr
+  when:
+    - not (gitea_test_mode | default(false))
+    - admin_mode != 'restore'

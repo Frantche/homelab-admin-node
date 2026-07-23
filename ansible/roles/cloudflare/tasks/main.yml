@@ -84,7 +84,7 @@
 
 - name: Start cloudflared mock container (CI mode)
   ansible.builtin.command: >-
-    docker run -d --name cloudflared --network admin-net --restart no
+    docker run -d --name cloudflared --network admin-edge --restart no
     {% if (hardening.apparmor.enabled | default(true) | bool) and (admin_apparmor_runtime_active | default(false) | bool) and ((hardening.apparmor.profiles | default({})).cloudflared | default(true) | bool) %}
     --security-opt apparmor=admin-node-cloudflared
     {% endif %}
@@ -104,3 +104,11 @@
     - (cloudflare.enabled | default(true)) | bool
     - not (ci_mode | default(false))
   changed_when: true
+
+- name: Enable cloudflared stack at boot
+  ansible.builtin.systemd:
+    name: admin-stack@cloudflared.service
+    enabled: true
+  when:
+    - (cloudflare.enabled | default(true)) | bool
+    - not (ci_mode | default(false))

@@ -70,10 +70,13 @@
       when: inventory_secrets_file.stat.exists
       no_log: true
 
-    - name: Ensure admin-node mode file exists
-      ansible.builtin.file:
-        path: "{{ admin_mode_file }}"
-        state: touch
+    - name: Ensure admin-node mode file exists in safe mode
+      ansible.builtin.copy:
+        dest: "{{ admin_mode_file }}"
+        content: "locked\n"
+        force: false
+        owner: root
+        group: root
         mode: "0644"
 
     - name: Read current mode
@@ -81,49 +84,71 @@
         path: "{{ admin_mode_file }}"
       register: mode_file
 
-    - name: Set admin_mode fact
+    - name: Classify current admin-node mode
       ansible.builtin.set_fact:
-        admin_mode: "{{ (mode_file.content | b64decode | trim) | default('locked', true) }}"
+        admin_mode_raw: "{{ (mode_file.content | b64decode | trim) | default('locked', true) }}"
+        admin_mode_invalid: "{{ (mode_file.content | b64decode | trim) not in ['locked', 'init', 'normal', 'restore', 'restore_failed'] }}"
+
+    - name: Force invalid mode into locked state
+      ansible.builtin.copy:
+        dest: "{{ admin_mode_file }}"
+        content: "locked\n"
+        owner: root
+        group: root
+        mode: "0644"
+      when: admin_mode_invalid | bool
+
+    - name: Set effective admin mode
+      ansible.builtin.set_fact:
+        admin_mode: "{{ 'locked' if (admin_mode_invalid | bool) else admin_mode_raw }}"
 
   roles:
     - base
     - arch
-    - docker
-    - storage
     - role: hardening
       when: hardening.enabled | default(true)
     - firewall
+    - docker
+    - storage
+    - role: optional_stacks
+      when: admin_mode in ['init', 'normal']
     - role: locked
       when: admin_mode == 'locked'
     - role: init
       when: admin_mode == 'init'
-    - role: restore
-      when: admin_mode in ['restore', 'restore_failed']
     - role: observability
-      when: admin_mode != 'locked' and (observability.enabled | default(false))
+      when: admin_mode in ['init', 'normal'] and (observability.enabled | default(false))
     - role: traefik
-      when: admin_mode != 'locked'
+      when: admin_mode in ['init', 'normal', 'restore']
     - role: openbao
-      when: admin_mode != 'locked'
+      when: admin_mode in ['init', 'normal', 'restore']
     - role: keycloak
-      when: admin_mode != 'locked'
+      when: admin_mode in ['init', 'normal', 'restore']
     - role: gitea
-      when: admin_mode != 'locked'
+      when: admin_mode in ['init', 'normal', 'restore']
     - role: keycloak_config
       when: admin_mode == 'normal' and (keycloak_config.enabled | default(false))
     - role: openbao_config
       when: admin_mode == 'normal' and (openbao_config.enabled | default(false))
     - role: harbor
-      when: admin_mode != 'locked'
+      when: admin_mode in ['init', 'normal', 'restore']
+    - role: restore
+      when: admin_mode == 'restore'
     - role: harbor_config
       when: admin_mode == 'normal' and (harbor_config.enabled | default(false))
     - role: gitea_config
       when: admin_mode == 'normal' and (gitea_config.enabled | default(false))
     - role: cloudflare
-      when: admin_mode != 'locked' and ((cloudflare.enabled | default(true)) | bool)
+      when: admin_mode in ['init', 'normal'] and ((cloudflare.enabled | default(true)) | bool)
     - role: pihole_dns
-      when: admin_mode != 'locked' and not (ci_mode | default(false)) and ((pihole.enabled | default(true)) | bool)
+      when: admin_mode in ['init', 'normal'] and not (ci_mode | default(false)) and ((pihole.enabled | default(true)) | bool)
     - role: validate_apis
-      when: admin_mode != 'locked'
+      when: admin_mode in ['init', 'normal']
     - role: backup
       when: admin_mode == 'normal'
+
+  post_tasks:
+    - name: Report invalid mode after enforcing locked state
+      ansible.builtin.fail:
+        msg: "Invalid admin-node mode '{{ admin_mode_raw }}'; the host was forced into locked mode."
+      when: admin_mode_invalid | bool

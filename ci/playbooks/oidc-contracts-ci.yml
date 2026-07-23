@@ -90,6 +90,10 @@
       vars:
         gitea_config_test_mode: true
 
+    - name: Render Harbor compose in CI test mode
+      ansible.builtin.set_fact:
+        harbor_compose_ci: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/harbor/compose.yaml') }}"
+
     - name: Capture Harbor CI Keycloak client
       ansible.builtin.set_fact:
         harbor_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', (oidc_clients.harbor.client_id | default('harbor'))) | list | first | default({}) }}"
@@ -121,6 +125,7 @@
           - "(keycloak_config.users | selectattr('username', 'equalto', 'ci-sso-user') | list | first).groups == ['admin']"
           - harbor_runtime.db_password == 'ci-harbor-db-pass'
           - harbor_runtime.core_secret == 'ci-harbor-core-secret'
+          - "'keycloak.example.com:host-gateway' in harbor_compose_ci"
           - harbor_api_validate_certs == false
           - harbor_keycloak_client | length > 0
           - harbor_groups_mapper | length > 0

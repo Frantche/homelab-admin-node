@@ -24,7 +24,7 @@ receivers:
       processes:
 
   docker_stats:
-    endpoint: unix:///var/run/docker.sock
+    endpoint: tcp://otel-socket-proxy:2375
     api_version: "{{ observability.docker_api_version | default('1.40') }}"
     initial_delay: {{ observability.docker_stats_initial_delay | default('30s') }}
     collection_interval: {{ observability.collection_interval | default('30s') }}
@@ -78,33 +78,11 @@ receivers:
             - targets:
                 - traefik:8082
 
-  filelog/docker:
+  filelog/security:
     include:
-      - /var/lib/docker/containers/*/*-json.log
-    start_at: end
+      - /var/log/admin-node-security-exceptions.log
+    start_at: beginning
     include_file_path: true
-    operators:
-      - type: json_parser
-        timestamp:
-          parse_from: attributes.time
-          layout_type: gotime
-          layout: "2006-01-02T15:04:05.999999999Z07:00"
-      - type: move
-        from: attributes.log
-        to: body
-      - type: remove
-        field: attributes.time
-
-  filelog/harbor:
-    include:
-      - /srv/admin/data/harbor/log/*.log
-      - /srv/admin/data/harbor/job_logs/**/*.log
-    start_at: end
-    include_file_path: true
-    operators:
-      - type: add
-        field: attributes.log.source
-        value: harbor
 
 processors:
   memory_limiter:
@@ -158,8 +136,7 @@ service:
     logs:
       receivers:
         - otlp
-        - filelog/docker
-        - filelog/harbor
+        - filelog/security
       processors:
         - memory_limiter
         - resource

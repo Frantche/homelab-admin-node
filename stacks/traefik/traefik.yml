@@ -10,7 +10,7 @@ entryPoints:
         certResolver: letsencrypt
 {% endif %}
 api:
-  dashboard: true
+  dashboard: {{ traefik.dashboard_enabled | default(false) | bool | lower }}
 metrics:
   prometheus:
     entryPoint: metrics
@@ -21,8 +21,8 @@ providers:
     directory: /etc/traefik/dynamic
     watch: true
   docker:
-    endpoint: "unix:///var/run/docker.sock"
-    network: "admin-net"
+    endpoint: "tcp://traefik-socket-proxy:2375"
+    network: "admin-edge"
     exposedByDefault: false
 {% if traefik_letsencrypt_enabled %}
 certificatesResolvers:
@@ -37,5 +37,7 @@ certificatesResolvers:
           - "8.8.8.8:53"
 {% endif %}
 log:
-  level: INFO
+  level: "{{ traefik.log_level | default('INFO') }}"
+{% if traefik.access_logs | default(true) | bool %}
 accessLog: {}
+{% endif %}

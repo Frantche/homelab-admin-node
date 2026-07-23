@@ -1,13 +1,14 @@
 services:
   cloudflared:
-    image: cloudflare/cloudflared:2026.7.2
+    image: cloudflare/cloudflared:2026.7.2@sha256:18626b1baac4450214535cd5bc40ef44c0635244d585ebf707749c22b6f3408f
     container_name: cloudflared
-    restart: unless-stopped
+    restart: "no"
 {% if cloudflare_local_ingress_enabled | default(false) | bool %}
     command: tunnel --metrics 0.0.0.0:20241 --config /etc/cloudflared/config.yml run
     volumes:
       - ./config.yml:/etc/cloudflared/config.yml:ro
       - ./credentials.json:/etc/cloudflared/credentials.json:ro
+      - /srv/admin/certs/ca.pem:/etc/cloudflared/admin-node-ca.pem:ro
 {% else %}
     command: tunnel --metrics 0.0.0.0:20241 run --token ${CLOUDFLARE_TUNNEL_TOKEN}
 {% endif %}
@@ -22,8 +23,8 @@ services:
       retries: 30
       start_period: 20s
     networks:
-      - admin-net
+      - admin-edge
 
 networks:
-  admin-net:
+  admin-edge:
     external: true

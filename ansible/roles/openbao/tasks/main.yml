@@ -7,9 +7,11 @@
 
 - name: Copy openbao stack files
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../stacks/openbao/"
-    dest: "{{ admin_node_root }}/stacks/openbao/"
-    mode: preserve
+    src: "{{ playbook_dir }}/../stacks/openbao/openbao.hcl"
+    dest: "{{ admin_node_root }}/stacks/openbao/openbao.hcl"
+    owner: root
+    group: root
+    mode: "0644"
 
 - name: Ensure openbao config is readable by the container user
   ansible.builtin.file:
@@ -51,7 +53,11 @@
   ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/openbao.env -f compose.yaml up --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/openbao"
-  changed_when: true
+  register: openbao_stack_start
+  changed_when: >-
+    'Created' in openbao_stack_start.stderr or 'Recreated' in openbao_stack_start.stderr or
+    'Started' in openbao_stack_start.stderr
+  when: admin_mode != 'restore'
 
 - name: Wait for openbao container to be running
   ansible.builtin.command: docker inspect -f {% raw %}'{{ .State.Status }}'{% endraw %} openbao
@@ -60,6 +66,7 @@
   until: openbao_container_status.stdout == "running"
   retries: 30
   delay: 2
+  when: admin_mode != 'restore'
 
 - name: Wait for openbao healthcheck
   ansible.builtin.command: docker inspect -f {% raw %}'{{ .State.Health.Status }}'{% endraw %} openbao
@@ -68,6 +75,7 @@
   until: openbao_container_health.stdout == "healthy"
   retries: 30
   delay: 5
+  when: admin_mode != 'restore'
 
 - name: Initialize openbao when entering init mode
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node openbao init-if-needed
@@ -79,7 +87,9 @@
   ansible.builtin.stat:
     path: "{{ playbook_dir }}/../secrets/openbao-unseal.sops.yaml"
   register: openbao_unseal_secrets
-  when: admin_mode != 'init' or not (ci_mode | default(false))
+  when:
+    - admin_mode != 'restore'
+    - admin_mode != 'init' or not (ci_mode | default(false))
 
 - name: Wait for openbao initialized state before unseal
   ansible.builtin.command: docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json
@@ -90,10 +100,13 @@
   retries: 60
   delay: 2
   when:
+    - admin_mode != 'restore'
     - admin_mode != 'init' or not (ci_mode | default(false))
     - openbao_unseal_secrets.stat.exists | default(false)
 
 - name: Unseal openbao
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node openbao unseal
   changed_when: false
-  when: admin_mode != 'init' or not (ci_mode | default(false))
+  when:
+    - admin_mode != 'restore'
+    - admin_mode != 'init' or not (ci_mode | default(false))

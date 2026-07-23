@@ -1,4 +1,25 @@
 # Managed by Ansible.
+ADMIN_NODE_REPO_ROOT={{ admin_node_repo_root | default('/opt/homelab-admin-node') | quote }}
+ADMIN_NODE_ROOT={{ admin_node_root | quote }}
+ADMIN_BACKUP_ROOT={{ (admin_node_root ~ '/backups/local') | quote }}
+ADMIN_MODE_FILE={{ admin_mode_file | quote }}
+ADMIN_NODE_LAN_IP={{ admin_node_lan_ip | quote }}
+KEYCLOAK_DOMAIN={{ service_domains.keycloak | quote }}
+HARBOR_DOMAIN={{ service_domains.harbor | quote }}
+GITEA_DOMAIN={{ service_domains.gitea | quote }}
+TRAEFIK_DOMAIN={{ service_domains.traefik | quote }}
+OPENBAO_DOMAIN={{ service_domains.openbao | quote }}
+PIHOLE_ENABLED={{ ((pihole.enabled | default(true) | bool) | ternary('true', 'false')) | quote }}
+CLOUDFLARE_ENABLED={{ ((cloudflare.enabled | default(true) | bool) | ternary('true', 'false')) | quote }}
+ADMIN_OPERATION_LOCK=/run/admin-node-operation.lock
+GITEA_STACK_PATH={{ (admin_node_root ~ '/data/gitea-stack') | quote }}
+ADMIN_SNAPSHOT_ROOT={{ (admin_node_root ~ '/backups/snapshots') | quote }}
+BACKUP_REQUIRE_BTRFS_HOT={{ ((backup.require_btrfs_hot | default(false) | bool) | ternary('true', 'false')) | quote }}
+BACKUP_REQUIRE_REMOTE_REPOSITORY={{ ((backup.require_remote_repository | default(true) | bool) | ternary('true', 'false')) | quote }}
+BACKUP_REQUIRE_HARBOR_READ_ONLY={{ ((backup.require_harbor_read_only | default(true) | bool) | ternary('true', 'false')) | quote }}
+BACKUP_LOCAL_RETENTION={{ backup.local_retention | default(3) | int }}
+HARBOR_ADMIN_USER={{ harbor.admin_user | default('admin') | to_json }}
+HARBOR_ADMIN_PASSWORD={{ harbor.admin_password | mandatory('harbor.admin_password is required') | to_json }}
 RESTIC_REPOSITORIES={{ (backup_restic_repositories_effective | map(attribute='name') | list | join(' ')) | quote }}
 RESTIC_INIT_REPOSITORIES={{ ((backup.restic_init_repositories | default(false) | bool) | ternary('true', 'false')) | quote }}
 RESTIC_DEFAULT_FORGET_ARGS={{ (backup.restic_default_forget_args | default('--keep-last 3 --prune')) | quote }}

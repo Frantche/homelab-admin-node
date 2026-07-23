@@ -14,45 +14,48 @@
     msg: "Temporary migration path already exists: {{ storage_isolation_btrfs_tmp_path }}"
   when: storage_isolation_btrfs_tmp_stat.stat.exists
 
-- name: Stop units before Btrfs storage migration
-  ansible.builtin.systemd:
-    name: "{{ item }}"
-    state: stopped
-  loop: "{{ storage_isolation_entry.stop_units | default([]) }}"
+- name: Migrate Btrfs storage with rollback handling
+  block:
+    - name: Stop units before Btrfs storage migration
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop: "{{ storage_isolation_entry.stop_units | default([]) }}"
 
-- name: Create temporary Btrfs migration subvolume
-  ansible.builtin.command:
-    argv:
-      - btrfs
-      - subvolume
-      - create
-      - "{{ storage_isolation_btrfs_tmp_path }}"
+    - name: Create temporary Btrfs migration subvolume
+      ansible.builtin.command:
+        argv: [btrfs, subvolume, create, "{{ storage_isolation_btrfs_tmp_path }}"]
 
-- name: Copy data into temporary Btrfs subvolume
-  ansible.builtin.command:
-    argv:
-      - rsync
-      - -aHAX
-      - --numeric-ids
-      - "{{ storage_isolation_path }}/"
-      - "{{ storage_isolation_btrfs_tmp_path }}/"
+    - name: Copy data into temporary Btrfs subvolume with reflinks
+      ansible.builtin.command:
+        argv: [cp, -a, --reflink=always, "{{ storage_isolation_path }}/.", "{{ storage_isolation_btrfs_tmp_path }}/"]
 
-- name: Move existing directory aside before Btrfs migration cutover
-  ansible.builtin.command:
-    argv:
-      - mv
-      - "{{ storage_isolation_path }}"
-      - "{{ storage_isolation_btrfs_backup_path }}"
+    - name: Move existing directory aside before Btrfs migration cutover
+      ansible.builtin.command:
+        argv: [mv, "{{ storage_isolation_path }}", "{{ storage_isolation_btrfs_backup_path }}"]
 
-- name: Move temporary Btrfs subvolume into final path
-  ansible.builtin.command:
-    argv:
-      - mv
-      - "{{ storage_isolation_btrfs_tmp_path }}"
-      - "{{ storage_isolation_path }}"
+    - name: Move temporary Btrfs subvolume into final path
+      ansible.builtin.command:
+        argv: [mv, "{{ storage_isolation_btrfs_tmp_path }}", "{{ storage_isolation_path }}"]
 
-- name: Start units after Btrfs storage migration
-  ansible.builtin.systemd:
-    name: "{{ item }}"
-    state: started
-  loop: "{{ storage_isolation_entry.stop_units | default([]) }}"
+    - name: Start units after Btrfs storage migration
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ storage_isolation_entry.stop_units | default([]) }}"
+  rescue:
+    - name: Remove failed Btrfs migration temporary subvolume
+      ansible.builtin.command:
+        argv: [btrfs, subvolume, delete, "{{ storage_isolation_btrfs_tmp_path }}"]
+      failed_when: false
+
+    - name: Restart units after failed Btrfs storage migration
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ storage_isolation_entry.stop_units | default([]) }}"
+      failed_when: false
+
+    - name: Abort failed Btrfs storage migration
+      ansible.builtin.fail:
+        msg: "Btrfs migration failed for {{ storage_isolation_path }}; source data was preserved."

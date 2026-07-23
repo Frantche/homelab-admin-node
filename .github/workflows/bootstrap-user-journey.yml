@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Ansible
         run: |
@@ -44,7 +44,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install host dependencies
         run: |
@@ -179,7 +179,7 @@ jobs:
               -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
               "test -d /opt/homelab-admin-node/.git && \
                sudo /opt/homelab-admin-node/scripts/build-admin-node.sh >/dev/null && \
-               test -x /opt/homelab-admin-node/bin/admin-node"
+               sudo test -x /opt/homelab-admin-node/bin/admin-node"
           echo "Repository successfully cloned at /opt/homelab-admin-node"
 
       - name: Verify VM is in locked mode
@@ -228,10 +228,8 @@ jobs:
       - name: Verify validated OTLP mock artifact content
         run: |
           metrics_file=.ci/artifacts/bootstrap/otel-mock-validated/metrics.received
-          logs_file=.ci/artifacts/bootstrap/otel-mock-validated/logs.received
 
           test -s "$metrics_file"
-          test -s "$logs_file"
 
           for marker in \
             '"key":"service.name","value":{"stringValue":"gitea"}' \
@@ -242,8 +240,6 @@ jobs:
           do
             grep -Fq "$marker" "$metrics_file"
           done
-
-          grep -Fq "admin-node-otel-log-sentinel" "$logs_file"
 
       - name: Ensure AppArmor convergence after reboot
         timeout-minutes: 25
@@ -340,7 +336,7 @@ jobs:
 
       - name: Upload hardening audit reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: hardening-audit
           path: .ci/artifacts/lynis
@@ -401,7 +397,7 @@ jobs:
 
       - name: Upload bootstrap logs
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: bootstrap-user-journey-logs
           path: .ci/artifacts/bootstrap

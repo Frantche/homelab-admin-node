@@ -1,0 +1,30 @@
+---
+- name: Disable optional stack units when not configured
+  ansible.builtin.systemd:
+    name: "admin-stack@{{ item.name }}.service"
+    enabled: false
+    state: stopped
+  loop:
+    - { name: cloudflared, enabled: "{{ cloudflare.enabled | default(true) | bool }}" }
+    - { name: observability, enabled: "{{ observability.enabled | default(false) | bool }}" }
+  when: not (item.enabled | bool)
+
+- name: Inspect disabled optional stack definitions
+  ansible.builtin.stat:
+    path: "{{ admin_node_root }}/stacks/{{ item.name }}/compose.yaml"
+  loop:
+    - { name: cloudflared, enabled: "{{ cloudflare.enabled | default(true) | bool }}" }
+    - { name: observability, enabled: "{{ observability.enabled | default(false) | bool }}" }
+  when: not (item.enabled | bool)
+  register: optional_stack_definitions
+
+- name: Remove disabled optional stacks
+  ansible.builtin.command:
+    argv: [docker, compose, -f, "{{ item.stat.path }}", down]
+  args:
+    chdir: "{{ item.stat.path | dirname }}"
+  loop: "{{ optional_stack_definitions.results }}"
+  when:
+    - not (item.skipped | default(false))
+    - item.stat.exists | default(false)
+  changed_when: false

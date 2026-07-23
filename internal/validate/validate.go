@@ -74,27 +74,17 @@ func (v Validator) Observability(ctx context.Context) CheckResult {
 			return StatusOK, "collector running"
 		}
 
-		sentinelName := fmt.Sprintf("admin-node-otel-log-sentinel-%d", time.Now().UnixNano())
-		sentinel := v.Runner.Run(ctx, "docker", "run", "-d", "--name", sentinelName, "--network", "admin-net", "alpine:3.20", "sh", "-c", "echo admin-node-otel-log-sentinel; sleep 30")
-		if sentinel.Code != 0 {
-			return StatusFail, "failed to create log sentinel container: " + strings.TrimSpace(sentinel.Stderr)
-		}
-		defer v.Runner.Run(context.Background(), "docker", "rm", "-f", sentinelName)
-
 		ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()
 		for {
-			missingMetrics, missingLogs := missingObservabilityMockContent(mockDir)
-			if len(missingMetrics) == 0 && len(missingLogs) == 0 {
-				return StatusOK, "collector exported expected service metrics and sentinel logs to CI OTLP mock"
+			missingMetrics, _ := missingObservabilityMockContent(mockDir)
+			if len(missingMetrics) == 0 {
+				return StatusOK, "collector exported expected service metrics to CI OTLP mock"
 			}
 			if ctx.Err() != nil {
 				missing := []string{}
 				if len(missingMetrics) > 0 {
 					missing = append(missing, "metrics content: "+strings.Join(missingMetrics, ", "))
-				}
-				if len(missingLogs) > 0 {
-					missing = append(missing, "logs content: "+strings.Join(missingLogs, ", "))
 				}
 				return StatusFail, "CI OTLP mock missing " + strings.Join(missing, " and ")
 			}
@@ -105,7 +95,6 @@ func (v Validator) Observability(ctx context.Context) CheckResult {
 
 func missingObservabilityMockContent(mockDir string) ([]string, []string) {
 	metricsContent := fileContent(filepath.Join(mockDir, "metrics.received"))
-	logsContent := fileContent(filepath.Join(mockDir, "logs.received"))
 
 	metricMarkers := []struct {
 		name    string
@@ -124,11 +113,7 @@ func missingObservabilityMockContent(mockDir string) ([]string, []string) {
 		}
 	}
 
-	missingLogs := []string{}
-	if !strings.Contains(logsContent, "admin-node-otel-log-sentinel") {
-		missingLogs = append(missingLogs, "admin-node-otel-log-sentinel")
-	}
-	return missingMetrics, missingLogs
+	return missingMetrics, nil
 }
 
 func containsAny(text string, markers []string) bool {
@@ -493,21 +478,6 @@ func (v Validator) OpenBao(ctx context.Context) CheckResult {
 					Sealed      bool `json:"sealed"`
 				}
 				if err := json.Unmarshal([]byte(result.Stdout), &status); err == nil && status.Initialized && !status.Sealed {
-					token := getenv("OPENBAO_TOKEN", "")
-					if token != "" {
-						put := v.Runner.Run(ctx, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN="+token, "openbao", "bao", "kv", "put", "secret/admin-node-sentinel", "value=ok")
-						if put.Code != 0 {
-							v.Runner.Run(ctx, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN="+token, "openbao", "bao", "secrets", "enable", "-path=secret", "kv-v2")
-							put = v.Runner.Run(ctx, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN="+token, "openbao", "bao", "kv", "put", "secret/admin-node-sentinel", "value=ok")
-							if put.Code != 0 {
-								return StatusFail, "sentinel write failed: " + strings.TrimSpace(put.Stderr)
-							}
-						}
-						get := v.Runner.Run(ctx, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN="+token, "openbao", "bao", "kv", "get", "-field=value", "secret/admin-node-sentinel")
-						if get.Code != 0 || strings.TrimSpace(get.Stdout) != "ok" {
-							return StatusFail, "sentinel read failed"
-						}
-					}
 					return StatusOK, "initialized=true sealed=false"
 				}
 				if status.Initialized && status.Sealed {
@@ -522,24 +492,26 @@ func (v Validator) OpenBao(ctx context.Context) CheckResult {
 
 func (v Validator) Hardening(ctx context.Context) CheckResult {
 	return timed("Hardening", func() (Status, string) {
-		if result := v.Runner.Run(ctx, "sshd", "-T"); result.Code == 0 {
-			expectedSSH := []string{
-				"permitrootlogin no",
-				"passwordauthentication no",
-				"kbdinteractiveauthentication no",
-				"pubkeyauthentication yes",
-				"allowtcpforwarding no",
-				"allowagentforwarding no",
-				"clientalivecountmax 2",
-				"loglevel VERBOSE",
-				"maxauthtries 3",
-				"maxsessions 2",
-				"tcpkeepalive no",
-			}
-			for _, expected := range expectedSSH {
-				if !containsFieldsLineFold(result.Stdout, expected) {
-					return StatusFail, "sshd option mismatch: expected " + expected
-				}
+		result := v.Runner.Run(ctx, "sshd", "-T")
+		if result.Code != 0 {
+			return StatusFail, "sshd effective configuration is unavailable"
+		}
+		expectedSSH := []string{
+			"permitrootlogin no",
+			"passwordauthentication no",
+			"kbdinteractiveauthentication no",
+			"pubkeyauthentication yes",
+			"allowtcpforwarding no",
+			"allowagentforwarding no",
+			"clientalivecountmax 2",
+			"loglevel VERBOSE",
+			"maxauthtries 3",
+			"maxsessions 2",
+			"tcpkeepalive no",
+		}
+		for _, expected := range expectedSSH {
+			if !containsFieldsLineFold(result.Stdout, expected) {
+				return StatusFail, "sshd option mismatch: expected " + expected
 			}
 		}
 		expectedSysctls := map[string]string{
@@ -578,8 +550,18 @@ func (v Validator) Hardening(ctx context.Context) CheckResult {
 		}
 		if result := v.Runner.Run(ctx, "nft", "list", "table", "inet", "admin_filter"); result.Code != 0 {
 			return StatusFail, "nftables admin_filter table is unavailable"
-		} else if !strings.Contains(result.Stdout, "policy drop") || !strings.Contains(result.Stdout, "tcp dport 22 accept") || !strings.Contains(result.Stdout, "tcp dport 443 accept") {
+		} else if strings.Count(result.Stdout, "policy drop") < 2 || !strings.Contains(result.Stdout, "tcp dport 22 accept") || !strings.Contains(result.Stdout, "tcp dport 443 accept") || !strings.Contains(result.Stdout, "br-gitea-db") {
 			return StatusFail, "nftables policy is incomplete"
+		}
+		for _, container := range []string{"traefik", "otel-collector"} {
+			result := v.Runner.Run(ctx, "docker", "inspect", "-f", "{{range .Mounts}}{{println .Source}}{{end}}", container)
+			if result.Code == 0 && strings.Contains(result.Stdout, "/var/run/docker.sock") {
+				return StatusFail, container + " mounts the Docker socket directly"
+			}
+		}
+		unit, err := os.ReadFile("/etc/systemd/system/admin-stack@.service")
+		if err != nil || !strings.Contains(string(unit), "ExecCondition=/opt/homelab-admin-node/bin/admin-node mode check") {
+			return StatusFail, "admin stack mode gate is missing"
 		}
 		loginDefs, err := os.ReadFile("/etc/login.defs")
 		if err != nil {

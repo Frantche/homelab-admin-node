@@ -25,13 +25,27 @@
 - name: Flush handlers to restart docker before starting containers
   ansible.builtin.meta: flush_handlers
 
-- name: Ensure admin-net Docker network exists
+- name: Ensure isolated admin Docker networks exist
   community.docker.docker_network:
-    name: admin-net
+    name: "{{ item.name }}"
+    internal: "{{ item.internal }}"
+    driver_options:
+      com.docker.network.bridge.name: "{{ item.bridge }}"
     state: present
+  loop:
+    - { name: admin-edge, bridge: br-admin-edge, internal: false }
+    - { name: gitea-db, bridge: br-gitea-db, internal: true }
+    - { name: keycloak-db, bridge: br-keycloak-db, internal: true }
+    - { name: harbor-internal, bridge: br-harbor, internal: true }
+    - { name: harbor-egress, bridge: br-hbr-egress, internal: false }
+    - { name: harbor-host, bridge: br-hbr-host, internal: false }
+    - { name: traefik-docker, bridge: br-traefik-api, internal: true }
+    - { name: otel-docker, bridge: br-otel-api, internal: true }
 
 - name: Probe Docker bridge networking support
-  ansible.builtin.command: docker run --rm --network admin-net alpine:3.20 true
+  ansible.builtin.command: >-
+    docker run --rm --network admin-edge
+    alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc true
   register: docker_bridge_probe
   failed_when: false
   changed_when: docker_bridge_probe.rc == 0
@@ -46,5 +60,5 @@
       Docker bridge networking is unavailable in this environment.
       The admin stack requires bridge-capable container networking
       to start traefik, openbao, keycloak, harbor, and cloudflared.
-      The probe command that failed was: docker run --rm --network admin-net alpine:3.20 true
+      The pinned Alpine network probe failed on admin-edge.
   when: not docker_bridge_supported

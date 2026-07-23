@@ -84,8 +84,7 @@ verify_btrfs_storage_isolation() {
   local paths=(
     /srv/admin/data/keycloak
     /srv/admin/data/openbao
-    /srv/admin/data/gitea
-    /srv/admin/data/gitea-postgres
+    /srv/admin/data/gitea-stack
     /srv/admin/data/harbor
     /srv/admin/data/traefik
     /srv/admin/data/cloudflared

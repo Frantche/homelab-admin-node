@@ -2,14 +2,46 @@ name: admin-node-arch-vm-test
 
 on:
   workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
 
 
 permissions:
   contents: read
 
 jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Install static analysis dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc shellcheck python3-venv
+          python3 -m venv .ci/quality-venv
+          .ci/quality-venv/bin/python -m pip install \
+            ansible-core==2.21.2 \
+            ansible-lint==26.6.0
+          echo "$PWD/.ci/quality-venv/bin" >> "$GITHUB_PATH"
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          .ci/quality-venv/bin/ansible-galaxy collection install -r ansible/requirements.yml
+      - name: Run quality checks
+        run: |
+          go test -race ./...
+          go vet ./...
+          govulncheck ./...
+          shellcheck -e SC1091 scripts/*.sh ci/*.sh ci/scenarios/*.sh
+          actionlint -shellcheck=
+          ansible-lint ansible/site.yml
+          ansible-playbook -i ansible/inventory.ini ansible/site.yml --syntax-check
+
   arch-vm-lifecycle:
-    if: false
+    needs: quality
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
@@ -26,7 +58,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install host dependencies
         run: |
@@ -88,6 +120,7 @@ jobs:
             - git
             - docker
             - docker-compose
+            - go
             - openssh
             - sops
             - age

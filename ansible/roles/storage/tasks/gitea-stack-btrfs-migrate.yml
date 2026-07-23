@@ -1,0 +1,70 @@
+---
+- name: Inspect Gitea stack storage paths
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ admin_node_root }}/data/gitea-stack"
+    - "{{ admin_node_root }}/data/gitea"
+    - "{{ admin_node_root }}/data/gitea-postgres"
+  register: gitea_stack_paths
+
+- name: Inspect existing Gitea compose definition
+  ansible.builtin.stat:
+    path: "{{ admin_node_root }}/stacks/gitea/compose.yaml"
+  register: gitea_stack_compose
+
+- name: Migrate existing Gitea storage into one Btrfs subvolume
+  when:
+    - not gitea_stack_paths.results[0].stat.exists
+    - gitea_stack_paths.results[1].stat.exists
+    - gitea_stack_paths.results[2].stat.exists
+  block:
+    - name: Create temporary Gitea stack subvolume
+      ansible.builtin.command:
+        argv: [btrfs, subvolume, create, "{{ admin_node_root }}/data/.gitea-stack-migration"]
+
+    - name: Create temporary Gitea stack directories
+      ansible.builtin.file:
+        path: "{{ admin_node_root }}/data/.gitea-stack-migration/{{ item }}"
+        state: directory
+        mode: "0700"
+      loop: [gitea, postgres]
+
+    - name: Pre-copy live Gitea storage
+      ansible.builtin.command:
+        argv: [cp, -a, --reflink=always, "{{ item.src }}/.", "{{ item.dst }}/"]
+      loop:
+        - { src: "{{ admin_node_root }}/data/gitea", dst: "{{ admin_node_root }}/data/.gitea-stack-migration/gitea" }
+        - { src: "{{ admin_node_root }}/data/gitea-postgres", dst: "{{ admin_node_root }}/data/.gitea-stack-migration/postgres" }
+
+    - name: Stop Gitea for migration cutover
+      ansible.builtin.command:
+        argv: [docker, compose, --env-file, "{{ admin_node_root }}/env/gitea.env", -f, "{{ admin_node_root }}/stacks/gitea/compose.yaml", down]
+      when: gitea_stack_compose.stat.exists
+
+    - name: Finalize Gitea storage copy
+      ansible.builtin.command:
+        argv: [rsync, -aHAX, --delete, --numeric-ids, "{{ item.src }}/", "{{ item.dst }}/"]
+      loop:
+        - { src: "{{ admin_node_root }}/data/gitea", dst: "{{ admin_node_root }}/data/.gitea-stack-migration/gitea" }
+        - { src: "{{ admin_node_root }}/data/gitea-postgres", dst: "{{ admin_node_root }}/data/.gitea-stack-migration/postgres" }
+
+    - name: Preserve old Gitea subvolumes for rollback
+      ansible.builtin.command:
+        argv: [mv, "{{ item }}", "{{ item }}.pre-stack-migration"]
+      loop:
+        - "{{ admin_node_root }}/data/gitea"
+        - "{{ admin_node_root }}/data/gitea-postgres"
+
+    - name: Publish atomic Gitea stack subvolume
+      ansible.builtin.command:
+        argv: [mv, "{{ admin_node_root }}/data/.gitea-stack-migration", "{{ admin_node_root }}/data/gitea-stack"]
+
+  rescue:
+    - name: Remove failed temporary Gitea migration subvolume
+      ansible.builtin.command:
+        argv: [btrfs, subvolume, delete, "{{ admin_node_root }}/data/.gitea-stack-migration"]
+      failed_when: false
+    - name: Abort failed Gitea stack migration
+      ansible.builtin.fail:
+        msg: Gitea Btrfs stack migration failed; preserved source paths were not removed.

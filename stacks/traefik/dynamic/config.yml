@@ -38,8 +38,10 @@ http:
 {% endfor %}
 {% endif %}
 {% endif %}
+{% if traefik.dashboard_enabled | default(false) | bool %}
   middlewares:
     dashboard-auth:
       basicAuth:
         users:
           - "{{ TRAEFIK_DASHBOARD_BASIC_AUTH }}"
+{% endif %}

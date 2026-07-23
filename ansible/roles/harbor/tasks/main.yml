@@ -144,7 +144,7 @@
     printf '%s\n' "$HARBOR_REGISTRY_PASSWORD" | docker run --rm -i \
       -v "{{ admin_node_root }}/data/harbor/core/registry.passwd:/registry.passwd:ro" \
       --entrypoint /usr/bin/htpasswd \
-      goharbor/prepare:v2.15.2 \
+      goharbor/prepare:v2.15.2@sha256:5b9428fb649b3a0e0fe497189a880d7c9f1281538b85de9ad377cb524e427bd5 \
       -vi /registry.passwd harbor_registry_user
   args:
     executable: /bin/bash
@@ -165,7 +165,7 @@
     umask 077
     printf '%s\n' "$HARBOR_REGISTRY_PASSWORD" | docker run --rm -i \
       --entrypoint /usr/bin/htpasswd \
-      goharbor/prepare:v2.15.2 \
+      goharbor/prepare:v2.15.2@sha256:5b9428fb649b3a0e0fe497189a880d7c9f1281538b85de9ad377cb524e427bd5 \
       -niB harbor_registry_user > "$temporary_file"
     install -o root -g 10000 -m 0640 "$temporary_file" "$password_file"
   args:
@@ -236,12 +236,32 @@
   when: not (harbor_test_mode | default(false))
   no_log: true
 
+- name: Ensure Harbor host logging endpoint is running
+  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up -d --wait --wait-timeout 60 harbor-log
+  args:
+    chdir: "{{ admin_node_root }}/stacks/harbor"
+  changed_when: false
+  when:
+    - not (harbor_test_mode | default(false))
+    - admin_mode != 'restore'
+
+- name: Wait for Harbor host logging endpoint
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 1514
+    timeout: 60
+  when:
+    - not (harbor_test_mode | default(false))
+    - admin_mode != 'restore'
+
 - name: Ensure Harbor database container is running
   ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up --wait --wait-timeout 300 harbor-db
   args:
     chdir: "{{ admin_node_root }}/stacks/harbor"
   changed_when: false
-  when: not (harbor_test_mode | default(false))
+  when:
+    - not (harbor_test_mode | default(false))
+    - admin_mode != 'restore'
 
 - name: Wait for Harbor database readiness
   ansible.builtin.command: docker exec harbor-db pg_isready -U postgres -d registry
@@ -250,18 +270,30 @@
   retries: 30
   delay: 2
   changed_when: false
-  when: not (harbor_test_mode | default(false))
+  when:
+    - not (harbor_test_mode | default(false))
+    - admin_mode != 'restore'
 
 - name: Align Harbor database password with inventory secret
-  ansible.builtin.shell: |
-    set -euo pipefail
-    docker exec -i -e HARBOR_DB_PASSWORD="{{ harbor_runtime.db_password }}" harbor-db sh -c 'psql -U postgres -d registry -v ON_ERROR_STOP=1 -v pw="$HARBOR_DB_PASSWORD"' <<'SQL'
-    ALTER USER postgres WITH PASSWORD :'pw';
-    SQL
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - -i
+      - -e
+      - HARBOR_DB_PASSWORD
+      - harbor-db
+      - sh
+      - -c
+      - 'exec psql -U postgres -d registry -v ON_ERROR_STOP=1 -v pw="$HARBOR_DB_PASSWORD"'
   args:
-    executable: /bin/bash
+    stdin: "ALTER USER postgres WITH PASSWORD :'pw';"
+  environment:
+    HARBOR_DB_PASSWORD: "{{ harbor_runtime.db_password }}"
   changed_when: false
-  when: not (harbor_test_mode | default(false))
+  when:
+    - not (harbor_test_mode | default(false))
+    - admin_mode != 'restore'
   no_log: true
 
 - name: Start harbor stack
@@ -270,7 +302,9 @@
     chdir: "{{ admin_node_root }}/stacks/harbor"
   register: harbor_stack_start
   changed_when: "'Started' in harbor_stack_start.stderr or 'Started' in harbor_stack_start.stdout or 'Created' in harbor_stack_start.stderr or 'Created' in harbor_stack_start.stdout or 'Recreated' in harbor_stack_start.stderr or 'Recreated' in harbor_stack_start.stdout"
-  when: not (harbor_test_mode | default(false))
+  when:
+    - not (harbor_test_mode | default(false))
+    - admin_mode != 'restore'
 
 - name: Recreate Harbor registry services after authentication config change
   ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up --wait --wait-timeout 300 --force-recreate harbor-registry harbor-registryctl
@@ -279,6 +313,7 @@
   changed_when: true
   when:
     - not (harbor_test_mode | default(false))
+    - admin_mode != 'restore'
     - harbor_registry_config_render.changed or (harbor_registry_password_render.changed | default(false))
 
 - name: Reload Harbor nginx upstream resolution
@@ -288,6 +323,7 @@
   changed_when: true
   when:
     - not (harbor_test_mode | default(false))
+    - admin_mode != 'restore'
     - harbor_stack_files_copy.changed or harbor_compose_render.changed or (harbor_env_render.changed | default(false))
 
 - name: Wait for Harbor nginx health after reload
@@ -299,4 +335,5 @@
   delay: 2
   when:
     - not (harbor_test_mode | default(false))
+    - admin_mode != 'restore'
     - harbor_stack_files_copy.changed or harbor_compose_render.changed or (harbor_env_render.changed | default(false))

@@ -22,6 +22,13 @@
     fail_msg: "storage_isolation.backend must be one of: auto, btrfs, lvm"
   when: storage_isolation_cfg.enabled | bool
 
+- name: Migrate Gitea into one atomic Btrfs stack subvolume
+  ansible.builtin.include_tasks: gitea-stack-btrfs-migrate.yml
+  when:
+    - storage_isolation_cfg.enabled | bool
+    - storage_isolation_cfg.backend in ['auto', 'btrfs']
+    - backup.require_btrfs_hot | default(false) | bool
+
 - name: Configure isolated storage entries
   ansible.builtin.include_tasks: storage-isolation-entry.yml
   loop: "{{ storage_isolation_cfg.entries }}"
@@ -32,19 +39,19 @@
 
 - name: Ensure data directories exist
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: "{{ item.path }}"
     state: directory
-    owner: root
-    group: root
-    mode: "0755"
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.group | default('root') }}"
+    mode: "{{ item.mode | default('0755') }}"
   loop:
-    - "{{ admin_node_root }}/data/keycloak"
-    - "{{ admin_node_root }}/data/openbao"
-    - "{{ admin_node_root }}/data/harbor"
-    - "{{ admin_node_root }}/data/gitea"
-    - "{{ admin_node_root }}/data/gitea-postgres"
-    - "{{ admin_node_root }}/data/traefik"
-    - "{{ admin_node_root }}/data/cloudflared"
+    - { path: "{{ admin_node_root }}/data/keycloak" }
+    - { path: "{{ admin_node_root }}/data/openbao", owner: "100", group: "1000", mode: "0750" }
+    - { path: "{{ admin_node_root }}/data/harbor" }
+    - { path: "{{ admin_node_root }}/data/gitea-stack/gitea" }
+    - { path: "{{ admin_node_root }}/data/gitea-stack/postgres" }
+    - { path: "{{ admin_node_root }}/data/traefik" }
+    - { path: "{{ admin_node_root }}/data/cloudflared" }
 
 - name: Ensure openbao data directory is writable before restore can start
   ansible.builtin.file:

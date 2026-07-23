@@ -5,9 +5,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"time"
 )
+
+var backupIDPattern = regexp.MustCompile(`^[0-9]{8}-[0-9]{6}$`)
+
+func ValidID(id string) bool { return backupIDPattern.MatchString(id) }
 
 type Info struct {
 	ID              string
@@ -35,7 +40,7 @@ func List(root string) ([]Info, error) {
 
 	var backups []Info
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !entry.IsDir() || !ValidID(entry.Name()) {
 			continue
 		}
 		path := filepath.Join(root, entry.Name())
@@ -77,7 +82,9 @@ func inspect(path, id string) (Info, error) {
 	manifestInvalid := false
 	if err != nil {
 		manifestInvalid = true
-	} else if hasManifest && !manifest.CreatedAt.IsZero() {
+	} else if !hasManifest || manifest.Version != ManifestVersion || !manifest.Complete || manifest.ID != id {
+		manifestInvalid = true
+	} else if !manifest.CreatedAt.IsZero() {
 		createdAt = manifest.CreatedAt
 	}
 

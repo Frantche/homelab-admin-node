@@ -5,6 +5,14 @@
     traefik_local_ca_enabled: "{{ (ci_mode | default(false)) or (traefik.local_tls_enabled | default(false)) or (not ((cloudflare.enabled | default(true)) | bool)) or ((cloudflare.dns_api_token | default('') | length) == 0) or ((acme_email | default('') | length) == 0) }}"
     traefik_external_services: "{{ (traefik | default({})).external_services | default([]) }}"
 
+- name: Require dashboard authentication when dashboard is enabled
+  ansible.builtin.assert:
+    that:
+      - admin.traefik_dashboard_basic_auth | default('', true) | length > 0
+    fail_msg: admin.traefik_dashboard_basic_auth is required when the Traefik dashboard is enabled.
+  when: traefik.dashboard_enabled | default(false) | bool
+  no_log: true
+
 - name: Validate Traefik external services
   ansible.builtin.assert:
     that:
@@ -15,10 +23,45 @@
       - item.url is defined
       - item.url is match('^https?://')
       - not (((item.tls | default({})).verify | default(true) | bool == false) and (((item.tls | default({})).ca_pem | default('', true) | length) > 0))
+      - ((item.tls | default({})).verify | default(true) | bool) or ((item.tls | default({})).reason | default('', true) | length > 0)
+      - ((item.tls | default({})).verify | default(true) | bool) or ((item.tls | default({})).expires_at | default('') is match('^20[0-9]{2}-[0-9]{2}-[0-9]{2}$'))
+      - ((item.tls | default({})).verify | default(true) | bool) or (((item.tls | default({})).expires_at | to_datetime('%Y-%m-%d')) > (ansible_date_time.date | to_datetime('%Y-%m-%d')))
     fail_msg: "Invalid traefik.external_services item. Required: name, hostname, http(s) url. tls.verify=false cannot be combined with tls.ca_pem."
   loop: "{{ traefik_external_services }}"
   loop_control:
     label: "{{ item.name | default(item.hostname | default('unnamed')) }}"
+
+- name: Ensure security exception log exists
+  ansible.builtin.file:
+    path: /var/log/admin-node-security-exceptions.log
+    state: touch
+    owner: root
+    group: root
+    mode: "0644"
+    modification_time: preserve
+    access_time: preserve
+
+- name: Record active TLS verification exceptions
+  ansible.builtin.lineinfile:
+    path: /var/log/admin-node-security-exceptions.log
+    line: "severity=warning kind=tls_verify_disabled service={{ item.name }} expires_at={{ item.tls.expires_at }} reason={{ item.tls.reason | quote }}"
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ traefik_external_services }}"
+  when: not ((item.tls | default({})).verify | default(true) | bool)
+
+- name: Emit active TLS verification exceptions to the journal
+  ansible.builtin.command:
+    argv:
+      - logger
+      - --tag
+      - admin-node-security
+      - "TLS verification disabled for {{ item.name }} until {{ item.tls.expires_at }}: {{ item.tls.reason }}"
+  changed_when: false
+  loop: "{{ traefik_external_services }}"
+  when: not ((item.tls | default({})).verify | default(true) | bool)
 
 - name: Compute local TLS expected DNS names
   ansible.builtin.set_fact:
@@ -79,8 +122,6 @@
     group: root
     mode: preserve
   loop:
-    - compose.yaml
-    - traefik.yml
     - traefik-ci.yml
 
 - name: Render traefik compose
@@ -307,7 +348,7 @@
     group: root
     mode: "0600"
   vars:
-    TRAEFIK_DASHBOARD_BASIC_AUTH: "{{ admin.traefik_dashboard_basic_auth | mandatory('admin.traefik_dashboard_basic_auth is required') }}"
+    TRAEFIK_DASHBOARD_BASIC_AUTH: "{{ admin.traefik_dashboard_basic_auth | default('') }}"
   no_log: true
 
 - name: Deploy default TLS dynamic config
@@ -346,4 +387,8 @@
   ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/traefik.env -f compose.yaml up --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/traefik"
-  changed_when: true
+  register: traefik_stack_start
+  changed_when: >-
+    'Created' in traefik_stack_start.stderr or 'Recreated' in traefik_stack_start.stderr or
+    'Started' in traefik_stack_start.stderr
+  when: admin_mode != 'restore'

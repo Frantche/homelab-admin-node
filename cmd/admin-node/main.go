@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/Frantche/homelab-admin-node/internal/converge"
 	"github.com/Frantche/homelab-admin-node/internal/mode"
 	"github.com/Frantche/homelab-admin-node/internal/openbao"
+	"github.com/Frantche/homelab-admin-node/internal/operation"
 	"github.com/Frantche/homelab-admin-node/internal/restore"
 	"github.com/Frantche/homelab-admin-node/internal/runner"
 	"github.com/Frantche/homelab-admin-node/internal/secret"
@@ -199,16 +201,41 @@ func (a app) runValidate(_ context.Context, args []string) int {
 
 func (a app) runMode(_ context.Context, args []string) int {
 	subcommand, rest := splitSubcommand(args, "")
-	if subcommand != "set" || len(rest) != 1 {
-		fmt.Fprintln(a.errOut, "usage: admin-node mode set <locked|init|normal|restore|restore_failed>")
+	switch subcommand {
+	case "set":
+		if len(rest) != 1 {
+			fmt.Fprintln(a.errOut, "usage: admin-node mode set <locked|init|normal|restore|restore_failed>")
+			return 2
+		}
+		if err := mode.Set(a.cfg.ModeFile, rest[0]); err != nil {
+			fmt.Fprintf(a.errOut, "mode set: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(a.out, "Mode set to %s\n", rest[0])
+		return 0
+	case "check":
+		fs := flag.NewFlagSet("mode check", flag.ContinueOnError)
+		fs.SetOutput(a.errOut)
+		allowed := fs.String("allow", "", "comma-separated allowed modes")
+		if err := fs.Parse(rest); err != nil {
+			return 2
+		}
+		current, err := mode.Read(a.cfg.ModeFile)
+		if err != nil {
+			fmt.Fprintf(a.errOut, "mode check: %v\n", err)
+			return 1
+		}
+		for _, candidate := range strings.Split(*allowed, ",") {
+			if strings.TrimSpace(candidate) == current {
+				return 0
+			}
+		}
+		fmt.Fprintf(a.errOut, "mode %s is not allowed\n", current)
+		return 1
+	default:
+		fmt.Fprintln(a.errOut, "usage: admin-node mode <set|check>")
 		return 2
 	}
-	if err := mode.Set(a.cfg.ModeFile, rest[0]); err != nil {
-		fmt.Fprintf(a.errOut, "mode set: %v\n", err)
-		return 1
-	}
-	fmt.Fprintf(a.out, "Mode set to %s\n", rest[0])
-	return 0
 }
 
 func (a app) runConverge(ctx context.Context, args []string) int {
@@ -224,6 +251,12 @@ func (a app) runConverge(ctx context.Context, args []string) int {
 	if err := fs.Parse(rest); err != nil {
 		return 2
 	}
+	unlock, err := operation.Acquire(a.cfg.OperationLock)
+	if err != nil {
+		fmt.Fprintf(a.errOut, "converge run: %v\n", err)
+		return 1
+	}
+	defer unlock()
 	extraArgs := converge.SplitExtraArgs(os.Getenv("ANSIBLE_EXTRA_ARGS"))
 	if *extraVars != "" {
 		extraArgs = append(extraArgs, converge.SplitExtraArgs(*extraVars)...)
@@ -301,7 +334,7 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 		return err
 	}
 	image := envValue(env, "GITEA_PROCESS_BACKUP_IMAGE", "ghcr.io/frantche/gitea-backup-restore-process:0.3.6")
-	network := envValue(env, "GITEA_PROCESS_BACKUP_NETWORK", "admin-net")
+	network := envValue(env, "GITEA_PROCESS_BACKUP_NETWORK", "admin-edge")
 	restoreTmp := envValue(env, "RESTORE_TMP_FOLDER", "/srv/admin/backups/gitea-process/restore-tmp")
 
 	fmt.Fprintf(a.out, "[gitea-restore-process] restoring %s\n", opts.BackupFilename)
@@ -324,17 +357,17 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 		{"docker", "compose", "--env-file", opts.GiteaEnv, "-f", opts.GiteaCompose, "up", "-d", "gitea-db"},
 		{"docker", "compose", "--env-file", opts.GiteaEnv, "-f", opts.GiteaCompose, "stop", "gitea"},
 		{"install", "-d", "-m", "0700", opts.PreRestoreDir},
-		{"rsync", "-a", "--delete", filepath.Join(a.cfg.AdminRoot, "data/gitea") + "/", filepath.Join(opts.PreRestoreDir, "gitea-data") + "/"},
-		{"find", filepath.Join(a.cfg.AdminRoot, "data/gitea/git/repositories"), "-mindepth", "1", "-maxdepth", "1", "-exec", "rm", "-rf", "{}", "+"},
-		{"find", filepath.Join(a.cfg.AdminRoot, "data/gitea/gitea/avatars"), "-mindepth", "1", "-maxdepth", "1", "-exec", "rm", "-rf", "{}", "+"},
-		{"find", filepath.Join(a.cfg.AdminRoot, "data/gitea/gitea/repo-avatars"), "-mindepth", "1", "-maxdepth", "1", "-exec", "rm", "-rf", "{}", "+"},
+		{"rsync", "-a", "--delete", filepath.Join(a.cfg.GiteaStackPath, "gitea") + "/", filepath.Join(opts.PreRestoreDir, "gitea-data") + "/"},
+		{"find", filepath.Join(a.cfg.GiteaStackPath, "gitea/git/repositories"), "-mindepth", "1", "-maxdepth", "1", "-exec", "rm", "-rf", "{}", "+"},
+		{"find", filepath.Join(a.cfg.GiteaStackPath, "gitea/gitea/avatars"), "-mindepth", "1", "-maxdepth", "1", "-exec", "rm", "-rf", "{}", "+"},
+		{"find", filepath.Join(a.cfg.GiteaStackPath, "gitea/gitea/repo-avatars"), "-mindepth", "1", "-maxdepth", "1", "-exec", "rm", "-rf", "{}", "+"},
 		{"install", "-d", "-m", "0700", restoreTmp},
 		{"find", restoreTmp, "-mindepth", "1", "-maxdepth", "1", "-exec", "rm", "-rf", "{}", "+"},
 		{"docker", "run", "--rm",
 			"--network", network,
 			"--env-file", opts.ProcessEnv,
 			"-e", "BACKUP_FILENAME=" + opts.BackupFilename,
-			"-v", filepath.Join(a.cfg.AdminRoot, "data/gitea") + ":/data",
+			"-v", filepath.Join(a.cfg.GiteaStackPath, "gitea") + ":/data",
 			"-v", restoreTmp + ":" + restoreTmp,
 			image,
 			"gitea-restore"},
@@ -387,16 +420,16 @@ func (a app) restoreGiteaProcessDatabase(ctx context.Context, dumpPath string) e
 
 func (a app) normalizeGiteaProcessRestorePermissions(ctx context.Context) error {
 	paths := []string{
-		filepath.Join(a.cfg.AdminRoot, "data/gitea/git"),
-		filepath.Join(a.cfg.AdminRoot, "data/gitea/gitea/avatars"),
-		filepath.Join(a.cfg.AdminRoot, "data/gitea/gitea/repo-avatars"),
-		filepath.Join(a.cfg.AdminRoot, "data/gitea/gitea/attachments"),
-		filepath.Join(a.cfg.AdminRoot, "data/gitea/gitea/packages"),
-		filepath.Join(a.cfg.AdminRoot, "data/gitea/gitea/repo-archive"),
+		filepath.Join(a.cfg.GiteaStackPath, "gitea/git"),
+		filepath.Join(a.cfg.GiteaStackPath, "gitea/gitea/avatars"),
+		filepath.Join(a.cfg.GiteaStackPath, "gitea/gitea/repo-avatars"),
+		filepath.Join(a.cfg.GiteaStackPath, "gitea/gitea/attachments"),
+		filepath.Join(a.cfg.GiteaStackPath, "gitea/gitea/packages"),
+		filepath.Join(a.cfg.GiteaStackPath, "gitea/gitea/repo-archive"),
 	}
 	existing := existingPaths(paths)
 	if len(existing) == 0 {
-		return fmt.Errorf("no gitea restore paths found under %s", filepath.Join(a.cfg.AdminRoot, "data/gitea"))
+		return fmt.Errorf("no gitea restore paths found under %s", filepath.Join(a.cfg.GiteaStackPath, "gitea"))
 	}
 	if err := a.execLogged(ctx, "chown", append([]string{"-R", "1000:1000"}, existing...)...); err != nil {
 		return fmt.Errorf("normalize gitea restore ownership: %w", err)
@@ -452,7 +485,15 @@ func readEnvFile(path string) (map[string]string, error) {
 		if !ok {
 			continue
 		}
-		values[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(value), `"'`)
+		value = strings.TrimSpace(value)
+		if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+			if decoded, err := strconv.Unquote(value); err == nil {
+				value = decoded
+			}
+		} else if len(value) >= 2 && value[0] == '\'' && value[len(value)-1] == '\'' {
+			value = value[1 : len(value)-1]
+		}
+		values[strings.TrimSpace(key)] = value
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("read process env: %w", err)
@@ -532,6 +573,7 @@ func (a app) runBackup(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("backup", flag.ContinueOnError)
 	fs.SetOutput(a.errOut)
 	includeImages := fs.Bool("include-images", false, "include Docker images in the backup")
+	verifyID := fs.String("id", "latest", "backup id to verify")
 	if err := fs.Parse(rest); err != nil {
 		return 2
 	}
@@ -581,6 +623,23 @@ func (a app) runBackup(ctx context.Context, args []string) int {
 		}
 		writer.Flush()
 		return 0
+	case "verify":
+		id := *verifyID
+		info, ok, err := restore.Resolve(a.cfg.BackupRoot, id)
+		if err != nil || !ok {
+			if err == nil {
+				err = fmt.Errorf("backup not found")
+			}
+			fmt.Fprintf(a.errOut, "backup verify: %v\n", err)
+			return 1
+		}
+		manifest, err := backup.Verify(info.Path)
+		if err != nil {
+			fmt.Fprintf(a.errOut, "backup verify: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(a.out, "Backup verified: %s (%d files, %s)\n", manifest.ID, len(manifest.Files), manifest.Consistency)
+		return 0
 	case "restic":
 		paths := fs.Args()
 		if err := backup.RunRestic(ctx, a.cfg.BackupEnvFile, paths); err != nil {
@@ -621,17 +680,31 @@ func (a app) runRestore(_ context.Context, args []string) int {
 	subcommand, rest := splitSubcommand(args, "run")
 	fs := flag.NewFlagSet("restore", flag.ContinueOnError)
 	fs.SetOutput(a.errOut)
-	restoreID := fs.String("id", "latest", "backup id to restore")
+	restoreID := fs.String("id", "", "backup id to restore (defaults to /etc/admin-node/restore-id, then latest)")
+	repositoryID := fs.String("repository", "", "restic repository to fetch from when the backup is not local")
 	if err := fs.Parse(rest); err != nil {
 		return 2
 	}
 
 	switch subcommand {
 	case "run":
+		if *repositoryID != "" {
+			if *restoreID == "" || *restoreID == "latest" {
+				fmt.Fprintln(a.errOut, "restore run: --repository requires an explicit --id")
+				return 2
+			}
+			if _, err := os.Stat(filepath.Join(a.cfg.BackupRoot, *restoreID)); os.IsNotExist(err) {
+				if err := backup.RestoreFromRestic(context.Background(), a.cfg.BackupEnvFile, *repositoryID, a.cfg.BackupRoot, *restoreID); err != nil {
+					fmt.Fprintf(a.errOut, "restore fetch: %v\n", err)
+					return 1
+				}
+			}
+		}
 		err := restore.Run(context.Background(), a.cfg, restore.Options{
-			ID:       *restoreID,
-			Out:      a.out,
-			LockFile: "/run/admin-converge.lock",
+			ID:                    *restoreID,
+			Out:                   a.out,
+			LockFile:              a.cfg.OperationLock,
+			RestoreHarborWritable: func(ctx context.Context) error { return restore.RestoreHarborWritable(ctx, a.cfg) },
 			SystemdTimers: []string{
 				"admin-converge.timer",
 				"admin-backup.timer",
@@ -683,6 +756,7 @@ func restoreValidation(ctx context.Context, run runner.Runner) []validate.CheckR
 		restoreCommandCheck(ctx, run, "Keycloak", 120*time.Second, "docker", "exec", "keycloak", "bash", "-lc", "timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000; printf \"GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3; head -1 <&3 | grep -q \"200\"'"),
 		restoreCommandCheck(ctx, run, "Harbor", 120*time.Second, "docker", "exec", "harbor-core", "curl", "-fsS", "http://127.0.0.1:8080/api/v2.0/health"),
 		restoreCommandCheck(ctx, run, "Gitea", 120*time.Second, "docker", "exec", "gitea", "curl", "-fsS", "http://127.0.0.1:3000/api/v1/version"),
+		restoreCommandCheck(ctx, run, "Gitea data", 120*time.Second, "docker", "exec", "gitea-db", "psql", "-U", "gitea", "-d", "gitea", "-Atqc", `SELECT 1 FROM "user" LIMIT 1`),
 		restoreCommandCheck(ctx, run, "Traefik", 90*time.Second, "docker", "exec", "traefik", "traefik", "healthcheck", "--ping"),
 	}
 }

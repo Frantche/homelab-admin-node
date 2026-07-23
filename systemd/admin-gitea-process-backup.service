@@ -6,4 +6,4 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 EnvironmentFile=/srv/admin/env/gitea-process-backup.env
-ExecStart=/opt/homelab-admin-node/scripts/gitea-process-backup.sh
+ExecStart=/usr/bin/flock -n /run/admin-node-operation.lock /opt/homelab-admin-node/scripts/gitea-process-backup.sh
