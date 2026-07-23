@@ -17,6 +17,8 @@
         + (['--id', restore_id] if restore_id | default('', true) | length > 0 else [])
       }}
   environment:
+    # The parent converge process holds the global operation lock.
+    ADMIN_OPERATION_LOCK: /run/admin-node-restore-under-converge.lock
     ADMIN_NODE_LAN_IP: "{{ admin_node_lan_ip }}"
     KEYCLOAK_DOMAIN: "{{ service_domains.keycloak }}"
     HARBOR_DOMAIN: "{{ service_domains.harbor }}"
