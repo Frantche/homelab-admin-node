@@ -38,7 +38,7 @@ cleanup() {
   cp "$REPO_ROOT/.ci/garage/socat.log" "$ARTIFACT_DIR/socat.log" 2>/dev/null || true
   docker rm -f "$CI_GARAGE_CONTAINER" >/dev/null 2>&1 || true
   rm -f "$RECOVERY_DIR/recovery-kit.tgz" "$GUEST_OFFSITE_ENV"
-  rm -rf "$REPO_ROOT/.ci/garage"
+  sudo rm -rf "$REPO_ROOT/.ci/garage"
   exit "$status"
 }
 trap cleanup EXIT
@@ -165,6 +165,7 @@ ci_vm_create "$TARGET_VM_DIR" admin-candidate-restore "$CANDIDATE_REPO_URL" "$CA
 ci_vm_start "$TARGET_VM_DIR" "$SSH_PORT"
 active_vm_dir="$TARGET_VM_DIR"
 ci_vm_wait "$SSH_PORT" "$TARGET_VM_DIR"
+vm_ssh "sudo /opt/homelab-admin-node/scripts/build-admin-node.sh"
 install_offsite_access
 ci_vm_scp_to "$SSH_PORT" "$RECOVERY_DIR/recovery-kit.tgz" /tmp/admin-node-recovery-kit.tgz
 vm_ssh "sudo tar -C / -xzf /tmp/admin-node-recovery-kit.tgz && \
