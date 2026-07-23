@@ -54,6 +54,9 @@ install_offsite_access() {
     sudo install -D -m 0644 /tmp/ci-garage-ca.crt /etc/ca-certificates/trust-source/anchors/ci-garage-ca.crt; \
     sudo update-ca-trust; \
     grep -qF garage.test /etc/hosts || echo '10.0.2.2 garage.test' | sudo tee -a /etc/hosts >/dev/null; \
+    for domain in keycloak.example.com bao.example.com harbor.example.com git.example.com traefik.example.com; do \
+      grep -qF \"\$domain\" /etc/hosts || echo \"127.0.0.1 \$domain\" | sudo tee -a /etc/hosts >/dev/null; \
+    done; \
     sudo install -m 0600 /tmp/ci-offsite.env /etc/admin-node/ci-offsite.env"
 }
 
