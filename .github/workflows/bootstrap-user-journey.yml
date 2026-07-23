@@ -526,16 +526,42 @@ jobs:
       - name: Start ephemeral Garage
         run: ./ci/setup-garage.sh
 
-      - name: Run main upgrade and remote recovery journey
-        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh
+      - name: Create source VM from main
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh create-source
 
-      - name: Stop recovery services
+      - name: Deploy and validate main
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh deploy-main
+
+      - name: Reboot main and validate hardening
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh reboot-hardening
+
+      - name: Back up main to Garage
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh backup-main
+
+      - name: Destroy source VM
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh destroy-source
+
+      - name: Create fresh recovery VM
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh create-target
+
+      - name: Restore main backup from Garage
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh restore-main
+
+      - name: Converge restored deployment with candidate
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh upgrade-candidate
+
+      - name: Rotate technical secrets
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh rotate-secrets
+
+      - name: Back up and validate candidate
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh backup-candidate
+
+      - name: Destroy recovery VM
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh destroy-target
+
+      - name: Clean up recovery resources
         if: always()
-        run: |
-          if [ -f .ci/garage/socat.pid ]; then
-            kill "$(cat .ci/garage/socat.pid)" 2>/dev/null || true
-          fi
-          docker rm -f admin-node-ci-garage >/dev/null 2>&1 || true
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh cleanup
 
       - name: Upload disaster recovery logs
         if: always()

@@ -10,15 +10,17 @@ cloud-init. Il genere un config repo depuis les exemples, traverse les modes
 `locked`, `init` et `normal`, puis valide services, OIDC, observabilite,
 sauvegarde et restauration locale.
 
-`scenarios/main-to-candidate-disaster-recovery.sh` s'execute sur l'hote CI. Il :
+`scenarios/main-to-candidate-disaster-recovery.sh` expose une commande
+idempotente par etape GitHub Actions. Le job :
 
 1. cree une VM source avec le SHA exact de `main` ;
 2. sauvegarde les donnees dans un Garage S3 externe a la VM ;
-3. met le noeud a niveau vers le SHA candidat sans changer sa configuration ;
+3. redemarre le noeud et valide son durcissement ;
 4. detruit le disque source ;
-5. restaure le backup `main` sur une nouvelle VM candidate ;
-6. tourne les secrets techniques et les mots de passe de bases de donnees ;
-7. confirme que les mots de passe des utilisateurs OIDC n'ont pas change.
+5. restaure le backup `main` sur une nouvelle VM avec l'outillage candidat ;
+6. converge et valide le deploiement restaure avec le candidat ;
+7. tourne les secrets techniques et les mots de passe de bases de donnees ;
+8. confirme que les mots de passe des utilisateurs OIDC n'ont pas change.
 
 Garage et son endpoint TLS sont prepares par `setup-garage.sh`. Les fonctions
 QEMU reutilisables vivent dans `lib/arch-vm.sh`.

@@ -62,7 +62,7 @@ test-ci-full:
 	 CANDIDATE_SHA="$${CANDIDATE_SHA:-$$(git rev-parse HEAD)}" \
 	 MAIN_REPO_URL="$${MAIN_REPO_URL:-https://github.com/Frantche/homelab-admin-node.git}" \
 	 CANDIDATE_REPO_URL="$${CANDIDATE_REPO_URL:-https://github.com/Frantche/homelab-admin-node.git}" \
-	 ./ci/scenarios/main-to-candidate-disaster-recovery.sh
+	 bash -c 'set -e; for action in create-source deploy-main reboot-hardening backup-main destroy-source create-target restore-main upgrade-candidate rotate-secrets backup-candidate destroy-target; do ./ci/scenarios/main-to-candidate-disaster-recovery.sh "$$action"; done'
 
 render:
 	@echo "Render is managed by Ansible templates/tasks"
