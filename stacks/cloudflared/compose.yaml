@@ -1,6 +1,6 @@
 services:
   cloudflared:
-    image: cloudflare/cloudflared:2026.7.2@sha256:18626b1baac4450214535cd5bc40ef44c0635244d585ebf707749c22b6f3408f
+    image: cloudflare/cloudflared:2026.7.3@sha256:b392761b711c0e5649d9b64e1fc9a10ba0563fa3e712ed7c26bde5cc1fbe9059
     container_name: cloudflared
     restart: "no"
 {% if cloudflare_local_ingress_enabled | default(false) | bool %}
