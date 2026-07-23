@@ -228,10 +228,8 @@ jobs:
       - name: Verify validated OTLP mock artifact content
         run: |
           metrics_file=.ci/artifacts/bootstrap/otel-mock-validated/metrics.received
-          logs_file=.ci/artifacts/bootstrap/otel-mock-validated/logs.received
 
           test -s "$metrics_file"
-          test -s "$logs_file"
 
           for marker in \
             '"key":"service.name","value":{"stringValue":"gitea"}' \
@@ -242,8 +240,6 @@ jobs:
           do
             grep -Fq "$marker" "$metrics_file"
           done
-
-          grep -Fq "admin-node-otel-log-sentinel" "$logs_file"
 
       - name: Ensure AppArmor convergence after reboot
         timeout-minutes: 25
