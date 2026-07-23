@@ -745,3 +745,24 @@ func TestTunnelDisabledSkipped(t *testing.T) {
 		t.Fatalf("message = %q", result.Message)
 	}
 }
+
+func TestReadEnvFileValueDecodesQuotedValues(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "service.env")
+	content := "PLAIN=value\nJSON=\"value with spaces\"\nSINGLE='another value'\nESCAPED=\"quote\\\"value\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := map[string]string{
+		"PLAIN":   "value",
+		"JSON":    "value with spaces",
+		"SINGLE":  "another value",
+		"ESCAPED": "quote\"value",
+		"MISSING": "",
+	}
+	for key, want := range tests {
+		if got := readEnvFileValue(path, key); got != want {
+			t.Errorf("readEnvFileValue(%q) = %q, want %q", key, got, want)
+		}
+	}
+}
