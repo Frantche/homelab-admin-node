@@ -1,20 +1,35 @@
-# Testing
-- `make build-admin-node`
-- `go test ./...`
-- `make lint`
-- `make ansible-syntax`
-- `make shellcheck`
-- `make validate`
-- `make test-oidc-contracts`
-- `make test-restic-config`
-- `make test-offline-images`
-- `make test-ci-fast`
-- `make test-ci-full`
+# Tests
 
-`make test-ci-fast` execute le scenario `fresh-branch`.
+Les controles rapides couvrent Go, Ansible, les scripts shell et les contrats
+OIDC :
 
-`make test-ci-full` execute `fresh-branch`, `upgrade-main-to-branch` et `restore-main-backup-with-branch`.
+```bash
+go test -race ./...
+make lint
+make test-oidc-contracts
+```
 
-Les tests CI appellent directement `bin/admin-node`, donc le binaire doit exister. `make build-admin-node` et le role Ansible `base` appellent tous les deux `scripts/build-admin-node.sh`.
+La CI d'integration contient deux parcours bloquants.
 
-Ce build est idempotent: sans changement dans les sources Go, il conserve `bin/admin-node` et sort `changed=false`. Si le fingerprint change, il compile un binaire temporaire, le verifie, puis remplace `bin/admin-node`.
+`bootstrap-candidate` installe le SHA candidat depuis une image Arch vierge et
+valide le bootstrap, les exemples, les API, l'OIDC navigateur, l'observabilite,
+le reboot et le durcissement.
+
+`main-to-candidate-disaster-recovery` deploie d'abord le SHA `main`, cree un
+backup Restic dans Garage, passe au SHA candidat avec la configuration `main`,
+detruit la VM, puis restaure ce backup sur une seconde VM vierge. Il tourne
+ensuite les secrets clients OIDC, les mots de passe administrateurs et les mots
+de passe PostgreSQL.
+
+Les mots de passe declares dans `keycloak_config.users` ne sont jamais tournes
+par ce parcours. Le test echoue s'ils changent.
+
+Execution locale complete :
+
+```bash
+make test-ci-full
+```
+
+Ce test necessite Docker, QEMU, `cloud-localds`, `socat`, `curl`, `jq` et un
+acces Internet. Sans KVM, les deux VM sont executees en emulation et le parcours
+peut durer plusieurs heures.

@@ -28,14 +28,15 @@ sudo ./bin/admin-node validate hardening
 sudo ./bin/admin-node validate observability
 ```
 
-CI lifecycle scenarios live under `ci/scenarios/`:
+CI is organized around operator journeys:
 
-| Scenario | Purpose |
+| Journey | Purpose |
 | --- | --- |
-| `fresh-branch` | Fresh deployment from the current branch. |
-| `upgrade-main-to-branch` | Upgrade an existing main deployment to the branch. |
-| `restore-main-backup-with-branch` | Restore a main backup using branch code. |
-| `bootstrap-user-journey` | End-to-end user journey around bootstrap and validation. |
+| `bootstrap-user-journey` | Bootstrap the candidate SHA from a fresh Arch image and validate the browser OIDC path. |
+| `main-to-candidate-disaster-recovery` | Deploy main, upgrade to the candidate, back up to Garage, destroy the source disk, restore on a fresh candidate VM, and rotate technical secrets. |
+
+The recovery journey preserves every password under `keycloak_config.users`.
+Only client, administrator, and database credentials are rotated.
 
 Run locally:
 

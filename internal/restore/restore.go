@@ -536,11 +536,28 @@ func restoreOpenBao(ctx context.Context, cfg config.Config, compose string, snap
 	if err := dockerCompose(ctx, stackCommand{Compose: compose}, "up", "-d"); err != nil {
 		return err
 	}
-	if err := waitOpenBaoInitialized(ctx); err != nil {
+	status, err := waitOpenBaoStatus(ctx)
+	if err != nil {
 		return err
 	}
-	if err := unsealOpenBao(ctx, cfg); err != nil {
-		return err
+
+	var restoreToken string
+	if status.Initialized {
+		if err := unsealOpenBao(ctx, cfg); err != nil {
+			return err
+		}
+		restoreToken, err = openBaoToken(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		if restoreToken == "" {
+			return fmt.Errorf("openbao snapshot restore requires source recovery material")
+		}
+	} else {
+		restoreToken, err = bootstrapOpenBaoForSnapshotRestore(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	if err := run(ctx, nil, "docker", "cp", snapPath, "openbao:/tmp/openbao.snap"); err != nil {
 		return err
@@ -548,18 +565,64 @@ func restoreOpenBao(ctx context.Context, cfg config.Config, compose string, snap
 	if err := run(ctx, nil, "docker", "exec", "--user", "root", "openbao", "chown", "openbao:openbao", "/tmp/openbao.snap"); err != nil {
 		return err
 	}
-	token, err := openBaoToken(ctx, cfg)
-	if err != nil {
-		return err
-	}
-	if token == "" {
-		return fmt.Errorf("openbao snapshot restore requires OPENBAO_TOKEN or secrets/openbao-root-token")
-	}
-	if err := runWithEnv(ctx, nil, []string{"VAULT_TOKEN=" + token}, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN", "openbao", "bao", "operator", "raft", "snapshot", "restore", "-force", "/tmp/openbao.snap"); err != nil {
+	if err := runWithEnv(ctx, nil, []string{"VAULT_TOKEN=" + restoreToken}, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN", "openbao", "bao", "operator", "raft", "snapshot", "restore", "-force", "/tmp/openbao.snap"); err != nil {
 		return err
 	}
 	_ = dockerCompose(ctx, stackCommand{Compose: compose}, "down")
 	return nil
+}
+
+type openBaoStatus struct {
+	Initialized bool `json:"initialized"`
+	Sealed      bool `json:"sealed"`
+}
+
+func waitOpenBaoStatus(ctx context.Context) (openBaoStatus, error) {
+	var lastOutput []byte
+	for range 30 {
+		cmd := exec.CommandContext(ctx, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "openbao", "bao", "status", "-format=json")
+		out, err := cmd.CombinedOutput()
+		lastOutput = out
+		if err == nil || (json.Valid(out) && strings.Contains(string(out), `"initialized"`)) {
+			var status openBaoStatus
+			if jsonErr := json.Unmarshal(out, &status); jsonErr == nil {
+				return status, nil
+			}
+		}
+		time.Sleep(time.Second)
+	}
+	return openBaoStatus{}, fmt.Errorf("openbao status unavailable: %s", strings.TrimSpace(string(lastOutput)))
+}
+
+func bootstrapOpenBaoForSnapshotRestore(ctx context.Context) (string, error) {
+	out, err := openBaoRecoveryOutput(ctx, "bao", "operator", "init", "-key-shares=1", "-key-threshold=1", "-format=json")
+	if err != nil {
+		return "", fmt.Errorf("initialize temporary openbao recovery cluster: %w", err)
+	}
+	var initData struct {
+		UnsealKeys []string `json:"unseal_keys_b64"`
+		RootToken  string   `json:"root_token"`
+	}
+	if err := json.Unmarshal(out, &initData); err != nil {
+		return "", fmt.Errorf("parse temporary openbao initialization: %w", err)
+	}
+	if len(initData.UnsealKeys) != 1 || initData.RootToken == "" {
+		return "", fmt.Errorf("temporary openbao initialization returned incomplete recovery material")
+	}
+	if _, err := openBaoRecoveryOutput(ctx, "bao", "operator", "unseal", initData.UnsealKeys[0]); err != nil {
+		return "", fmt.Errorf("unseal temporary openbao recovery cluster: %w", err)
+	}
+	return initData.RootToken, nil
+}
+
+func openBaoRecoveryOutput(ctx context.Context, args ...string) ([]byte, error) {
+	base := []string{"exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "openbao"}
+	cmd := exec.CommandContext(ctx, "docker", append(base, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("docker openbao recovery command failed: %w", err)
+	}
+	return out, nil
 }
 
 func openBaoToken(ctx context.Context, cfg config.Config) (string, error) {
@@ -611,22 +674,6 @@ func openBaoTokenFromSOPS(ctx context.Context, path string) (string, error) {
 		return token, nil
 	}
 	return "", nil
-}
-
-func waitOpenBaoInitialized(ctx context.Context) error {
-	var lastOutput []byte
-	for range 30 {
-		cmd := exec.CommandContext(ctx, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "openbao", "bao", "status")
-		out, err := cmd.CombinedOutput()
-		lastOutput = out
-		if err == nil || strings.Contains(string(out), "Initialized") {
-			if strings.Contains(string(out), "Initialized") {
-				return nil
-			}
-		}
-		time.Sleep(time.Second)
-	}
-	return fmt.Errorf("openbao did not become initialized: %s", strings.TrimSpace(string(lastOutput)))
 }
 
 func unsealOpenBao(ctx context.Context, cfg config.Config) error {

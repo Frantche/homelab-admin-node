@@ -233,6 +233,67 @@ exit 1
 	}
 }
 
+func TestRestoreOpenBaoBootstrapsEmptyRaftBeforeSnapshotRestore(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initMarker := filepath.Join(root, "openbao-initialized")
+	restoreMarker := filepath.Join(root, "openbao-snapshot-restored")
+	fakeDocker := filepath.Join(binDir, "docker")
+	fakeDockerScript := `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "compose" || "${1:-}" == "cp" ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"bao status -format=json"* ]]; then
+  if [[ -f "` + initMarker + `" ]]; then
+    echo '{"initialized":true,"sealed":false}'
+  else
+    echo '{"initialized":false,"sealed":true}'
+  fi
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"operator init -key-shares=1"* ]]; then
+  touch "` + initMarker + `"
+  echo '{"unseal_keys_b64":["temporary-key"],"root_token":"temporary-token"}'
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"operator unseal temporary-key"* ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"chown openbao:openbao /tmp/openbao.snap"* ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "${VAULT_TOKEN:-}" == "temporary-token" && "$*" == *"snapshot restore"* ]]; then
+  touch "` + restoreMarker + `"
+  exit 0
+fi
+echo unexpected docker "$@" >&2
+exit 1
+`
+	if err := os.WriteFile(fakeDocker, []byte(fakeDockerScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("OPENBAO_TOKEN", "")
+
+	snapPath := filepath.Join(root, "openbao.snap")
+	if err := os.WriteFile(snapPath, []byte("snapshot"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := restoreOpenBao(context.Background(), config.Config{AdminRoot: root, RepoRoot: filepath.Join(root, "repo")}, filepath.Join(root, "compose.yaml"), snapPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(restoreMarker); err != nil {
+		t.Fatal("snapshot restore did not use the temporary root token")
+	}
+}
+
 func TestFixOpenBaoDataPermissionsSetsRootMode(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "data/openbao")
