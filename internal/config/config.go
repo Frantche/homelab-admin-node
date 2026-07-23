@@ -12,6 +12,9 @@ const (
 	DefaultRestoreIDFile  = "/etc/admin-node/restore-id"
 	DefaultBackupRoot     = "/srv/admin/backups/local"
 	DefaultBackupEnvFile  = "/srv/admin/env/backup.env"
+	DefaultOperationLock  = "/run/admin-node-operation.lock"
+	DefaultGiteaStackPath = "/srv/admin/data/gitea-stack"
+	DefaultSnapshotRoot   = "/srv/admin/backups/snapshots"
 	DefaultAdminNodeLANIP = "192.168.1.10"
 	DefaultKeycloakDomain = "keycloak.example.com"
 	DefaultHarborDomain   = "harbor.example.com"
@@ -27,6 +30,12 @@ type Config struct {
 	RestoreIDFile             string
 	BackupRoot                string
 	BackupEnvFile             string
+	OperationLock             string
+	GiteaStackPath            string
+	SnapshotRoot              string
+	RequireBtrfsHotBackup     bool
+	RequireHarborReadOnly     bool
+	LocalBackupRetention      int
 	AdminNodeLANIP            string
 	KeycloakDomain            string
 	HarborDomain              string
@@ -51,6 +60,12 @@ func FromEnv() Config {
 		RestoreIDFile:             getenv("ADMIN_RESTORE_ID_FILE", DefaultRestoreIDFile),
 		BackupRoot:                getenv("ADMIN_BACKUP_ROOT", DefaultBackupRoot),
 		BackupEnvFile:             getenv("RESTIC_BACKUP_ENV_FILE", DefaultBackupEnvFile),
+		OperationLock:             getenv("ADMIN_OPERATION_LOCK", DefaultOperationLock),
+		GiteaStackPath:            getenv("GITEA_STACK_PATH", DefaultGiteaStackPath),
+		SnapshotRoot:              getenv("ADMIN_SNAPSHOT_ROOT", DefaultSnapshotRoot),
+		RequireBtrfsHotBackup:     getenvBool("BACKUP_REQUIRE_BTRFS_HOT", false),
+		RequireHarborReadOnly:     getenvBool("BACKUP_REQUIRE_HARBOR_READ_ONLY", false),
+		LocalBackupRetention:      getenvInt("BACKUP_LOCAL_RETENTION", 3),
 		AdminNodeLANIP:            getenv("ADMIN_NODE_LAN_IP", DefaultAdminNodeLANIP),
 		KeycloakDomain:            getenv("KEYCLOAK_DOMAIN", DefaultKeycloakDomain),
 		HarborDomain:              getenv("HARBOR_DOMAIN", DefaultHarborDomain),
@@ -66,6 +81,18 @@ func FromEnv() Config {
 		CISkipPublicURLValidation: getenvBool("CI_SKIP_PUBLIC_URL_VALIDATION", false),
 		ValidateMockAll:           getenvBool("ADMIN_NODE_VALIDATE_MOCK_ALL", false),
 	}
+}
+
+func getenvInt(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 1 {
+		return fallback
+	}
+	return parsed
 }
 
 func getenv(key, fallback string) string {

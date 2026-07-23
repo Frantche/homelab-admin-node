@@ -1,6 +1,26 @@
 # Backup
 
-`bin/admin-node backup run` cree une sauvegarde locale sous `/srv/admin/backups/local`, puis exécute les sauvegardes restic depuis le même binaire.
+`bin/admin-node backup run` cree un artefact V2 verifie sous `/srv/admin/backups/local`, puis envoie uniquement cet artefact immuable vers Restic.
+
+Le mode `normal` est obligatoire. Un verrou commun empeche tout chevauchement avec un converge ou une restauration. Les repertoires partiels ne sont jamais publies et les fichiers locaux utilisent les modes `0700`/`0600`.
+
+## Coherence a chaud
+
+- Gitea et PostgreSQL vivent dans le meme sous-volume Btrfs `data/gitea-stack`. Un snapshot atomique est pris sans arreter Gitea ni bloquer les ecritures. Le resultat est coherent comme apres un crash et PostgreSQL rejoue son WAL au redemarrage.
+- Un `pg_dump` Gitea en ligne est aussi conserve pour les migrations de version et recuperations logiques.
+- Harbor reste disponible en lecture et passe temporairement en lecture seule via son API pendant le dump et le snapshot.
+- Keycloak utilise un dump PostgreSQL transactionnel en ligne.
+- OpenBao utilise un snapshot Raft en ligne avec un token limite a cette operation.
+
+La copie, le calcul des SHA-256 et les transferts distants sont executes depuis les snapshots, hors des volumes actifs.
+
+## Verification
+
+```bash
+bin/admin-node backup verify --id 20260722-120000
+```
+
+Le restore standard refuse les sauvegardes V1, les manifestes incomplets et toute divergence de checksum.
 
 Ansible construit `bin/admin-node` pendant le converge. En execution manuelle depuis le depot, lancer `make build-admin-node` si le binaire est absent.
 

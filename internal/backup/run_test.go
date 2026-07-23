@@ -145,7 +145,7 @@ RESTIC_DEFAULT_FORGET_ARGS="--keep-last 2 --prune"
 	if info.ID != "20260625-120000" {
 		t.Fatalf("ID = %q", info.ID)
 	}
-	for _, name := range []string{"keycloak.dump", "gitea.dump", "harbor.dump", "openbao.snap", "stacks", "env", "gitea-data", "offline-images.tar", ManifestName} {
+	for _, name := range []string{"keycloak.dump", "gitea.dump", "harbor.dump", "openbao.snap", "gitea-data", "offline-images.tar", ManifestName} {
 		if !fileExists(filepath.Join(info.Path, name)) && !dirExists(filepath.Join(info.Path, name)) {
 			t.Fatalf("expected %s in backup", name)
 		}
@@ -184,6 +184,14 @@ func TestRotateLocalKeepsNewest(t *testing.T) {
 	}
 }
 
+func TestDirectoryContentsPathPreservesDotSuffix(t *testing.T) {
+	got := directoryContentsPath(filepath.Join("tmp", "snapshot"))
+	want := filepath.Join("tmp", "snapshot") + string(os.PathSeparator) + "."
+	if got != want {
+		t.Fatalf("directoryContentsPath() = %q, want %q", got, want)
+	}
+}
+
 func TestWriteManifestFromRunOptionsTime(t *testing.T) {
 	dir := t.TempDir()
 	createdAt := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
@@ -196,5 +204,26 @@ func TestWriteManifestFromRunOptionsTime(t *testing.T) {
 	}
 	if !ok || !manifest.CreatedAt.Equal(createdAt) {
 		t.Fatalf("manifest = %#v ok=%t", manifest, ok)
+	}
+}
+
+func TestVerifyRejectsTamperedBackup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "payload")
+	if err := os.WriteFile(path, []byte("before"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files, err := BuildManifestFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteManifest(dir, Manifest{Version: ManifestVersion, ID: "20260625-120000", Complete: true, Files: files}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("after"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(dir); err == nil {
+		t.Fatal("expected checksum failure")
 	}
 }

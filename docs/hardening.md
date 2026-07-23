@@ -20,7 +20,11 @@ Le hardening est appliqué par Ansible sur la VM Arch `admin-01`. Il reste compa
 - `443/tcp`: entrée Traefik pour Keycloak, OpenBao, Harbor, Gitea et dashboard.
 - `127.0.0.1:1514/tcp`: syslog local Harbor, non exposé hors loopback.
 
-Aucun autre port public ne doit être exposé directement par les stacks. Les services applicatifs passent par Traefik ou par le réseau Docker `admin-net`.
+Aucun autre port public ne doit etre expose directement par les stacks. Les frontends passent par `admin-edge`; les bases, Harbor et les API Docker utilisent des reseaux internes distincts. Traefik et OTel accedent a Docker par des proxies en lecture seule, jamais par un montage direct du socket.
+
+Le mode `locked` arrete toutes les stacks et les timers de sauvegarde. Les unites systemd verifient le mode avant chaque demarrage, ce qui conserve le verrouillage apres un reboot.
+
+Une exception `tls.verify: false` exige `reason` et `expires_at`. Elle est journalisee a chaque converge, exportee par OTel lorsqu'il est actif et devient bloquante apres expiration.
 
 ## Variables
 

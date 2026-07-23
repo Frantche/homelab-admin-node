@@ -1,8 +1,8 @@
 services:
   openbao:
-    image: openbao/openbao:2.6.1
+    image: openbao/openbao:2.6.1@sha256:15e90b578c970ae57b596ed51295380cd54f93860fe36758f05b455d71aae0e0
     container_name: openbao
-    restart: unless-stopped
+    restart: "no"
     cap_add:
       - IPC_LOCK
 {% if (hardening.apparmor.enabled | default(true) | bool) and (admin_apparmor_runtime_active | default(false) | bool) and ((hardening.apparmor.profiles | default({})).openbao | default(true) | bool) %}
@@ -24,14 +24,14 @@ services:
       start_period: 10s
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=admin-net"
+      - "traefik.docker.network=admin-edge"
       - "traefik.http.routers.openbao.rule=Host(`{{ service_domains.openbao }}`)"
       - "traefik.http.routers.openbao.entrypoints=websecure"
       - "traefik.http.routers.openbao.tls=true"
       - "traefik.http.services.openbao.loadbalancer.server.port=8200"
     networks:
-      - admin-net
+      - admin-edge
 
 networks:
-  admin-net:
+  admin-edge:
     external: true

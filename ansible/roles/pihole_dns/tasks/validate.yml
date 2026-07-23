@@ -15,6 +15,6 @@
 - name: Assert DNS records resolve to expected IP
   ansible.builtin.assert:
     that:
-      - item.item.ip in item.stdout
+      - item.item.ip in (item.stdout_lines | map('split') | map('first') | list)
     fail_msg: "DNS record {{ item.item.name }} does not resolve to {{ item.item.ip }}"
   loop: "{{ dns_results.results }}"

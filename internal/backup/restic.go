@@ -21,6 +21,7 @@ type resticConfig struct {
 	Repository         string
 	Password           string
 	RepoValues         map[string]map[string]string
+	RequireRemote      bool
 }
 
 const defaultResticCacheHome = "/var/cache/admin-node/restic"
@@ -92,6 +93,7 @@ func loadResticConfig(path string) (resticConfig, error) {
 	cfg.InitRepositories = parseBool(values["RESTIC_INIT_REPOSITORIES"], false)
 	cfg.DefaultForgetArgs = values["RESTIC_DEFAULT_FORGET_ARGS"]
 	cfg.RequireSecureRepos = parseBool(values["RESTIC_REQUIRE_SECURE_REPOSITORIES"], true)
+	cfg.RequireRemote = parseBool(values["BACKUP_REQUIRE_REMOTE_REPOSITORY"], false)
 	cfg.BackupPaths = fields(values["RESTIC_BACKUP_PATHS"])
 	cfg.Repository = values["RESTIC_REPOSITORY"]
 	cfg.Password = values["RESTIC_PASSWORD"]
@@ -105,7 +107,20 @@ func loadResticConfig(path string) (resticConfig, error) {
 		}
 		cfg.RepoValues[id][prefix] = value
 	}
+	if cfg.RequireRemote && !hasRemoteRepository(cfg) {
+		return cfg, fmt.Errorf("at least one non-local restic repository is required")
+	}
 	return cfg, nil
+}
+
+func hasRemoteRepository(cfg resticConfig) bool {
+	for _, id := range cfg.Repositories {
+		repo := cfg.RepoValues[sanitizeRepoID(id)]["RESTIC_REPOSITORY"]
+		if repo != "" && !strings.HasPrefix(repo, "/") && !strings.HasPrefix(repo, "file:") {
+			return true
+		}
+	}
+	return cfg.Repository != "" && !strings.HasPrefix(cfg.Repository, "/") && !strings.HasPrefix(cfg.Repository, "file:")
 }
 
 func parseEnvFile(path string) (map[string]string, error) {
@@ -192,7 +207,11 @@ func runResticRepo(ctx context.Context, cfg resticConfig, id string) error {
 		return err
 	}
 	fmt.Printf("[restic] backing up to repository '%s'\n", id)
-	if err := restic(ctx, env, append(append(options, "backup"), cfg.BackupPaths...)...); err != nil {
+	backupArgs := append(append([]string{}, options...), "backup", "--tag", "admin-node-v2")
+	if backupID := backupIDFromPaths(cfg.BackupPaths); backupID != "" {
+		backupArgs = append(backupArgs, "--tag", "backup-id:"+backupID)
+	}
+	if err := restic(ctx, env, append(backupArgs, cfg.BackupPaths...)...); err != nil {
 		return err
 	}
 	forgetArgs := values["RESTIC_FORGET_ARGS"]
@@ -200,6 +219,61 @@ func runResticRepo(ctx context.Context, cfg resticConfig, id string) error {
 		forgetArgs = cfg.DefaultForgetArgs
 	}
 	return forgetRestic(ctx, env, options, forgetArgs)
+}
+
+func backupIDFromPaths(paths []string) string {
+	if len(paths) != 1 {
+		return ""
+	}
+	id := filepath.Base(filepath.Clean(paths[0]))
+	if ValidID(id) {
+		return id
+	}
+	return ""
+}
+
+func RestoreFromRestic(ctx context.Context, envFile, repositoryID, backupRoot, id string) error {
+	if !ValidID(id) {
+		return fmt.Errorf("a valid explicit backup id is required for remote restore")
+	}
+	cfg, err := loadResticConfig(envFile)
+	if err != nil {
+		return err
+	}
+	values := cfg.RepoValues[sanitizeRepoID(repositoryID)]
+	if values == nil {
+		return fmt.Errorf("unknown restic repository %q", repositoryID)
+	}
+	repo, password := values["RESTIC_REPOSITORY"], values["RESTIC_PASSWORD"]
+	if repo == "" || password == "" {
+		return fmt.Errorf("incomplete restic repository %q", repositoryID)
+	}
+	if err := validateSecureRepository(repo, cfg.RequireSecureRepos); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(backupRoot, 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.MkdirTemp(backupRoot, ".restic-restore-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	env := repoEnv(values, repo, password)
+	options := fields(values["RESTIC_OPTIONS"])
+	args := append(append([]string{}, options...), "restore", "latest", "--tag", "backup-id:"+id, "--target", tmp)
+	if err := restic(ctx, env, args...); err != nil {
+		return err
+	}
+	restored := filepath.Join(tmp, strings.TrimPrefix(filepath.Clean(filepath.Join(backupRoot, id)), string(os.PathSeparator)))
+	if _, err := Verify(restored); err != nil {
+		return fmt.Errorf("verify remote backup: %w", err)
+	}
+	target := filepath.Join(backupRoot, id)
+	if _, err := os.Stat(target); err == nil {
+		return fmt.Errorf("backup already exists: %s", id)
+	}
+	return os.Rename(restored, target)
 }
 
 func runResticLegacy(ctx context.Context, cfg resticConfig) error {

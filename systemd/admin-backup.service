@@ -1,8 +1,10 @@
 [Unit]
 Description=Admin backup job
 After=network-online.target
+ConditionPathExists=/etc/admin-node/mode
 
 [Service]
 Type=oneshot
 EnvironmentFile=-/srv/admin/env/backup.env
+ExecCondition=/opt/homelab-admin-node/bin/admin-node mode check --allow normal
 ExecStart=/opt/homelab-admin-node/bin/admin-node backup run

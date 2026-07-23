@@ -1,7 +1,23 @@
 # Restore runbook
+
+Les restaurations exigent le mode `restore` et un artefact V2 valide. Un echec place l'hote en `restore_failed`, garde les stacks arretees et ne relance pas les timers.
+
+```bash
+sudo bin/admin-node mode set restore
+sudo bin/admin-node restore run --id 20260722-120000
+```
+
+Pour recuperer un artefact absent depuis Restic :
+
+```bash
+sudo bin/admin-node mode set restore
+sudo bin/admin-node restore run --repository offsite --id 20260722-120000
+```
+
+Gitea restaure en priorite le snapshot physique coherent avec la version PostgreSQL enregistree. Le dump logique reste une voie de migration, pas le point de restauration par defaut.
 1. `bin/admin-node mode set restore`
 2. Optionnel: définir `/etc/admin-node/restore-id` avec `latest` ou un ID de backup.
-3. Lancer `bin/admin-node restore run --id latest`.
+3. Lancer `bin/admin-node restore run` pour utiliser ce fichier, ou `bin/admin-node restore run --id <backup-id>` pour le surcharger.
 4. Vérifier passage auto vers `normal` sinon `restore_failed`.
 5. Lancer `bin/admin-node validate hardening` pour confirmer les contrôles de durcissement principaux après restauration.
 

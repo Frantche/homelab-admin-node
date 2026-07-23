@@ -505,7 +505,7 @@ func TestObservabilityFailsWhenMetricContentIsMissing(t *testing.T) {
 	}
 }
 
-func TestObservabilityFailsWhenLogContentIsMissing(t *testing.T) {
+func TestObservabilityDoesNotRequireDockerLogSocket(t *testing.T) {
 	mockDir := t.TempDir()
 	t.Setenv("CI_OTEL_MOCK_STATE_DIR", mockDir)
 	writeMockPayload(t, mockDir, "metrics.received", `"key":"service.name","value":{"stringValue":"gitea"} "key":"service.name","value":{"stringValue":"harbor-core"} "key":"service.name","value":{"stringValue":"harbor-exporter"} "key":"service.name","value":{"stringValue":"openbao"} "key":"service.name","value":{"stringValue":"traefik"}`)
@@ -515,11 +515,8 @@ func TestObservabilityFailsWhenLogContentIsMissing(t *testing.T) {
 	cancel()
 	v := Validator{Runner: observabilityRunner{}}
 	result := v.Observability(ctx)
-	if result.Status != StatusFail {
-		t.Fatalf("status = %s, want %s", result.Status, StatusFail)
-	}
-	if !strings.Contains(result.Message, "logs content: admin-node-otel-log-sentinel") {
-		t.Fatalf("message = %q, want missing sentinel log content", result.Message)
+	if result.Status != StatusOK {
+		t.Fatalf("status = %s, want %s", result.Status, StatusOK)
 	}
 }
 

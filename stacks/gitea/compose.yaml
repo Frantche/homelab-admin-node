@@ -1,8 +1,8 @@
 services:
   gitea-db:
-    image: pgautoupgrade/pgautoupgrade:18-trixie
+    image: pgautoupgrade/pgautoupgrade:18-trixie@sha256:b3b850e851029dc949d9b3ae2c032327d9f28dd346e662229cecb2f56f00ee85
     container_name: gitea-db
-    restart: unless-stopped
+    restart: "no"
     command:
       - postgres
       - -c
@@ -16,19 +16,19 @@ services:
       POSTGRES_USER: gitea
       POSTGRES_PASSWORD: ${GITEA_DB_PASSWORD}
     volumes:
-      - /srv/admin/data/gitea-postgres:/var/lib/postgresql
+      - /srv/admin/data/gitea-stack/postgres:/var/lib/postgresql
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "gitea"]
       interval: 5s
       timeout: 3s
       retries: 30
     networks:
-      - admin-net
+      - gitea-db
 
   gitea:
-    image: docker.gitea.com/gitea:1.27.0
+    image: docker.gitea.com/gitea:1.27.0@sha256:7b58541345f52eda63f11f3ec3d575193e91a0934b7841a66a7ee245a66f764a
     container_name: gitea
-    restart: unless-stopped
+    restart: "no"
     environment:
       USER_UID: "1000"
       USER_GID: "1000"
@@ -59,7 +59,7 @@ services:
       SSL_CERT_FILE: /etc/ssl/certs/admin-node-ca.pem
 {% endif %}
     volumes:
-      - /srv/admin/data/gitea:/data
+      - /srv/admin/data/gitea-stack/gitea:/data
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
 {% if traefik_local_ca_enabled | default(ci_mode | default(false)) | bool %}
@@ -76,14 +76,17 @@ services:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=admin-net"
+      - "traefik.docker.network=admin-edge"
       - "traefik.http.routers.gitea.rule=Host(`{{ service_domains.gitea | default('git.example.com') }}`)"
       - "traefik.http.routers.gitea.entrypoints=websecure"
       - "traefik.http.routers.gitea.tls=true"
       - "traefik.http.services.gitea.loadbalancer.server.port=3000"
     networks:
-      - admin-net
+      - admin-edge
+      - gitea-db
 
 networks:
-  admin-net:
+  admin-edge:
+    external: true
+  gitea-db:
     external: true

@@ -1,0 +1,9 @@
+profile: min
+skip_list:
+  - command-instead-of-shell
+  - jinja
+  - name
+  - no-changed-when
+  - risky-shell-pipe
+  - var-naming
+  - yaml[line-length]

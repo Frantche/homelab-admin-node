@@ -93,7 +93,9 @@
       - --config
       - /data/gitea/conf/app.ini
   changed_when: false
-  when: not (gitea_config_test_mode | default(false))
+  when:
+    - not (gitea_config_test_mode | default(false))
+    - gitea.rotate_admin_password | default(false) | bool
   no_log: true
 
 - name: Check Gitea OAuth source list

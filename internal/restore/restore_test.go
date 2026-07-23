@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Frantche/homelab-admin-node/internal/backup"
 	"github.com/Frantche/homelab-admin-node/internal/config"
@@ -26,6 +27,36 @@ func TestResolveLatest(t *testing.T) {
 	}
 	if !ok || info.ID != "20260625-120000" {
 		t.Fatalf("info=%#v ok=%t", info, ok)
+	}
+}
+
+func TestResolveRejectsPathTraversal(t *testing.T) {
+	if _, _, err := Resolve(t.TempDir(), "../outside"); err == nil {
+		t.Fatal("expected invalid backup id")
+	}
+}
+
+func TestSnapshotArtifactSourceSupportsNormalizedAndLegacyLayouts(t *testing.T) {
+	root := t.TempDir()
+	legacy := filepath.Join(root, ".gitea-backup")
+	for _, name := range []string{"gitea", "postgres"} {
+		if err := os.MkdirAll(filepath.Join(legacy, name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := snapshotArtifactSource(root, ".gitea-", "gitea", "postgres")
+	if err != nil || got != legacy {
+		t.Fatalf("legacy source = %q, %v", got, err)
+	}
+
+	for _, name := range []string{"gitea", "postgres"} {
+		if err := os.MkdirAll(filepath.Join(root, name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err = snapshotArtifactSource(root, ".gitea-", "gitea", "postgres")
+	if err != nil || got != root {
+		t.Fatalf("normalized source = %q, %v", got, err)
 	}
 }
 
@@ -53,9 +84,10 @@ func TestRunLoadsOfflineImages(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(backupDir, "offline-images.tar"), []byte("images"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	sealBackupV2(t, backupDir, "20260625-120000")
 	err := Run(context.Background(), config.Config{
 		AdminRoot:  filepath.Join(root, "admin"),
-		ModeFile:   filepath.Join(root, "mode"),
+		ModeFile:   restoreModeFile(t, root),
 		BackupRoot: backupRoot,
 	}, Options{
 		ID:       "20260625-120000",
@@ -167,7 +199,7 @@ fi
 if [[ "${1:-}" == "exec" && "$*" == *"chown openbao:openbao /tmp/openbao.snap"* ]]; then
   exit 0
 fi
-if [[ "${1:-}" == "exec" && "$*" == *"VAULT_TOKEN=file-token"* && "$*" == *"snapshot restore"* ]]; then
+if [[ "${1:-}" == "exec" && "${VAULT_TOKEN:-}" == "file-token" && "$*" == *"snapshot restore"* ]]; then
   touch "` + restoreMarker + `"
   exit 0
 fi
@@ -305,6 +337,7 @@ exit 1
 	if err := os.WriteFile(filepath.Join(backupDir, "harbor.dump"), []byte("harbor-dump"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	sealBackupV2(t, backupDir, "20260625-120000")
 	adminRoot := filepath.Join(root, "admin")
 	if err := os.MkdirAll(filepath.Join(adminRoot, "stacks/harbor"), 0o755); err != nil {
 		t.Fatal(err)
@@ -321,7 +354,7 @@ exit 1
 
 	err := Run(context.Background(), config.Config{
 		AdminRoot:  adminRoot,
-		ModeFile:   filepath.Join(root, "mode"),
+		ModeFile:   restoreModeFile(t, root),
 		BackupRoot: backupRoot,
 	}, Options{
 		ID:       "20260625-120000",
@@ -390,6 +423,7 @@ exit 1
 	if err := os.WriteFile(filepath.Join(backupDir, "keycloak.dump"), []byte("keycloak-dump"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	sealBackupV2(t, backupDir, "20260625-120000")
 	adminRoot := filepath.Join(root, "admin")
 	if err := os.MkdirAll(filepath.Join(adminRoot, "stacks/keycloak"), 0o755); err != nil {
 		t.Fatal(err)
@@ -404,6 +438,7 @@ exit 1
 		t.Fatal(err)
 	}
 	modeFile := filepath.Join(root, "mode")
+	restoreModeFileAt(t, modeFile)
 
 	err := Run(context.Background(), config.Config{
 		AdminRoot:  adminRoot,
@@ -497,6 +532,7 @@ func TestRunRestoresGiteaDataAndSetsNormalMode(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(backupDir, "gitea-data/app.ini"), []byte("restored\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	sealBackupV2(t, backupDir, "20260625-120000")
 	adminRoot := filepath.Join(root, "admin")
 	if err := os.MkdirAll(filepath.Join(adminRoot, "data/gitea"), 0o755); err != nil {
 		t.Fatal(err)
@@ -512,6 +548,7 @@ func TestRunRestoresGiteaDataAndSetsNormalMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	modeFile := filepath.Join(root, "mode")
+	restoreModeFileAt(t, modeFile)
 	validateCalled := false
 
 	err = Run(context.Background(), config.Config{
@@ -560,9 +597,35 @@ func TestRunRestoresGiteaDataAndSetsNormalMode(t *testing.T) {
 	}
 }
 
+func sealBackupV2(t *testing.T, dir, id string) {
+	t.Helper()
+	files, err := backup.BuildManifestFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = backup.WriteManifest(dir, backup.Manifest{Version: backup.ManifestVersion, ID: id, CreatedAt: time.Now().UTC(), Complete: true, Consistency: "test", Files: files})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func restoreModeFile(t *testing.T, root string) string {
+	t.Helper()
+	return restoreModeFileAt(t, filepath.Join(root, "mode"))
+}
+
+func restoreModeFileAt(t *testing.T, path string) string {
+	t.Helper()
+	if err := os.WriteFile(path, []byte("restore\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func TestRunMissingBackupSetsRestoreFailed(t *testing.T) {
 	root := t.TempDir()
 	modeFile := filepath.Join(root, "mode")
+	restoreModeFileAt(t, modeFile)
 	err := Run(context.Background(), config.Config{
 		AdminRoot:  filepath.Join(root, "admin"),
 		ModeFile:   modeFile,

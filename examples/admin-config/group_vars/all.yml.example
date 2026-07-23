@@ -12,12 +12,9 @@ storage_isolation:
     - name: openbao
       path: "{{ admin_node_root }}/data/openbao"
       size: "1G"
-    - name: gitea
-      path: "{{ admin_node_root }}/data/gitea"
-      size: "3G"
-    - name: gitea-postgres
-      path: "{{ admin_node_root }}/data/gitea-postgres"
-      size: "3G"
+    - name: gitea-stack
+      path: "{{ admin_node_root }}/data/gitea-stack"
+      size: "6G"
     - name: harbor
       path: "{{ admin_node_root }}/data/harbor"
       size: "8G"

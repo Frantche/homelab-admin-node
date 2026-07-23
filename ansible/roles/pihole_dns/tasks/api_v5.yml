@@ -8,8 +8,12 @@
     validate_certs: "{{ pihole_api_validate_certs }}"
   loop: "{{ pihole_effective_dns_records }}"
   changed_when: pihole_v5_dns_record.status == 200
-  failed_when:
-    - pihole_v5_dns_record.status not in [200, 400]
-    - "'already' not in (pihole_v5_dns_record.content | default('') | lower)"
+  failed_when: >-
+    (pihole_v5_dns_record.status not in [200, 400])
+    or
+    (
+      pihole_v5_dns_record.status == 400
+      and 'already' not in (pihole_v5_dns_record.content | default('') | lower)
+    )
   register: pihole_v5_dns_record
   no_log: true

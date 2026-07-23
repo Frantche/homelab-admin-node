@@ -116,7 +116,6 @@
     status_code: 200
   register: harbor_current_configuration
   when:
-    - harbor_config.oidc.enabled | default(false)
     - not (harbor_config_test_mode | default(false))
   no_log: true
 
@@ -133,6 +132,19 @@
   when:
     - harbor_config.oidc.enabled | default(false)
     - not (harbor_config_test_mode | default(false))
+  no_log: true
+
+- name: Normalize Harbor read-only state
+  ansible.builtin.set_fact:
+    harbor_current_read_only: >-
+      {{
+        (
+          harbor_current_configuration.json.read_only.value
+          if harbor_current_configuration.json.read_only is mapping
+          else harbor_current_configuration.json.read_only
+        ) | default(false, true) | bool
+      }}
+  when: not (harbor_config_test_mode | default(false))
   no_log: true
 
 - name: Fail when Harbor auth mode cannot be safely migrated to OIDC
@@ -207,6 +219,23 @@
   when:
     - harbor_config.oidc.enabled | default(false)
     - not (harbor_config_test_mode | default(false))
+  no_log: true
+
+- name: Ensure Harbor leaves backup read-only mode
+  ansible.builtin.uri:
+    url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/configurations"
+    method: PUT
+    user: admin
+    password: "{{ harbor_runtime.admin_password | default(harbor.admin_password | mandatory('harbor.admin_password is required')) }}"
+    force_basic_auth: true
+    validate_certs: "{{ harbor_api_validate_certs }}"
+    body_format: json
+    body:
+      read_only: false
+    status_code: 200
+  when:
+    - not (harbor_config_test_mode | default(false))
+    - harbor_current_read_only | default(false) | bool
   no_log: true
 
 - name: Ensure Harbor registry mirrors are declared

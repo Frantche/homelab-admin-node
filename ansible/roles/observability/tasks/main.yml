@@ -45,3 +45,8 @@
   retries: 5
   delay: 10
   changed_when: true
+
+- name: Enable observability stack at boot
+  ansible.builtin.systemd:
+    name: admin-stack@observability.service
+    enabled: true

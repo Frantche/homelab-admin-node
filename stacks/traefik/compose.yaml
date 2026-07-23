@@ -1,8 +1,27 @@
 services:
+  traefik-socket-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:0.3.0@sha256:2f92c6e85a1199b3403c99d7439695898a162c69689b11130450ffadb352f0a0
+    container_name: traefik-socket-proxy
+    restart: "no"
+    environment:
+      CONTAINERS: "1"
+      EVENTS: "1"
+      NETWORKS: "1"
+      SERVICES: "1"
+      TASKS: "1"
+      POST: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik-docker
+
   traefik:
-    image: traefik:v3.7
+    image: traefik:v3.7@sha256:54c598430bee8479c93179940c37f793cbe1e9e0405036b67ed11ba2f1fa252d
     container_name: traefik
-    restart: unless-stopped
+    init: true
+    restart: "no"
     command:
       - --configFile=/etc/traefik/traefik.yml
 {% if (hardening.apparmor.enabled | default(true) | bool) and (admin_apparmor_runtime_active | default(false) | bool) and ((hardening.apparmor.profiles | default({})).traefik | default(true) | bool) %}
@@ -16,7 +35,6 @@ services:
       - ./dynamic:/etc/traefik/dynamic:ro
       - /srv/admin/data/traefik/letsencrypt:/letsencrypt
       - /srv/admin/certs:/certs:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     env_file: /srv/admin/env/traefik.env
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
@@ -25,22 +43,27 @@ services:
       retries: 30
       start_period: 10s
     labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=admin-net"
+      - "traefik.enable={{ traefik.dashboard_enabled | default(false) | bool | lower }}"
+{% if traefik.dashboard_enabled | default(false) | bool %}
+      - "traefik.docker.network=admin-edge"
       - "traefik.http.routers.dashboard.rule=Host(`{{ service_domains.traefik }}`)"
       - "traefik.http.routers.dashboard.entrypoints=websecure"
       - "traefik.http.routers.dashboard.tls=true"
       - "traefik.http.routers.dashboard.service=api@internal"
       - "traefik.http.routers.dashboard.middlewares=dashboard-auth@file"
+{% endif %}
     networks:
-      admin-net:
+      admin-edge:
         aliases:
           - "{{ service_domains.keycloak }}"
           - "{{ service_domains.openbao }}"
           - "{{ service_domains.harbor }}"
           - "{{ service_domains.gitea | default('git.example.com') }}"
           - "{{ service_domains.traefik }}"
+      traefik-docker:
 
 networks:
-  admin-net:
+  admin-edge:
+    external: true
+  traefik-docker:
     external: true

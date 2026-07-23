@@ -2,12 +2,14 @@
 Description=Admin stack %i
 After=docker.service
 Requires=docker.service
+ConditionPathExists=/srv/admin/stacks/%i/compose.yaml
 
 [Service]
 Type=oneshot
 RemainAfterExit=true
 WorkingDirectory=/srv/admin/stacks/%i
 EnvironmentFile=-/srv/admin/env/%i.env
+ExecCondition=/opt/homelab-admin-node/bin/admin-node mode check --allow normal,init
 ExecStart=/usr/bin/docker compose -f compose.yaml up --wait --wait-timeout 300
 ExecStop=/usr/bin/docker compose -f compose.yaml down
 

@@ -22,6 +22,7 @@ mode_file="$tmp_dir/mode"
 fake_bin="$tmp_dir/bin"
 fake_docker="$fake_bin/docker"
 fake_restic="$fake_bin/restic"
+fake_systemctl="$fake_bin/systemctl"
 repo_root="$tmp_dir/repo"
 backup_env="$tmp_dir/backup.env"
 
@@ -72,6 +73,13 @@ fi
 if [[ "\${1:-}" == "ps" && "\${2:-}" == "--format" ]]; then
   exit 0
 fi
+if [[ "\${1:-}" == "inspect" ]]; then
+  echo "true healthy"
+  exit 0
+fi
+if [[ "\${1:-}" == "exec" ]]; then
+  exit 0
+fi
 if [[ "\${1:-}" == "save" || "\${1:-}" == "load" || "\${1:-}" == "pull" || "\${1:-}" == "image" ]]; then
   exec "\$real_docker" "\$@"
 fi
@@ -90,6 +98,16 @@ exit 0
 EOF
 chmod +x "$fake_restic"
 
+cat > "$fake_systemctl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  is-active|is-enabled) exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF
+chmod +x "$fake_systemctl"
+
 echo "[offline-images] pulling $IMAGE"
 "$REAL_DOCKER" pull "$IMAGE" >/dev/null
 
@@ -98,6 +116,8 @@ ADMIN_NODE_REPO_ROOT="$repo_root" \
 ADMIN_NODE_ROOT="$admin_root" \
 ADMIN_BACKUP_ROOT="$backup_root" \
 ADMIN_MODE_FILE="$mode_file" \
+ADMIN_OPERATION_LOCK="$tmp_dir/operation.lock" \
+GITEA_STACK_PATH="$admin_root/data/gitea-stack" \
 RESTIC_BACKUP_ENV_FILE="$backup_env" \
 ADMIN_NODE_VALIDATE_MOCK_ALL=true \
   "$REPO_ROOT/bin/admin-node" backup run --include-images >/dev/null
@@ -117,11 +137,15 @@ if "$REAL_DOCKER" image inspect "$IMAGE" >/dev/null 2>&1; then
   exit 1
 fi
 
+printf 'restore\n' > "$mode_file"
+
 PATH="$fake_bin:$PATH" \
 ADMIN_NODE_REPO_ROOT="$repo_root" \
 ADMIN_NODE_ROOT="$admin_root" \
 ADMIN_BACKUP_ROOT="$backup_root" \
 ADMIN_MODE_FILE="$mode_file" \
+ADMIN_OPERATION_LOCK="$tmp_dir/operation.lock" \
+GITEA_STACK_PATH="$admin_root/data/gitea-stack" \
 RESTIC_BACKUP_ENV_FILE="$backup_env" \
 ADMIN_NODE_VALIDATE_MOCK_ALL=true \
   "$REPO_ROOT/bin/admin-node" restore run --id "$backup_id" >/dev/null

@@ -29,7 +29,8 @@ SOPSEOF
     --input-type yaml \
     --output-type yaml \
     --filename-override hosts/group_vars/secrets.sops.yaml \
-    hosts/group_vars/secrets.plain.yaml > hosts/group_vars/secrets.sops.yaml
+    hosts/group_vars/secrets.plain.yaml > hosts/group_vars/secrets.sops.yaml.tmp
+  mv hosts/group_vars/secrets.sops.yaml.tmp hosts/group_vars/secrets.sops.yaml
   rm -f hosts/group_vars/secrets.plain.yaml
   SOPS_AGE_KEY_FILE="$SOPS_AGE_KEY_FILE" sops --decrypt hosts/group_vars/secrets.sops.yaml >/tmp/bootstrap-ci-secrets-decrypted.yaml
 )

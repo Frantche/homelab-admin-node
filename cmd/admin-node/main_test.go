@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -20,6 +22,28 @@ func TestRootHelp(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Usage: admin-node") {
 		t.Fatalf("help output missing usage: %q", out.String())
+	}
+}
+
+func TestReadEnvFileDecodesQuotedValues(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "process.env")
+	content := "DOUBLE=\"pa\\\"ss$word\\\\tail\"\nSINGLE='literal $value'\nPLAIN=unchanged\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	values, err := readEnvFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := values["DOUBLE"]; got != "pa\"ss$word\\tail" {
+		t.Fatalf("DOUBLE = %q", got)
+	}
+	if got := values["SINGLE"]; got != "literal $value" {
+		t.Fatalf("SINGLE = %q", got)
+	}
+	if got := values["PLAIN"]; got != "unchanged" {
+		t.Fatalf("PLAIN = %q", got)
 	}
 }
 

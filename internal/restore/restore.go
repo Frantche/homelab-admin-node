@@ -10,25 +10,32 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/Frantche/homelab-admin-node/internal/backup"
 	"github.com/Frantche/homelab-admin-node/internal/config"
+	adminmode "github.com/Frantche/homelab-admin-node/internal/mode"
 	"github.com/Frantche/homelab-admin-node/internal/openbao"
+	"github.com/Frantche/homelab-admin-node/internal/operation"
 )
 
 type Options struct {
-	ID            string
-	Validate      func(context.Context) error
-	Out           io.Writer
-	LockFile      string
-	SystemdTimers []string
+	ID                    string
+	Validate              func(context.Context) error
+	RestoreHarborWritable func(context.Context) error
+	Out                   io.Writer
+	LockFile              string
+	SystemdTimers         []string
 }
 
 func Run(ctx context.Context, cfg config.Config, opts Options) error {
-	unlock, err := acquireLock(opts.LockFile)
+	currentMode, err := adminmode.Read(cfg.ModeFile)
+	if err != nil || currentMode != "restore" {
+		return fmt.Errorf("refusing restore unless mode is restore")
+	}
+	unlock, err := operation.Acquire(opts.LockFile)
 	if err != nil {
 		writeMode(cfg.ModeFile, "restore_failed")
 		return err
@@ -39,7 +46,12 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 		writeMode(cfg.ModeFile, "restore_failed")
 		return err
 	}
-	defer resumeTimers()
+	restoreSucceeded := false
+	defer func() {
+		if restoreSucceeded {
+			resumeTimers()
+		}
+	}()
 
 	id := opts.ID
 	if id == "" {
@@ -58,9 +70,16 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 		writeMode(cfg.ModeFile, "restore_failed")
 		return fmt.Errorf("restore source not found")
 	}
+	if _, err := backup.Verify(info.Path); err != nil {
+		writeMode(cfg.ModeFile, "restore_failed")
+		return fmt.Errorf("backup verification failed: %w", err)
+	}
 
 	set := stackSet(cfg.AdminRoot)
-	stopStacks(ctx, cfg, set)
+	if err := stopStacks(ctx, cfg, set); err != nil {
+		writeMode(cfg.ModeFile, "restore_failed")
+		return err
+	}
 	if err := fixOpenBaoDataPermissions(cfg.AdminRoot); err != nil {
 		writeMode(cfg.ModeFile, "restore_failed")
 		return err
@@ -73,7 +92,17 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 		}
 	}
 
-	if dirExists(filepath.Join(info.Path, "gitea-data")) {
+	if dirExists(filepath.Join(info.Path, "gitea-stack")) {
+		giteaSource, err := snapshotArtifactSource(filepath.Join(info.Path, "gitea-stack"), ".gitea-", "gitea", "postgres")
+		if err != nil {
+			writeMode(cfg.ModeFile, "restore_failed")
+			return fmt.Errorf("inspect gitea stack artifact: %w", err)
+		}
+		if err := replaceDirContents(giteaSource, cfg.GiteaStackPath); err != nil {
+			writeMode(cfg.ModeFile, "restore_failed")
+			return fmt.Errorf("restore gitea stack: %w", err)
+		}
+	} else if dirExists(filepath.Join(info.Path, "gitea-data")) {
 		giteaDataPath := filepath.Join(cfg.AdminRoot, "data/gitea")
 		if err := replaceDirContents(filepath.Join(info.Path, "gitea-data"), giteaDataPath); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
@@ -84,6 +113,23 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 			return err
 		}
 	}
+	if dirExists(filepath.Join(info.Path, "harbor-data")) {
+		harborRoot := filepath.Join(cfg.AdminRoot, "data/harbor")
+		for _, rel := range []string{"registry", "core", "job_logs", "trivy-adapter/reports"} {
+			source := filepath.Join(info.Path, "harbor-data", rel)
+			if dirExists(source) {
+				// Backups produced before V2 layout normalization wrapped each
+				// selected path once under its basename.
+				if nested := filepath.Join(source, filepath.Base(source)); dirExists(nested) {
+					source = nested
+				}
+				if err := replaceDirContents(source, filepath.Join(harborRoot, rel)); err != nil {
+					writeMode(cfg.ModeFile, "restore_failed")
+					return fmt.Errorf("restore harbor data %s: %w", rel, err)
+				}
+			}
+		}
+	}
 
 	if fileExists(filepath.Join(info.Path, "keycloak.dump")) {
 		if err := restorePostgres(ctx, stackCommand{Compose: set.KeycloakCompose, EnvFile: set.KeycloakEnv}, "keycloak-db", "keycloak", "keycloak", filepath.Join(info.Path, "keycloak.dump")); err != nil {
@@ -91,7 +137,7 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 			return fmt.Errorf("restore keycloak: %w", err)
 		}
 	}
-	if fileExists(filepath.Join(info.Path, "gitea.dump")) && fileExists(set.GiteaCompose) && fileExists(set.GiteaEnv) {
+	if !dirExists(filepath.Join(info.Path, "gitea-stack")) && fileExists(filepath.Join(info.Path, "gitea.dump")) && fileExists(set.GiteaCompose) && fileExists(set.GiteaEnv) {
 		if err := restorePostgres(ctx, stackCommand{Compose: set.GiteaCompose, EnvFile: set.GiteaEnv}, "gitea-db", "gitea", "gitea", filepath.Join(info.Path, "gitea.dump")); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore gitea: %w", err)
@@ -114,6 +160,12 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 		writeMode(cfg.ModeFile, "restore_failed")
 		return err
 	}
+	if fileExists(set.HarborCompose) && opts.RestoreHarborWritable != nil {
+		if err := opts.RestoreHarborWritable(ctx); err != nil {
+			writeMode(cfg.ModeFile, "restore_failed")
+			return fmt.Errorf("restore Harbor writable mode: %w", err)
+		}
+	}
 	if fileExists(set.OpenBaoCompose) {
 		if err := unsealOpenBao(ctx, cfg); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
@@ -132,14 +184,85 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 	if opts.Out != nil {
 		fmt.Fprintln(opts.Out, "Restore completed and mode set to normal")
 	}
+	restoreSucceeded = true
 	return nil
+}
+
+func RestoreHarborWritable(ctx context.Context, cfg config.Config) error {
+	user := os.Getenv("HARBOR_ADMIN_USER")
+	password := os.Getenv("HARBOR_ADMIN_PASSWORD")
+	if user == "" {
+		user = envFileValue(filepath.Join(cfg.AdminRoot, "env/harbor.env"), "HARBOR_ADMIN_USER")
+	}
+	if user == "" {
+		user = "admin"
+	}
+	if password == "" {
+		password = envFileValue(filepath.Join(cfg.AdminRoot, "env/harbor.env"), "HARBOR_ADMIN_PASSWORD")
+	}
+	if password == "" {
+		return fmt.Errorf("Harbor admin password is unavailable")
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	var lastErr error
+	for {
+		lastErr = backup.SetHarborReadOnly(waitCtx, cfg.HarborDomain, user, password, false)
+		if lastErr == nil {
+			return nil
+		}
+		if waitCtx.Err() != nil {
+			return lastErr
+		}
+		time.Sleep(3 * time.Second)
+	}
+}
+
+func envFileValue(path, key string) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		name, value, ok := strings.Cut(strings.TrimSpace(scanner.Text()), "=")
+		if !ok || strings.TrimSpace(name) != key {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+			if decoded, err := strconv.Unquote(value); err == nil {
+				return decoded
+			}
+		}
+		if len(value) >= 2 && value[0] == '\'' && value[len(value)-1] == '\'' {
+			return value[1 : len(value)-1]
+		}
+		return value
+	}
+	return ""
 }
 
 func Resolve(root, id string) (backup.Info, bool, error) {
 	if id == "latest" {
 		return backup.Latest(root)
 	}
+	if !backup.ValidID(id) {
+		return backup.Info{}, false, fmt.Errorf("invalid backup id: %q", id)
+	}
 	path := filepath.Join(root, id)
+	cleanRoot, err := filepath.Abs(root)
+	if err != nil {
+		return backup.Info{}, false, err
+	}
+	cleanPath, err := filepath.Abs(path)
+	if err != nil {
+		return backup.Info{}, false, err
+	}
+	if filepath.Dir(cleanPath) != cleanRoot {
+		return backup.Info{}, false, fmt.Errorf("backup path escapes root")
+	}
 	if !dirExists(path) {
 		return backup.Info{}, false, nil
 	}
@@ -206,7 +329,7 @@ func stackSet(adminRoot string) stacks {
 	}
 }
 
-func stopStacks(ctx context.Context, cfg config.Config, set stacks) {
+func stopStacks(ctx context.Context, cfg config.Config, set stacks) error {
 	commands := []stackCommand{
 		{set.TraefikCompose, set.TraefikEnv},
 		{set.KeycloakCompose, set.KeycloakEnv},
@@ -219,9 +342,12 @@ func stopStacks(ctx context.Context, cfg config.Config, set stacks) {
 	}
 	for _, command := range commands {
 		if fileExists(command.Compose) {
-			_ = dockerCompose(ctx, command, "down")
+			if err := dockerCompose(ctx, command, "down"); err != nil {
+				return fmt.Errorf("stop stack %s: %w", command.Compose, err)
+			}
 		}
 	}
+	return nil
 }
 
 func startStacks(ctx context.Context, cfg config.Config, set stacks) error {
@@ -248,27 +374,6 @@ func startStacks(ctx context.Context, cfg config.Config, set stacks) error {
 	return nil
 }
 
-func acquireLock(path string) (func(), error) {
-	if path == "" {
-		return func() {}, nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, err
-	}
-	lock, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
-		lock.Close()
-		return nil, err
-	}
-	return func() {
-		_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
-		_ = lock.Close()
-	}, nil
-}
-
 func suspendSystemdTimers(ctx context.Context, timers []string) (func(), error) {
 	if len(timers) == 0 {
 		return func() {}, nil
@@ -278,7 +383,9 @@ func suspendSystemdTimers(ctx context.Context, timers []string) (func(), error) 
 	}
 	var active []string
 	for _, timer := range timers {
-		if exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", timer).Run() == nil {
+		wasActive := exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", timer).Run() == nil
+		wasEnabled := exec.CommandContext(ctx, "systemctl", "is-enabled", "--quiet", timer).Run() == nil
+		if wasActive || wasEnabled {
 			active = append(active, timer)
 		}
 	}
@@ -448,7 +555,7 @@ func restoreOpenBao(ctx context.Context, cfg config.Config, compose string, snap
 	if token == "" {
 		return fmt.Errorf("openbao snapshot restore requires OPENBAO_TOKEN or secrets/openbao-root-token")
 	}
-	if err := run(ctx, nil, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN="+token, "openbao", "bao", "operator", "raft", "snapshot", "restore", "-force", "/tmp/openbao.snap"); err != nil {
+	if err := runWithEnv(ctx, nil, []string{"VAULT_TOKEN=" + token}, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN", "openbao", "bao", "operator", "raft", "snapshot", "restore", "-force", "/tmp/openbao.snap"); err != nil {
 		return err
 	}
 	_ = dockerCompose(ctx, stackCommand{Compose: compose}, "down")
@@ -460,6 +567,7 @@ func openBaoToken(ctx context.Context, cfg config.Config) (string, error) {
 		return token, nil
 	}
 	for _, path := range []string{
+		filepath.Join(cfg.AdminRoot, "env/openbao-restore-token"),
 		filepath.Join(cfg.RepoRoot, "secrets/openbao-root-token"),
 		"/opt/homelab-admin-node/secrets/openbao-root-token",
 	} {
@@ -537,7 +645,12 @@ func dockerCompose(ctx context.Context, command stackCommand, args ...string) er
 }
 
 func run(ctx context.Context, stdin io.Reader, name string, args ...string) error {
+	return runWithEnv(ctx, stdin, nil, name, args...)
+}
+
+func runWithEnv(ctx context.Context, stdin io.Reader, extraEnv []string, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = append(os.Environ(), extraEnv...)
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}
@@ -545,7 +658,7 @@ func run(ctx context.Context, stdin io.Reader, name string, args ...string) erro
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(output.String()))
+		return fmt.Errorf("%s failed: %w: %s", name, err, strings.TrimSpace(output.String()))
 	}
 	return nil
 }
@@ -559,10 +672,7 @@ func restoreIDFromFile(path string) string {
 }
 
 func writeMode(path string, mode string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(mode+"\n"), 0o644)
+	return adminmode.Set(path, mode)
 }
 
 func inspectBackup(path, id string) (backup.Info, error) {
@@ -576,29 +686,6 @@ func inspectBackup(path, id string) (backup.Info, error) {
 		}
 	}
 	return backup.Info{ID: id, Path: path}, nil
-}
-
-func copyPath(src, dst string) error {
-	info, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	if info.IsDir() {
-		if err := os.MkdirAll(dst, info.Mode()); err != nil {
-			return err
-		}
-		entries, err := os.ReadDir(src)
-		if err != nil {
-			return err
-		}
-		for _, entry := range entries {
-			if err := copyPath(filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name())); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	return copyFile(src, dst, info.Mode())
 }
 
 func replaceDirContents(src, dst string) error {
@@ -626,16 +713,49 @@ func replaceDirContents(src, dst string) error {
 		}
 	}
 
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if err := copyPath(filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name())); err != nil {
-			return err
-		}
+	// Archive mode preserves ownership, xattrs, ACLs, links and timestamps. On
+	// Btrfs, reflinks also keep the application outage independent of data size.
+	cmd := exec.Command("cp", "--archive", "--reflink=auto", "--", filepath.Clean(src)+"/.", dst+"/")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("copy restored data: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+func snapshotArtifactSource(root, legacyPrefix string, expected ...string) (string, error) {
+	valid := func(path string) bool {
+		for _, name := range expected {
+			if !dirExists(filepath.Join(path, name)) {
+				return false
+			}
+		}
+		return true
+	}
+	if valid(root) {
+		return root, nil
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return "", err
+	}
+	var candidate string
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), legacyPrefix) {
+			continue
+		}
+		path := filepath.Join(root, entry.Name())
+		if !valid(path) {
+			continue
+		}
+		if candidate != "" {
+			return "", fmt.Errorf("multiple legacy snapshot payloads found")
+		}
+		candidate = path
+	}
+	if candidate == "" {
+		return "", fmt.Errorf("expected directories are missing")
+	}
+	return candidate, nil
 }
 
 func clearDir(path string) error {
@@ -649,24 +769,6 @@ func clearDir(path string) error {
 		}
 	}
 	return nil
-}
-
-func copyFile(src, dst string, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	_, err = io.Copy(out, in)
-	return err
 }
 
 func fileExists(path string) bool {

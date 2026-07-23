@@ -33,7 +33,24 @@ table inet admin_filter {
   }
 
   chain forward {
-    type filter hook forward priority filter; policy accept;
+    type filter hook forward priority filter; policy drop;
+
+    ct state established,related accept
+    ct state invalid drop
+
+    iifname "br-admin-edge" oifname "br-admin-edge" accept
+    iifname "br-gitea-db" oifname "br-gitea-db" accept
+    iifname "br-keycloak-db" oifname "br-keycloak-db" accept
+    iifname "br-harbor" oifname "br-harbor" accept
+    ip saddr 127.0.0.1 oifname "br-hbr-host" tcp dport 10514 accept
+    iifname "br-hbr-egress" oifname != "br-hbr-egress" accept
+    iifname "br-traefik-api" oifname "br-traefik-api" accept
+    iifname "br-otel-api" oifname "br-otel-api" accept
+
+    iifname "br-admin-edge" oifname != "br-admin-edge" accept
+    iifname != "br-admin-edge" oifname "br-admin-edge" tcp dport 443 accept
+
+    counter drop
   }
 
   chain output {

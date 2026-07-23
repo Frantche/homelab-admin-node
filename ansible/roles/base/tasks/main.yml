@@ -1,18 +1,24 @@
 ---
+- name: Ensure admin repository operator group exists
+  ansible.builtin.group:
+    name: "{{ admin_node_repo_group }}"
+    state: present
+    system: true
+
 - name: Ensure base directories
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: "{{ item.path }}"
     state: directory
-    owner: root
-    group: root
-    mode: "0755"
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.group | default('root') }}"
+    mode: "{{ item.mode | default('0755') }}"
   loop:
-    - /opt/homelab-admin-node
-    - "{{ admin_node_root }}"
-    - "{{ admin_node_root }}/stacks"
-    - "{{ admin_node_root }}/env"
-    - "{{ admin_node_root }}/data"
-    - "{{ admin_node_root }}/backups"
+    - { path: /opt/homelab-admin-node, owner: "{{ admin_node_repo_owner }}", group: "{{ admin_node_repo_group }}", mode: "2775" }
+    - { path: "{{ admin_node_root }}" }
+    - { path: "{{ admin_node_root }}/stacks" }
+    - { path: "{{ admin_node_root }}/env", mode: "0700" }
+    - { path: "{{ admin_node_root }}/data" }
+    - { path: "{{ admin_node_root }}/backups" }
 
 - name: Sync repository into /opt
   ansible.posix.synchronize:
@@ -20,6 +26,7 @@
     dest: /opt/homelab-admin-node/
     rsync_opts:
       - "--delete"
+      - "--chown={{ admin_node_repo_owner }}:{{ admin_node_repo_group }}"
       - "--exclude=secrets/*.sops.yaml"
       - "--exclude=ansible/group_vars/secrets.sops.yaml"
 
@@ -33,12 +40,6 @@
 - name: Compute admin repository operator users
   ansible.builtin.set_fact:
     admin_node_repo_operator_users_effective: "{{ hardening.ssh.allow_users | default(['admin'], true) }}"
-
-- name: Ensure admin repository operator group exists
-  ansible.builtin.group:
-    name: "{{ admin_node_repo_group }}"
-    state: present
-    system: true
 
 - name: Check admin repository operator users
   ansible.builtin.command:
@@ -58,15 +59,6 @@
     append: true
   loop: "{{ admin_node_repo_operator_user_checks.results }}"
   when: item.rc == 0
-
-- name: Make admin repository shared by local operators
-  ansible.builtin.file:
-    path: /opt/homelab-admin-node
-    state: directory
-    owner: "{{ admin_node_repo_owner }}"
-    group: "{{ admin_node_repo_group }}"
-    mode: "u=rwX,g=rwX,o=rX"
-    recurse: true
 
 - name: Keep admin repository directories group-sticky
   ansible.builtin.command: find /opt/homelab-admin-node -type d -exec chmod g+s {} +
@@ -155,14 +147,14 @@
 - name: Enable admin-backup.timer
   ansible.builtin.systemd:
     name: admin-backup.timer
-    enabled: true
-    state: started
+    enabled: "{{ admin_mode == 'normal' }}"
+    state: "{{ (admin_mode == 'normal') | ternary('started', 'stopped') }}"
 
 - name: Configure Gitea process backup timer
   ansible.builtin.systemd:
     name: admin-gitea-process-backup.timer
-    enabled: "{{ ((backup | default({})).gitea_process.enabled | default(false) | bool) }}"
-    state: "{{ ((backup | default({})).gitea_process.enabled | default(false) | bool) | ternary('started', 'stopped') }}"
+    enabled: "{{ (admin_mode == 'normal') and ((backup | default({})).gitea_process.enabled | default(false) | bool) }}"
+    state: "{{ ((admin_mode == 'normal') and ((backup | default({})).gitea_process.enabled | default(false) | bool)) | ternary('started', 'stopped') }}"
     daemon_reload: true
 
 - name: Enable admin-converge.timer

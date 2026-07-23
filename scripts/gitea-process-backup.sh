@@ -19,14 +19,14 @@ require_healthy gitea-db
 require_healthy gitea
 
 image="${GITEA_PROCESS_BACKUP_IMAGE:-ghcr.io/frantche/gitea-backup-restore-process:0.3.6}"
-network="${GITEA_PROCESS_BACKUP_NETWORK:-admin-net}"
+network="${GITEA_PROCESS_BACKUP_NETWORK:-admin-edge}"
 backup_tmp="${BACKUP_TMP_FOLDER:-/tmp/backup}"
 restore_tmp="${RESTORE_TMP_FOLDER:-/tmp/restore}"
 
 docker run --rm \
   --network "$network" \
   --env-file /srv/admin/env/gitea-process-backup.env \
-  -v /srv/admin/data/gitea:/data:ro \
+  -v /srv/admin/data/gitea-stack/gitea:/data:ro \
   -v "$backup_tmp:$backup_tmp" \
   -v "$restore_tmp:$restore_tmp" \
   "$image" \

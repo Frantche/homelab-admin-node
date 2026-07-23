@@ -5,12 +5,6 @@
     state: directory
     mode: "0755"
 
-- name: Copy keycloak stack files
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../stacks/keycloak/"
-    dest: "{{ admin_node_root }}/stacks/keycloak/"
-    mode: preserve
-
 - name: Render keycloak compose
   ansible.builtin.template:
     src: "{{ playbook_dir }}/../stacks/keycloak/compose.yaml"
@@ -22,9 +16,9 @@
     dest: "{{ admin_node_root }}/env/keycloak.env"
     mode: "0600"
     content: |
-      KEYCLOAK_DB_PASSWORD={{ keycloak.db_password | mandatory('keycloak.db_password is required') }}
-      KEYCLOAK_ADMIN={{ keycloak.admin_user | default('admin') }}
-      KEYCLOAK_ADMIN_PASSWORD={{ keycloak.admin_password | mandatory('keycloak.admin_password is required') }}
+      KEYCLOAK_DB_PASSWORD={{ keycloak.db_password | mandatory('keycloak.db_password is required') | to_json }}
+      KEYCLOAK_ADMIN={{ keycloak.admin_user | default('admin') | to_json }}
+      KEYCLOAK_ADMIN_PASSWORD={{ keycloak.admin_password | mandatory('keycloak.admin_password is required') | to_json }}
   no_log: true
 
 - name: Ensure keycloak database container is running
@@ -32,6 +26,7 @@
   args:
     chdir: "{{ admin_node_root }}/stacks/keycloak"
   changed_when: false
+  when: admin_mode != 'restore'
 
 - name: Wait for keycloak database container health
   ansible.builtin.command: docker inspect -f {% raw %}'{{ .State.Health.Status }}'{% endraw %} keycloak-db
@@ -40,6 +35,7 @@
   retries: 60
   delay: 2
   changed_when: false
+  when: admin_mode != 'restore'
 
 - name: Wait for keycloak database readiness
   ansible.builtin.command: docker exec keycloak-db pg_isready -U keycloak -d keycloak
@@ -48,23 +44,37 @@
   retries: 30
   delay: 2
   changed_when: false
+  when: admin_mode != 'restore'
 
 - name: Align keycloak database password with inventory secret
-  ansible.builtin.shell: |
-    set -euo pipefail
-    docker exec -i -e KEYCLOAK_DB_PASSWORD="{{ keycloak.db_password | mandatory('keycloak.db_password is required') }}" keycloak-db sh -c 'psql -U keycloak -d keycloak -v ON_ERROR_STOP=1 -v pw="$KEYCLOAK_DB_PASSWORD"' <<'SQL'
-    ALTER USER keycloak WITH PASSWORD :'pw';
-    SQL
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - -i
+      - -e
+      - KEYCLOAK_DB_PASSWORD
+      - keycloak-db
+      - sh
+      - -c
+      - 'exec psql -U keycloak -d keycloak -v ON_ERROR_STOP=1 -v pw="$KEYCLOAK_DB_PASSWORD"'
   args:
-    executable: /bin/bash
+    stdin: "ALTER USER keycloak WITH PASSWORD :'pw';"
+  environment:
+    KEYCLOAK_DB_PASSWORD: "{{ keycloak.db_password | mandatory('keycloak.db_password is required') }}"
   changed_when: false
   no_log: true
+  when: admin_mode != 'restore'
 
 - name: Start keycloak stack
   ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/keycloak.env -f compose.yaml up --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/keycloak"
-  changed_when: true
+  register: keycloak_stack_start
+  changed_when: >-
+    'Created' in keycloak_stack_start.stderr or 'Recreated' in keycloak_stack_start.stderr or
+    'Started' in keycloak_stack_start.stderr
+  when: admin_mode != 'restore'
 
 - name: Wait for keycloak HTTP readiness
   ansible.builtin.command:
@@ -87,6 +97,7 @@
   retries: 60
   delay: 2
   changed_when: false
+  when: admin_mode != 'restore'
 
 - name: Verify Keycloak admin password matches inventory
   ansible.builtin.command:
@@ -114,9 +125,11 @@
   changed_when: false
   failed_when: false
   no_log: true
+  when: admin_mode != 'restore'
 
 - name: Recover Keycloak admin password from inventory
   when:
+    - admin_mode != 'restore'
     - keycloak_admin_inventory_auth.rc != 0
     - keycloak.admin_recover_password | default(true)
   no_log: true
@@ -293,6 +306,7 @@
   ansible.builtin.fail:
     msg: "Keycloak admin password does not match keycloak.admin_password and keycloak.admin_recover_password is disabled."
   when:
+    - admin_mode != 'restore'
     - keycloak_admin_inventory_auth.rc != 0
     - not (keycloak.admin_recover_password | default(true))
   no_log: true

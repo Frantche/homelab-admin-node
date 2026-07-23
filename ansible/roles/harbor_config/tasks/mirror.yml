@@ -104,6 +104,21 @@
   when: (harbor_registry_lookup_final.json | length) > 0
   no_log: true
 
+- name: Detect registry mirror configuration drift
+  ansible.builtin.set_fact:
+    harbor_registry_needs_update: >-
+      {{
+        (harbor_existing_registry.name | default('')) != harbor_registry_payload.name
+        or (harbor_existing_registry.description | default('')) != harbor_registry_payload.description
+        or (harbor_existing_registry.type | default('')) != harbor_registry_payload.type
+        or (harbor_existing_registry.url | default('')) != harbor_registry_payload.url
+        or (harbor_existing_registry.insecure | default(false) | bool) != (harbor_registry_payload.insecure | bool)
+        or (harbor_mirror_item.username | default('', true) | length > 0)
+        or (harbor_mirror_item.password | default('', true) | length > 0)
+      }}
+  when: (harbor_registry_lookup_current.json | length) > 0
+  no_log: true
+
 - name: Update registry mirror when it already exists
   ansible.builtin.uri:
     url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/registries/{{ harbor_registry_id }}"
@@ -119,6 +134,7 @@
     - (harbor_registry_lookup_current.json | length) > 0
     - harbor_registry_id is defined
     - harbor_existing_registry | length == 0 or harbor_existing_registry.type == harbor_registry_payload.type
+    - harbor_registry_needs_update | default(false) | bool
   no_log: true
 
 - name: Lookup proxy cache project
@@ -166,6 +182,19 @@
   register: harbor_project_lookup_final
   no_log: true
 
+- name: Detect proxy cache project metadata drift
+  ansible.builtin.set_fact:
+    harbor_project_metadata_needs_update: >-
+      {{
+        (
+          (harbor_project_lookup_final.json | first).metadata.public
+          | default('false') | string | lower
+        )
+        != ((harbor_mirror_item.public | default(false) | bool) | ternary('true', 'false'))
+      }}
+  when: (harbor_project_lookup_final.json | length) > 0
+  no_log: true
+
 - name: Update proxy cache project metadata
   ansible.builtin.uri:
     url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/projects/{{ (harbor_project_lookup_final.json | first).project_id }}"
@@ -179,7 +208,9 @@
       metadata:
         public: "{{ (harbor_mirror_item.public | default(false)) | ternary('true', 'false') }}"
     status_code: 200
-  when: (harbor_project_lookup_final.json | length) > 0
+  when:
+    - (harbor_project_lookup_final.json | length) > 0
+    - harbor_project_metadata_needs_update | default(false) | bool
   no_log: true
 
 - name: Create temporary Docker auth config for private mirror validation

@@ -108,6 +108,7 @@
     - keycloak_user_id | length > 0
     - keycloak_user_item.password is defined
     - keycloak_user_item.password | length > 0
+    - keycloak_user_item.rotate_password | default(false) | bool
 
 - name: Read assigned realm roles
   ansible.builtin.uri:
@@ -125,6 +126,27 @@
   ansible.builtin.set_fact:
     keycloak_user_missing_realm_roles: "{{ (keycloak_user_item.realm_roles | default([])) | difference(keycloak_user_roles_current.json | map(attribute='name') | list) }}"
   when: keycloak_user_id | length > 0
+  no_log: true
+
+- name: Compute extra realm roles for user
+  ansible.builtin.set_fact:
+    keycloak_user_extra_realm_roles: "{{ keycloak_user_roles_current.json | selectattr('name', 'in', keycloak_config.realm_roles | default([])) | rejectattr('name', 'in', keycloak_user_item.realm_roles | default([])) | list }}"
+  when: keycloak_user_id | length > 0
+  no_log: true
+
+- name: Revoke extra managed realm roles from user
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/role-mappings/realm"
+    method: DELETE
+    headers:
+      Authorization: "{{ keycloak_auth_header }}"
+    body_format: json
+    body: "{{ keycloak_user_extra_realm_roles }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 204
+  when:
+    - keycloak_user_id | length > 0
+    - keycloak_user_extra_realm_roles | length > 0
   no_log: true
 
 - name: Fetch missing realm role representations
@@ -175,6 +197,28 @@
   ansible.builtin.set_fact:
     keycloak_user_missing_groups: "{{ (keycloak_user_item.groups | default([])) | difference(keycloak_user_groups_current.json | map(attribute='name') | list) }}"
   when: keycloak_user_id | length > 0
+  no_log: true
+
+- name: Compute extra managed groups for user
+  ansible.builtin.set_fact:
+    keycloak_user_extra_groups: "{{ keycloak_user_groups_current.json | selectattr('name', 'in', keycloak_config.groups | default([])) | rejectattr('name', 'in', keycloak_user_item.groups | default([])) | list }}"
+  when: keycloak_user_id | length > 0
+  no_log: true
+
+- name: Remove user from extra managed groups
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/users/{{ keycloak_user_id }}/groups/{{ keycloak_extra_group.id }}"
+    method: DELETE
+    headers:
+      Authorization: "{{ keycloak_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 204
+  loop: "{{ keycloak_user_extra_groups }}"
+  loop_control:
+    loop_var: keycloak_extra_group
+  when:
+    - keycloak_user_id | length > 0
+    - keycloak_user_extra_groups | length > 0
   no_log: true
 
 - name: Fetch missing group representations

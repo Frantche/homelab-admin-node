@@ -1,9 +1,25 @@
 services:
+  otel-socket-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:0.3.0@sha256:2f92c6e85a1199b3403c99d7439695898a162c69689b11130450ffadb352f0a0
+    container_name: otel-socket-proxy
+    restart: "no"
+    environment:
+      CONTAINERS: "1"
+      INFO: "1"
+      VERSION: "1"
+      POST: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - otel-docker
+
 {% if observability.mock_backend_enabled | default(false) | bool %}
   otel-mock-backend:
-    image: python:3.14-alpine
+    image: python:3.14-alpine@sha256:47f36929d95852c8aa959380eeeea761ba7411ebe793d090da4cd518ac3af237
     container_name: otel-mock-backend
-    restart: unless-stopped
+    restart: "no"
     command:
       - python
       - /otel-mock-backend.py
@@ -26,14 +42,23 @@ services:
       - {{ admin_repo_root | default('/opt/homelab-admin-node') }}/ci/otel-mock-backend.py:/otel-mock-backend.py:ro
       - {{ observability.mock_state_dir | default('/tmp/admin-node-otel-mock') }}:/state
     networks:
-      - admin-net
+      - admin-edge
+      - harbor-internal
+      - otel-docker
 
 {% endif %}
   otel-collector:
-    image: "{{ observability.collector_image | default('otel/opentelemetry-collector-contrib:0.139.0') }}"
+    image: "{{ observability.collector_image | default('otel/opentelemetry-collector-contrib:0.139.0@sha256:87b591b18a0a330b6246f6d4f53d4867d1b238d1b85a69145e0f4eb38f92154c') }}"
     container_name: otel-collector
-    restart: unless-stopped
-    user: "0:0"
+    restart: "no"
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=32m,mode=0700
     command:
       - --config=/etc/otelcol/config.yaml
     healthcheck:
@@ -46,11 +71,7 @@ services:
       - /srv/admin/config/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
       - /proc:/hostfs/proc:ro
       - /sys:/hostfs/sys:ro
-      - /:/hostfs:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /srv/admin/data/harbor/log:/srv/admin/data/harbor/log:ro
-      - /srv/admin/data/harbor/job_logs:/srv/admin/data/harbor/job_logs:ro
+      - /var/log/admin-node-security-exceptions.log:/var/log/admin-node-security-exceptions.log:ro
 {% if observability.mock_backend_enabled | default(false) | bool %}
     depends_on:
       otel-mock-backend:
@@ -63,9 +84,15 @@ services:
       - "127.0.0.1:4318:4318"
 {% endif %}
     networks:
-      - admin-net
+      - admin-edge
+      - harbor-internal
+      - otel-docker
 {% endif %}
 
 networks:
-  admin-net:
+  admin-edge:
+    external: true
+  harbor-internal:
+    external: true
+  otel-docker:
     external: true
