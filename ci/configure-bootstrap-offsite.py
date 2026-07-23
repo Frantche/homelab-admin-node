@@ -18,6 +18,7 @@ def required_env(name: str) -> str:
 def main() -> None:
     config_repo = Path(sys.argv[1])
     encrypted_file = config_repo / "hosts/group_vars/secrets.sops.yaml"
+    ci_vars_file = config_repo / "hosts/group_vars/ci-bootstrap-vars.yml"
     sops_env = os.environ.copy()
     sops_env.setdefault("SOPS_AGE_KEY_FILE", "/etc/sops/age/keys.txt")
 
@@ -86,8 +87,20 @@ def main() -> None:
 
     os.replace(output_path, encrypted_file)
     os.chmod(encrypted_file, 0o600)
+
+    ci_vars = yaml.safe_load(ci_vars_file.read_text())
+    ci_vars.pop("backup", None)
+    ci_vars_file.write_text(yaml.safe_dump(ci_vars, sort_keys=False))
+
     subprocess.run(
-        ["git", "-C", str(config_repo), "add", str(encrypted_file.relative_to(config_repo))],
+        [
+            "git",
+            "-C",
+            str(config_repo),
+            "add",
+            str(encrypted_file.relative_to(config_repo)),
+            str(ci_vars_file.relative_to(config_repo)),
+        ],
         check=True,
     )
     subprocess.run(

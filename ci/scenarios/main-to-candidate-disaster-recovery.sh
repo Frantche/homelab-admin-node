@@ -89,6 +89,14 @@ run_validations() {
   vm_ssh "sudo /opt/homelab-admin-node/ci/run-oidc-user-journey.sh"
 }
 
+run_backup() {
+  vm_ssh "sudo CI_MOCK_PIHOLE=true \
+    CI_MOCK_CLOUDFLARE_TUNNEL=true \
+    CI_SKIP_PUBLIC_URL_VALIDATION=true \
+    SKIP_PUBLIC_URL_VALIDATION=true \
+    /opt/homelab-admin-node/bin/admin-node backup run"
+}
+
 echo "=== Deploying main baseline on the source VM ==="
 ci_vm_create "$SOURCE_VM_DIR" admin-main-source "$MAIN_REPO_URL" "$MAIN_SHA"
 ci_vm_start "$SOURCE_VM_DIR" "$SSH_PORT"
@@ -109,7 +117,7 @@ vm_ssh "sudo CI_MOCK_PIHOLE=true \
   /opt/homelab-admin-node/ci/scenarios/bootstrap-user-journey.sh"
 
 echo "=== Creating a main backup in Garage ==="
-vm_ssh "sudo /opt/homelab-admin-node/bin/admin-node backup run"
+run_backup
 backup_id="$(vm_ssh "sudo find /srv/admin/backups/local -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tail -n1")"
 if [[ ! "$backup_id" =~ ^[0-9]{8}-[0-9]{6}$ ]]; then
   echo "ERROR: invalid backup ID returned by source VM: $backup_id" >&2
@@ -184,7 +192,7 @@ run_converge
 vm_ssh "sudo rm -f /tmp/admin-node-secret-rotation-audit.json"
 
 echo "=== Creating the post-rotation offsite backup ==="
-vm_ssh "sudo /opt/homelab-admin-node/bin/admin-node backup run"
+run_backup
 post_rotation_id="$(vm_ssh "sudo find /srv/admin/backups/local -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tail -n1")"
 vm_ssh "sudo cat /srv/admin/backups/local/$post_rotation_id/manifest.json" >"$ARTIFACT_DIR/post-rotation-manifest.json"
 run_validations
