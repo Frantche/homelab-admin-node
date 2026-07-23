@@ -179,7 +179,7 @@ jobs:
               -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
               "test -d /opt/homelab-admin-node/.git && \
                sudo /opt/homelab-admin-node/scripts/build-admin-node.sh >/dev/null && \
-               test -x /opt/homelab-admin-node/bin/admin-node"
+               sudo test -x /opt/homelab-admin-node/bin/admin-node"
           echo "Repository successfully cloned at /opt/homelab-admin-node"
 
       - name: Verify VM is in locked mode
