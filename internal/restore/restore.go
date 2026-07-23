@@ -407,18 +407,32 @@ func restorePostgres(ctx context.Context, command stackCommand, container string
 		return err
 	}
 	ready := false
-	for range 30 {
+	consecutiveReady := 0
+	for range 60 {
 		if err := run(ctx, nil, "docker", "exec", container, "pg_isready", "-U", user); err == nil {
-			ready = true
-			break
+			consecutiveReady++
+			if consecutiveReady >= 3 {
+				ready = true
+				break
+			}
+		} else {
+			consecutiveReady = 0
 		}
 		time.Sleep(time.Second)
 	}
 	if !ready {
 		return fmt.Errorf("%s did not become ready", container)
 	}
-	if err := recreatePostgresDatabase(ctx, container, user, db); err != nil {
-		return err
+	var recreateErr error
+	for range 10 {
+		recreateErr = recreatePostgresDatabase(ctx, container, user, db)
+		if recreateErr == nil {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+	if recreateErr != nil {
+		return recreateErr
 	}
 	file, err := os.Open(dumpPath)
 	if err != nil {
