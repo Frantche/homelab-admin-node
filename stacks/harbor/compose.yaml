@@ -219,6 +219,10 @@ services:
 {% if traefik_local_ca_enabled | default(ci_mode | default(false)) | bool %}
       SSL_CERT_FILE: /etc/ssl/certs/admin-node-ca.pem
 {% endif %}
+{% if ci_mode | default(false) | bool %}
+    extra_hosts:
+      - "{{ service_domains.keycloak }}:host-gateway"
+{% endif %}
     volumes:
       - ./config/core-app.conf:/etc/core/app.conf:ro
       - /srv/admin/data/harbor/core/token.key:/etc/core/private_key.pem:ro
