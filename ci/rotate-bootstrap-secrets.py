@@ -66,6 +66,7 @@ def prepare(data):
     data["harbor"]["previous_admin_password"] = old_harbor_admin
     data["harbor"]["rotate_admin_password"] = True
     data["gitea"]["rotate_admin_password"] = True
+    data["gitea"]["restart_after_oidc_secret_rotation"] = True
 
     if user_passwords(data) != before_users:
         raise SystemExit("OIDC user passwords changed during technical secret rotation")
@@ -83,6 +84,7 @@ def finalize(data, audit):
     data.get("harbor", {}).pop("previous_admin_password", None)
     data.get("harbor", {}).pop("rotate_admin_password", None)
     data.get("gitea", {}).pop("rotate_admin_password", None)
+    data.get("gitea", {}).pop("restart_after_oidc_secret_rotation", None)
 
 
 def main():

@@ -38,6 +38,7 @@ assert secrets["keycloak_config"]["users"][0]["password"] == "human-password-mus
 assert secrets["harbor"]["previous_admin_password"] == "harbor-admin-old"
 assert secrets["harbor"]["rotate_admin_password"] is True
 assert secrets["gitea"]["rotate_admin_password"] is True
+assert secrets["gitea"]["restart_after_oidc_secret_rotation"] is True
 assert audit["old"]["keycloak.admin_password"] != audit["new"]["keycloak.admin_password"]
 assert "human-password-must-not-change" not in json.dumps(audit)
 assert len(audit["oidc_user_password_sha256"]["human-user"]) == 64
@@ -55,6 +56,7 @@ assert secrets["keycloak_config"]["users"][0]["password"] == "human-password-mus
 assert "previous_admin_password" not in secrets["harbor"]
 assert "rotate_admin_password" not in secrets["harbor"]
 assert "rotate_admin_password" not in secrets["gitea"]
+assert "restart_after_oidc_secret_rotation" not in secrets["gitea"]
 PY
 
 echo "Secret rotation preserves OIDC user passwords"
