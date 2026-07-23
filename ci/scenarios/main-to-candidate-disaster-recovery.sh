@@ -134,8 +134,11 @@ case "$ACTION" in
       sudo chmod 0600 /opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml; \
       sudo /opt/homelab-admin-node/bin/admin-node mode set restore"
     run_converge "-e restore_repository=offsite -e restore_id=$backup_id"
-    [[ "$(vm_ssh "sudo jq -r .cli_revision /srv/admin/backups/local/$backup_id/manifest.json")" == "$MAIN_SHA" ]]
-    vm_ssh "sudo test -s /srv/admin/data/sentinel/value.txt"
+    restored_revision="$(vm_ssh "sudo jq -r .cli_revision /srv/admin/backups/local/$backup_id/manifest.json")"
+    [[ "$restored_revision" == "$MAIN_SHA" ]] || {
+      echo "restored revision $restored_revision does not match main $MAIN_SHA" >&2
+      exit 1
+    }
     ;;
   upgrade-candidate)
     run_converge
