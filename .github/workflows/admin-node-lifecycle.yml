@@ -21,10 +21,15 @@ jobs:
       - name: Install static analysis dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc shellcheck ansible-lint
+          sudo apt-get install -y gcc shellcheck python3-venv
+          python3 -m venv .ci/quality-venv
+          .ci/quality-venv/bin/python -m pip install \
+            ansible-core==2.21.2 \
+            ansible-lint==26.6.0
+          echo "$PWD/.ci/quality-venv/bin" >> "$GITHUB_PATH"
           go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-          ansible-galaxy collection install -r ansible/requirements.yml
+          .ci/quality-venv/bin/ansible-galaxy collection install -r ansible/requirements.yml
       - name: Run quality checks
         run: |
           go test -race ./...
