@@ -12,8 +12,49 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: admin-node-user-journeys-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  quality:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install static analysis dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc shellcheck python3-venv
+          python3 -m venv .ci/quality-venv
+          .ci/quality-venv/bin/python -m pip install \
+            ansible-core==2.21.2 \
+            ansible-lint==26.6.0
+          echo "$PWD/.ci/quality-venv/bin" >> "$GITHUB_PATH"
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          .ci/quality-venv/bin/ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Run quality checks
+        run: |
+          go test -race ./...
+          go vet ./...
+          govulncheck ./...
+          ./ci/test-secret-rotation.sh
+          shellcheck -e SC1091 scripts/*.sh ci/*.sh ci/lib/*.sh ci/scenarios/*.sh
+          actionlint -shellcheck=
+          ansible-lint ansible/site.yml
+          ansible-playbook -i ansible/inventory.ini ansible/site.yml --syntax-check
+
   oidc-contracts:
+    needs: quality
     runs-on: ubuntu-24.04
 
     steps:
@@ -31,7 +72,7 @@ jobs:
           PATH="$HOME/.local/bin:$PATH" ./ci/test-oidc-contracts.sh
 
   bootstrap:
-    needs: oidc-contracts
+    needs: [quality, oidc-contracts]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
 
@@ -87,12 +128,12 @@ jobs:
           ssh-keygen -t ed25519 -N "" -f .ci/ssh/id_ed25519
           chmod 600 .ci/ssh/id_ed25519
 
-      - name: Prepare cloud-init with repository URL and branch
+      - name: Prepare cloud-init with repository URL and commit
         env:
-          REPO_URL: "https://github.com/${{ github.repository }}.git"
-          REPO_BRANCH: "${{ github.head_ref || github.ref_name }}"
+          REPO_URL: "${{ github.event.pull_request.head.repo.clone_url || format('https://github.com/{0}.git', github.repository) }}"
+          REPO_REF: "${{ github.event.pull_request.head.sha || github.sha }}"
         run: |
-          # Inject SSH key, REPO_URL, and REPO_BRANCH into the real cloud-init template.
+          # Inject SSH key, REPO_URL, and the exact commit into the real cloud-init template.
           # The repository is NOT copied into the VM; cloud-init will git clone it.
           python3 ci/render-bootstrap-cloud-init.py
 
@@ -442,3 +483,114 @@ jobs:
               echo "QEMU process already stopped"
             fi
           fi
+
+  main-to-candidate-disaster-recovery:
+    needs: [quality, oidc-contracts]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      MAIN_SHA: "${{ github.event.pull_request.base.sha || github.sha }}"
+      CANDIDATE_SHA: "${{ github.event.pull_request.head.sha || github.sha }}"
+      MAIN_REPO_URL: "${{ github.event.pull_request.base.repo.clone_url || format('https://github.com/{0}.git', github.repository) }}"
+      CANDIDATE_REPO_URL: "${{ github.event.pull_request.head.repo.clone_url || format('https://github.com/{0}.git', github.repository) }}"
+      SSH_PORT: "2222"
+
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install host dependencies
+        run: |
+          sudo sed -i 's#azure.archive.ubuntu.com#archive.ubuntu.com#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+          sudo apt-get update
+          sudo apt-get install -y \
+            qemu-system-x86 \
+            qemu-utils \
+            cloud-image-utils \
+            openssh-client \
+            curl \
+            jq \
+            socat
+
+      - name: Enable KVM permissions when available
+        run: |
+          if [ -e /dev/kvm ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm || true
+            ls -l /dev/kvm
+          else
+            echo "KVM not available, QEMU will run without hardware acceleration"
+          fi
+
+      - name: Start ephemeral Garage
+        run: ./ci/setup-garage.sh
+
+      - name: Create source VM from main
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh create-source
+
+      - name: Deploy and validate main
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh deploy-main
+
+      - name: Reboot main and validate hardening
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh reboot-hardening
+
+      - name: Create immutable service data sentinels
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh create-sentinels
+
+      - name: Back up main to Garage
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh backup-main
+
+      - name: Destroy source VM
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh destroy-source
+
+      - name: Create fresh recovery VM
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh create-target
+
+      - name: Restore main backup from Garage
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh restore-main
+
+      - name: Validate restored main service data
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh validate-sentinels
+
+      - name: Converge restored deployment with candidate
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh upgrade-candidate
+
+      - name: Validate service data after candidate upgrade
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh validate-sentinels
+
+      - name: Rotate technical secrets
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh rotate-secrets
+
+      - name: Validate service data after secret rotation
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh validate-sentinels
+
+      - name: Back up and validate candidate
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh backup-candidate
+
+      - name: Destroy upgraded recovery VM
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh destroy-target
+
+      - name: Create final recovery VM
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh create-final-target
+
+      - name: Restore candidate backup from Garage
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh restore-candidate
+
+      - name: Validate final restored data and rotated secrets
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh validate-final-candidate
+
+      - name: Destroy final recovery VM
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh destroy-final-target
+
+      - name: Clean up recovery resources
+        if: always()
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh cleanup
+
+      - name: Upload disaster recovery logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: main-to-candidate-disaster-recovery-logs
+          path: .ci/artifacts/disaster-recovery
+          if-no-files-found: ignore

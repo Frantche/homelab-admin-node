@@ -73,7 +73,7 @@
     - admin_mode != 'restore'
 
 - name: Wait for Gitea database readiness
-  ansible.builtin.command: docker exec gitea-db pg_isready -U gitea -d gitea
+  ansible.builtin.command: docker exec gitea-db psql -U gitea -d gitea -Atqc "select 1"
   register: gitea_db_readiness
   until: gitea_db_readiness.rc == 0
   retries: 30
@@ -99,6 +99,10 @@
     stdin: "ALTER USER gitea WITH PASSWORD :'pw';"
   environment:
     GITEA_DB_PASSWORD: "{{ gitea_runtime.db_password }}"
+  register: gitea_db_password_alignment
+  until: gitea_db_password_alignment.rc == 0
+  retries: 10
+  delay: 2
   changed_when: false
   when:
     - not (gitea_test_mode | default(false))

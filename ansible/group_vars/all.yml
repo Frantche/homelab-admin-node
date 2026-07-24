@@ -57,6 +57,9 @@ ci:
 
 ci_mode: false
 
+restore_repository: ""
+restore_id: ""
+
 hardening:
   enabled: true
   ssh:

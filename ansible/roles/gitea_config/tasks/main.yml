@@ -231,6 +231,29 @@
     - (gitea_oidc_source_id | default('') | length) > 0
   no_log: true
 
+- name: Restart Gitea after OIDC client secret rotation
+  ansible.builtin.command: docker restart gitea
+  changed_when: true
+  when:
+    - not (gitea_config_test_mode | default(false))
+    - gitea_config.oidc.enabled | default(false)
+    - gitea.restart_after_oidc_secret_rotation | default(false) | bool
+
+- name: Wait for Gitea after OIDC client secret rotation
+  ansible.builtin.uri:
+    url: "{{ gitea_config_url }}/api/v1/version"
+    method: GET
+    validate_certs: "{{ gitea_api_validate_certs }}"
+    status_code: 200
+  register: gitea_ready_after_oidc_rotation
+  until: gitea_ready_after_oidc_rotation.status == 200
+  retries: 40
+  delay: 5
+  when:
+    - not (gitea_config_test_mode | default(false))
+    - gitea_config.oidc.enabled | default(false)
+    - gitea.restart_after_oidc_secret_rotation | default(false) | bool
+
 - name: Validate Gitea repository and issue sentinel
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node validate gitea
   environment:

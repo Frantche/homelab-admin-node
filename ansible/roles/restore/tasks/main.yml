@@ -1,7 +1,24 @@
 ---
+- name: Validate remote restore selection
+  ansible.builtin.assert:
+    that:
+      - >-
+        (restore_repository | default('', true) | length == 0)
+        or
+        ((restore_id | default('', true)) is match('^[0-9]{8}-[0-9]{6}$'))
+    fail_msg: "A remote restore requires restore_repository and an explicit timestamp restore_id."
+
 - name: Execute restore
-  ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node restore run
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['/opt/homelab-admin-node/bin/admin-node', 'restore', 'run']
+        + (['--repository', restore_repository] if restore_repository | default('', true) | length > 0 else [])
+        + (['--id', restore_id] if restore_id | default('', true) | length > 0 else [])
+      }}
   environment:
+    # The parent converge process holds the global operation lock.
+    ADMIN_OPERATION_LOCK: /run/admin-node-restore-under-converge.lock
     ADMIN_NODE_LAN_IP: "{{ admin_node_lan_ip }}"
     KEYCLOAK_DOMAIN: "{{ service_domains.keycloak }}"
     HARBOR_DOMAIN: "{{ service_domains.harbor }}"

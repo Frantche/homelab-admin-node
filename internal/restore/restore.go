@@ -98,9 +98,14 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("inspect gitea stack artifact: %w", err)
 		}
-		if err := replaceDirContents(giteaSource, cfg.GiteaStackPath); err != nil {
+		giteaDataPath := filepath.Join(cfg.GiteaStackPath, "gitea")
+		if err := replaceDirContents(filepath.Join(giteaSource, "gitea"), giteaDataPath); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
-			return fmt.Errorf("restore gitea stack: %w", err)
+			return fmt.Errorf("restore gitea data: %w", err)
+		}
+		if err := fixGiteaDataPermissions(giteaDataPath); err != nil {
+			writeMode(cfg.ModeFile, "restore_failed")
+			return err
 		}
 	} else if dirExists(filepath.Join(info.Path, "gitea-data")) {
 		giteaDataPath := filepath.Join(cfg.AdminRoot, "data/gitea")
@@ -132,19 +137,19 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 	}
 
 	if fileExists(filepath.Join(info.Path, "keycloak.dump")) {
-		if err := restorePostgres(ctx, stackCommand{Compose: set.KeycloakCompose, EnvFile: set.KeycloakEnv}, "keycloak-db", "keycloak", "keycloak", filepath.Join(info.Path, "keycloak.dump")); err != nil {
+		if err := restorePostgres(ctx, stackCommand{Compose: set.KeycloakCompose, EnvFile: set.KeycloakEnv}, "keycloak-db", "keycloak", "keycloak", filepath.Join(info.Path, "keycloak.dump"), ""); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore keycloak: %w", err)
 		}
 	}
-	if !dirExists(filepath.Join(info.Path, "gitea-stack")) && fileExists(filepath.Join(info.Path, "gitea.dump")) && fileExists(set.GiteaCompose) && fileExists(set.GiteaEnv) {
-		if err := restorePostgres(ctx, stackCommand{Compose: set.GiteaCompose, EnvFile: set.GiteaEnv}, "gitea-db", "gitea", "gitea", filepath.Join(info.Path, "gitea.dump")); err != nil {
+	if fileExists(filepath.Join(info.Path, "gitea.dump")) && fileExists(set.GiteaCompose) && fileExists(set.GiteaEnv) {
+		if err := restorePostgres(ctx, stackCommand{Compose: set.GiteaCompose, EnvFile: set.GiteaEnv}, "gitea-db", "gitea", "gitea", filepath.Join(info.Path, "gitea.dump"), ""); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore gitea: %w", err)
 		}
 	}
 	if fileExists(filepath.Join(info.Path, "harbor.dump")) && fileExists(set.HarborCompose) && fileExists(set.HarborEnv) {
-		if err := restorePostgres(ctx, stackCommand{Compose: set.HarborCompose, EnvFile: set.HarborEnv}, "harbor-db", "postgres", "registry", filepath.Join(info.Path, "harbor.dump")); err != nil {
+		if err := restorePostgres(ctx, stackCommand{Compose: set.HarborCompose, EnvFile: set.HarborEnv}, "harbor-db", "postgres", "registry", filepath.Join(info.Path, "harbor.dump"), harborAdminInitializationSQL); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore harbor: %w", err)
 		}
@@ -203,7 +208,7 @@ func RestoreHarborWritable(ctx context.Context, cfg config.Config) error {
 	if password == "" {
 		return fmt.Errorf("Harbor admin password is unavailable")
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	var lastErr error
 	for {
@@ -402,23 +407,50 @@ func suspendSystemdTimers(ctx context.Context, timers []string) (func(), error) 
 	}, nil
 }
 
-func restorePostgres(ctx context.Context, command stackCommand, container string, user string, db string, dumpPath string) error {
+const harborAdminInitializationSQL = `DO $$
+DECLARE affected integer;
+BEGIN
+	UPDATE harbor_user
+	SET salt = '', password = '', password_version = ''
+	WHERE user_id = 1 AND username = 'admin';
+	GET DIAGNOSTICS affected = ROW_COUNT;
+	IF affected <> 1 THEN
+		RAISE EXCEPTION 'expected one Harbor administrator, updated %', affected;
+	END IF;
+END
+$$;`
+
+func restorePostgres(ctx context.Context, command stackCommand, container string, user string, db string, dumpPath string, postRestoreSQL string) error {
 	if err := dockerCompose(ctx, command, "up", "-d", container); err != nil {
 		return err
 	}
 	ready := false
-	for range 30 {
+	consecutiveReady := 0
+	for range 60 {
 		if err := run(ctx, nil, "docker", "exec", container, "pg_isready", "-U", user); err == nil {
-			ready = true
-			break
+			consecutiveReady++
+			if consecutiveReady >= 3 {
+				ready = true
+				break
+			}
+		} else {
+			consecutiveReady = 0
 		}
 		time.Sleep(time.Second)
 	}
 	if !ready {
 		return fmt.Errorf("%s did not become ready", container)
 	}
-	if err := recreatePostgresDatabase(ctx, container, user, db); err != nil {
-		return err
+	var recreateErr error
+	for range 10 {
+		recreateErr = recreatePostgresDatabase(ctx, container, user, db)
+		if recreateErr == nil {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+	if recreateErr != nil {
+		return recreateErr
 	}
 	file, err := os.Open(dumpPath)
 	if err != nil {
@@ -427,6 +459,11 @@ func restorePostgres(ctx context.Context, command stackCommand, container string
 	defer file.Close()
 	if err := run(ctx, file, "docker", "exec", "-i", container, "pg_restore", "--exit-on-error", "--no-owner", "--no-privileges", "-U", user, "-d", db); err != nil {
 		return err
+	}
+	if postRestoreSQL != "" {
+		if err := run(ctx, nil, "docker", "exec", container, "psql", "-U", user, "-d", db, "-v", "ON_ERROR_STOP=1", "-c", postRestoreSQL); err != nil {
+			return fmt.Errorf("prepare restored credentials: %w", err)
+		}
 	}
 	_ = dockerCompose(ctx, command, "down")
 	return nil
@@ -536,11 +573,28 @@ func restoreOpenBao(ctx context.Context, cfg config.Config, compose string, snap
 	if err := dockerCompose(ctx, stackCommand{Compose: compose}, "up", "-d"); err != nil {
 		return err
 	}
-	if err := waitOpenBaoInitialized(ctx); err != nil {
+	status, err := waitOpenBaoStatus(ctx)
+	if err != nil {
 		return err
 	}
-	if err := unsealOpenBao(ctx, cfg); err != nil {
-		return err
+
+	var restoreToken string
+	if status.Initialized {
+		if err := unsealOpenBao(ctx, cfg); err != nil {
+			return err
+		}
+		restoreToken, err = openBaoToken(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		if restoreToken == "" {
+			return fmt.Errorf("openbao snapshot restore requires source recovery material")
+		}
+	} else {
+		restoreToken, err = bootstrapOpenBaoForSnapshotRestore(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	if err := run(ctx, nil, "docker", "cp", snapPath, "openbao:/tmp/openbao.snap"); err != nil {
 		return err
@@ -548,18 +602,64 @@ func restoreOpenBao(ctx context.Context, cfg config.Config, compose string, snap
 	if err := run(ctx, nil, "docker", "exec", "--user", "root", "openbao", "chown", "openbao:openbao", "/tmp/openbao.snap"); err != nil {
 		return err
 	}
-	token, err := openBaoToken(ctx, cfg)
-	if err != nil {
-		return err
-	}
-	if token == "" {
-		return fmt.Errorf("openbao snapshot restore requires OPENBAO_TOKEN or secrets/openbao-root-token")
-	}
-	if err := runWithEnv(ctx, nil, []string{"VAULT_TOKEN=" + token}, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN", "openbao", "bao", "operator", "raft", "snapshot", "restore", "-force", "/tmp/openbao.snap"); err != nil {
+	if err := runWithEnv(ctx, nil, []string{"VAULT_TOKEN=" + restoreToken}, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN", "openbao", "bao", "operator", "raft", "snapshot", "restore", "-force", "/tmp/openbao.snap"); err != nil {
 		return err
 	}
 	_ = dockerCompose(ctx, stackCommand{Compose: compose}, "down")
 	return nil
+}
+
+type openBaoStatus struct {
+	Initialized bool `json:"initialized"`
+	Sealed      bool `json:"sealed"`
+}
+
+func waitOpenBaoStatus(ctx context.Context) (openBaoStatus, error) {
+	var lastOutput []byte
+	for range 30 {
+		cmd := exec.CommandContext(ctx, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "openbao", "bao", "status", "-format=json")
+		out, err := cmd.CombinedOutput()
+		lastOutput = out
+		if err == nil || (json.Valid(out) && strings.Contains(string(out), `"initialized"`)) {
+			var status openBaoStatus
+			if jsonErr := json.Unmarshal(out, &status); jsonErr == nil {
+				return status, nil
+			}
+		}
+		time.Sleep(time.Second)
+	}
+	return openBaoStatus{}, fmt.Errorf("openbao status unavailable: %s", strings.TrimSpace(string(lastOutput)))
+}
+
+func bootstrapOpenBaoForSnapshotRestore(ctx context.Context) (string, error) {
+	out, err := openBaoRecoveryOutput(ctx, "bao", "operator", "init", "-key-shares=1", "-key-threshold=1", "-format=json")
+	if err != nil {
+		return "", fmt.Errorf("initialize temporary openbao recovery cluster: %w", err)
+	}
+	var initData struct {
+		UnsealKeys []string `json:"unseal_keys_b64"`
+		RootToken  string   `json:"root_token"`
+	}
+	if err := json.Unmarshal(out, &initData); err != nil {
+		return "", fmt.Errorf("parse temporary openbao initialization: %w", err)
+	}
+	if len(initData.UnsealKeys) != 1 || initData.RootToken == "" {
+		return "", fmt.Errorf("temporary openbao initialization returned incomplete recovery material")
+	}
+	if _, err := openBaoRecoveryOutput(ctx, "bao", "operator", "unseal", initData.UnsealKeys[0]); err != nil {
+		return "", fmt.Errorf("unseal temporary openbao recovery cluster: %w", err)
+	}
+	return initData.RootToken, nil
+}
+
+func openBaoRecoveryOutput(ctx context.Context, args ...string) ([]byte, error) {
+	base := []string{"exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "openbao"}
+	cmd := exec.CommandContext(ctx, "docker", append(base, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("docker openbao recovery command failed: %w", err)
+	}
+	return out, nil
 }
 
 func openBaoToken(ctx context.Context, cfg config.Config) (string, error) {
@@ -611,22 +711,6 @@ func openBaoTokenFromSOPS(ctx context.Context, path string) (string, error) {
 		return token, nil
 	}
 	return "", nil
-}
-
-func waitOpenBaoInitialized(ctx context.Context) error {
-	var lastOutput []byte
-	for range 30 {
-		cmd := exec.CommandContext(ctx, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "openbao", "bao", "status")
-		out, err := cmd.CombinedOutput()
-		lastOutput = out
-		if err == nil || strings.Contains(string(out), "Initialized") {
-			if strings.Contains(string(out), "Initialized") {
-				return nil
-			}
-		}
-		time.Sleep(time.Second)
-	}
-	return fmt.Errorf("openbao did not become initialized: %s", strings.TrimSpace(string(lastOutput)))
 }
 
 func unsealOpenBao(ctx context.Context, cfg config.Config) error {

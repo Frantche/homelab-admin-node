@@ -54,12 +54,15 @@ test-offline-images:
 	@./ci/test-offline-images.sh
 
 test-ci-fast:
-	@./ci/run-admin-lifecycle.sh fresh-branch
+	@./ci/scenarios/bootstrap-user-journey.sh
 
 test-ci-full:
-	@./ci/run-admin-lifecycle.sh fresh-branch && \
-	 ./ci/run-admin-lifecycle.sh upgrade-main-to-branch && \
-	 ./ci/run-admin-lifecycle.sh restore-main-backup-with-branch
+	@./ci/setup-garage.sh
+	@MAIN_SHA="$${MAIN_SHA:-$$(git rev-parse origin/main)}" \
+	 CANDIDATE_SHA="$${CANDIDATE_SHA:-$$(git rev-parse HEAD)}" \
+	 MAIN_REPO_URL="$${MAIN_REPO_URL:-https://github.com/Frantche/homelab-admin-node.git}" \
+	 CANDIDATE_REPO_URL="$${CANDIDATE_REPO_URL:-https://github.com/Frantche/homelab-admin-node.git}" \
+	 bash -c 'set -e; for action in create-source deploy-main reboot-hardening backup-main destroy-source create-target restore-main upgrade-candidate rotate-secrets backup-candidate destroy-target; do ./ci/scenarios/main-to-candidate-disaster-recovery.sh "$$action"; done'
 
 render:
 	@echo "Render is managed by Ansible templates/tasks"
@@ -100,10 +103,10 @@ docs-serve: docs-deps
 
 shellcheck:
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck -e SC1091 scripts/*.sh ci/*.sh ci/scenarios/*.sh; \
+		shellcheck -e SC1091 scripts/*.sh ci/*.sh ci/lib/*.sh ci/scenarios/*.sh; \
 	else \
 		echo "shellcheck not installed"; \
 	fi
 
 clean:
-	rm -rf backups ci/tmp ci/.tmp
+	rm -rf backups ci/tmp ci/.tmp .ci/vms

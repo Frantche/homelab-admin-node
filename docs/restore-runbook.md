@@ -14,6 +14,26 @@ sudo bin/admin-node mode set restore
 sudo bin/admin-node restore run --repository offsite --id 20260722-120000
 ```
 
+Pour une reconstruction sur machine vierge, installer avant la convergence :
+
+- la cle age dans `/etc/sops/age/keys.txt` ;
+- le config repo chiffre ;
+- `secrets/openbao-unseal.sops.yaml` correspondant au snapshot ;
+- la CA et les identifiants du repository Restic.
+
+Puis declarer la source distante dans l'inventaire ou en extra-vars :
+
+```yaml
+restore_repository: offsite
+restore_id: "20260722-120000"
+```
+
+Le role `backup` rend alors l'environnement Restic disponible avant le role
+`restore`. Un repository distant refuse `latest` : l'ID horodate est obligatoire.
+Si le stockage Raft OpenBao est vierge, la restauration cree un bootstrap
+temporaire en memoire pour importer le snapshot, puis utilise exclusivement le
+materiel d'unseal du snapshot restaure.
+
 Gitea restaure en priorite le snapshot physique coherent avec la version PostgreSQL enregistree. Le dump logique reste une voie de migration, pas le point de restauration par defaut.
 1. `bin/admin-node mode set restore`
 2. Optionnel: définir `/etc/admin-node/restore-id` avec `latest` ou un ID de backup.

@@ -12,7 +12,7 @@ L'objectif d'un agent de developpement est de faire des changements petits, veri
 - `examples/admin-config/`: structure attendue du depot de configuration prive.
 - `secrets/*.sops.yaml.example` et `ansible/group_vars/secrets.sops.yaml.example`: exemples uniquement, sans secrets reels.
 - `cmd/admin-node` et `internal/`: CLI Go d'exploitation, point d'entree runtime pour converge, backup, restore, validation et OpenBao.
-- `ci/run-admin-lifecycle.sh` et `ci/scenarios/`: tests d'integration du cycle de vie.
+- `ci/scenarios/bootstrap-user-journey.sh` et `ci/scenarios/main-to-candidate-disaster-recovery.sh`: parcours d'integration utilisateur et reprise distante.
 - `stacks/*/compose.yaml`: definition des services Docker Compose.
 - `systemd/`: unites et timers deployes sur la VM.
 

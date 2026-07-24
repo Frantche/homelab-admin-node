@@ -106,36 +106,6 @@ verify_btrfs_storage_isolation() {
   done
 }
 
-run_oidc_user_journey() {
-  echo "=== Running OIDC user journey via Playwright ==="
-  if command -v pacman >/dev/null 2>&1; then
-    pacman -Sy --noconfirm --needed nodejs npm chromium nss
-  fi
-  if [[ ! -f /srv/admin/certs/ca.pem ]]; then
-    echo "ERROR: Expected local CA at /srv/admin/certs/ca.pem" >&2
-    return 1
-  fi
-  pushd "$REPO_ROOT/ci/oidc-user-journey" >/dev/null
-  if [[ -f package-lock.json ]]; then
-    npm ci --no-audit --no-fund
-  else
-    npm install --no-audit --no-fund
-  fi
-  eval "$(
-    SOPS_AGE_KEY_FILE=/etc/sops/age/keys.txt \
-      python3 "$REPO_ROOT/ci/read-bootstrap-oidc-user.py" \
-      "$CONFIG_REPO_DIR/hosts/group_vars/secrets.sops.yaml"
-  )"
-  CI=true \
-    NODE_EXTRA_CA_CERTS=/srv/admin/certs/ca.pem \
-    SSL_CERT_FILE=/srv/admin/certs/ca.pem \
-    PLAYWRIGHT_CHROMIUM_EXECUTABLE="${PLAYWRIGHT_CHROMIUM_EXECUTABLE:-/usr/bin/chromium}" \
-    OIDC_TEST_USERNAME="$OIDC_TEST_USERNAME" \
-    OIDC_TEST_PASSWORD="$OIDC_TEST_PASSWORD" \
-    npm test
-  popd >/dev/null
-}
-
 commit_config_repo_changes() {
   local message="$1"
   if [[ ! -d "$CONFIG_REPO_DIR/.git" ]]; then
@@ -227,13 +197,19 @@ for svc in traefik keycloak openbao harbor-core gitea; do
 done
 
 # --- Validate real OIDC browser login ---
-run_oidc_user_journey
+"$REPO_ROOT/ci/run-oidc-user-journey.sh"
 
 # --- Minimal backup/restore ---
-echo "=== Running backup ==="
 "$REPO_ROOT/bin/admin-node" ci create-sentinel
 assert_file_exists /srv/admin/data/sentinel/value.txt
 
+if [[ "${CI_SKIP_LOCAL_RESTORE:-false}" == "true" ]]; then
+  echo "=== Skipping local restore; the remote recovery journey owns this validation ==="
+  echo "=== bootstrap-user-journey scenario PASSED ==="
+  exit 0
+fi
+
+echo "=== Running backup ==="
 "$REPO_ROOT/bin/admin-node" backup run
 BACKUP_COUNT="$(find /srv/admin/backups/local -mindepth 1 -maxdepth 1 -type d | wc -l)"
 if [[ "$BACKUP_COUNT" -lt 1 ]]; then
