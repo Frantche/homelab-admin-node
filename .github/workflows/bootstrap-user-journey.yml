@@ -535,6 +535,9 @@ jobs:
       - name: Reboot main and validate hardening
         run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh reboot-hardening
 
+      - name: Create immutable service data sentinels
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh create-sentinels
+
       - name: Back up main to Garage
         run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh backup-main
 
@@ -547,17 +550,38 @@ jobs:
       - name: Restore main backup from Garage
         run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh restore-main
 
+      - name: Validate restored main service data
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh validate-sentinels
+
       - name: Converge restored deployment with candidate
         run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh upgrade-candidate
+
+      - name: Validate service data after candidate upgrade
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh validate-sentinels
 
       - name: Rotate technical secrets
         run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh rotate-secrets
 
+      - name: Validate service data after secret rotation
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh validate-sentinels
+
       - name: Back up and validate candidate
         run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh backup-candidate
 
-      - name: Destroy recovery VM
+      - name: Destroy upgraded recovery VM
         run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh destroy-target
+
+      - name: Create final recovery VM
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh create-final-target
+
+      - name: Restore candidate backup from Garage
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh restore-candidate
+
+      - name: Validate final restored data and rotated secrets
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh validate-final-candidate
+
+      - name: Destroy final recovery VM
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh destroy-final-target
 
       - name: Clean up recovery resources
         if: always()
