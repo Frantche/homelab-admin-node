@@ -147,7 +147,7 @@ case "$ACTION" in
     ;;
   create-sentinels)
     install_sentinel_script
-    vm_ssh "sudo /tmp/disaster-recovery-sentinels.sh create /tmp/admin-node-data-sentinels.json; \
+    vm_ssh "sudo /tmp/disaster-recovery-sentinels.sh create /tmp/admin-node-data-sentinels.json && \
       sudo chown admin:admin /tmp/admin-node-data-sentinels.json"
     ci_vm_scp_from "$SSH_PORT" /tmp/admin-node-data-sentinels.json "$SENTINEL_STATE"
     chmod 0600 "$SENTINEL_STATE"

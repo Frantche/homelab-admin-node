@@ -45,6 +45,27 @@ keycloak_token() {
     jq -er .access_token
 }
 
+ensure_gitea_admin_auth() {
+  local status
+
+  status="$(curl --silent --show-error --cacert "$CA_FILE" \
+    -o /dev/null -w '%{http_code}' \
+    -u "$GITEA_ADMIN_USER:$GITEA_ADMIN_PASSWORD" \
+    "$GITEA_URL/api/v1/user" || true)"
+  if [[ "$status" == "200" ]]; then
+    return
+  fi
+
+  docker exec --user git gitea gitea admin user change-password \
+    --username "$GITEA_ADMIN_USER" \
+    --password "$GITEA_ADMIN_PASSWORD" \
+    --must-change-password=false \
+    --config /data/gitea/conf/app.ini >/dev/null
+  curl --fail --silent --show-error --cacert "$CA_FILE" \
+    -u "$GITEA_ADMIN_USER:$GITEA_ADMIN_PASSWORD" \
+    "$GITEA_URL/api/v1/user" >/dev/null
+}
+
 create_sentinels() {
   local token short_token keycloak_access_token keycloak_username keycloak_id
   local gitea_repo gitea_repo_id gitea_file gitea_file_sha gitea_issue_title
@@ -59,6 +80,7 @@ create_sentinels() {
   token="$(tr -d '-' </proc/sys/kernel/random/uuid)"
   short_token="${token:0:16}"
 
+  echo "Creating Keycloak sentinel"
   keycloak_access_token="$(keycloak_token)"
   keycloak_username="dr-sentinel-$short_token"
   curl --fail --silent --show-error --cacert "$CA_FILE" \
@@ -77,6 +99,8 @@ create_sentinels() {
         'if length == 1 and .[0].username == $username then .[0].id else error("Keycloak sentinel lookup mismatch") end'
   )"
 
+  echo "Creating Gitea sentinel"
+  ensure_gitea_admin_auth
   gitea_repo="dr-sentinel-$short_token"
   gitea_file="sentinel.txt"
   gitea_issue_title="Disaster recovery sentinel $short_token"
@@ -107,6 +131,7 @@ create_sentinels() {
       '{title: $title, body: ("Immutable disaster recovery token: " + $token)}')" \
     >/dev/null
 
+  echo "Creating Harbor sentinel"
   harbor_project="dr-sentinel-$short_token"
   harbor_tag="$short_token"
   curl --fail --silent --show-error --cacert "$CA_FILE" \
@@ -138,6 +163,7 @@ create_sentinels() {
       jq -er .digest
   )"
 
+  echo "Creating OpenBao sentinel"
   openbao_mount="dr-sentinel-$short_token"
   openbao_path="value"
   curl --fail --silent --show-error --cacert "$CA_FILE" \
