@@ -45,30 +45,10 @@ keycloak_token() {
     jq -er .access_token
 }
 
-ensure_gitea_admin_auth() {
-  local status
-
-  status="$(curl --silent --show-error --cacert "$CA_FILE" \
-    -o /dev/null -w '%{http_code}' \
-    -u "$GITEA_ADMIN_USER:$GITEA_ADMIN_PASSWORD" \
-    "$GITEA_URL/api/v1/user" || true)"
-  if [[ "$status" == "200" ]]; then
-    return
-  fi
-
-  docker exec --user git gitea gitea admin user change-password \
-    --username "$GITEA_ADMIN_USER" \
-    --password "$GITEA_ADMIN_PASSWORD" \
-    --must-change-password=false \
-    --config /data/gitea/conf/app.ini >/dev/null
-  curl --fail --silent --show-error --cacert "$CA_FILE" \
-    -u "$GITEA_ADMIN_USER:$GITEA_ADMIN_PASSWORD" \
-    "$GITEA_URL/api/v1/user" >/dev/null
-}
-
 create_sentinels() {
   local token short_token keycloak_access_token keycloak_username keycloak_id
-  local gitea_repo gitea_repo_id gitea_file gitea_file_sha gitea_issue_title
+  local gitea_access_token gitea_repo gitea_repo_id gitea_file gitea_file_sha
+  local gitea_issue_title
   local harbor_project harbor_tag harbor_digest openbao_mount openbao_path openbao_version
   local docker_config
 
@@ -100,13 +80,20 @@ create_sentinels() {
   )"
 
   echo "Creating Gitea sentinel"
-  ensure_gitea_admin_auth
+  gitea_access_token="$(
+    docker exec --user git gitea gitea admin user generate-access-token \
+      --username "$GITEA_ADMIN_USER" \
+      --token-name "dr-sentinel-$short_token" \
+      --scopes all \
+      --raw \
+      --config /data/gitea/conf/app.ini
+  )"
   gitea_repo="dr-sentinel-$short_token"
   gitea_file="sentinel.txt"
   gitea_issue_title="Disaster recovery sentinel $short_token"
   gitea_repo_id="$(
     curl --fail --silent --show-error --cacert "$CA_FILE" \
-      -u "$GITEA_ADMIN_USER:$GITEA_ADMIN_PASSWORD" \
+      -H "Authorization: token $gitea_access_token" \
       -X POST "$GITEA_URL/api/v1/user/repos" \
       -H "Content-Type: application/json" \
       --data "$(jq -cn --arg name "$gitea_repo" \
@@ -115,7 +102,7 @@ create_sentinels() {
   )"
   gitea_file_sha="$(
     curl --fail --silent --show-error --cacert "$CA_FILE" \
-      -u "$GITEA_ADMIN_USER:$GITEA_ADMIN_PASSWORD" \
+      -H "Authorization: token $gitea_access_token" \
       -X POST "$GITEA_URL/api/v1/repos/$GITEA_ADMIN_USER/$gitea_repo/contents/$gitea_file" \
       -H "Content-Type: application/json" \
       --data "$(jq -cn \
@@ -124,7 +111,7 @@ create_sentinels() {
       jq -er '.content.sha'
   )"
   curl --fail --silent --show-error --cacert "$CA_FILE" \
-    -u "$GITEA_ADMIN_USER:$GITEA_ADMIN_PASSWORD" \
+    -H "Authorization: token $gitea_access_token" \
     -X POST "$GITEA_URL/api/v1/repos/$GITEA_ADMIN_USER/$gitea_repo/issues" \
     -H "Content-Type: application/json" \
     --data "$(jq -cn --arg title "$gitea_issue_title" --arg token "$token" \
@@ -185,6 +172,7 @@ create_sentinels() {
     --arg keycloak_username "$keycloak_username" \
     --arg keycloak_id "$keycloak_id" \
     --arg gitea_owner "$GITEA_ADMIN_USER" \
+    --arg gitea_access_token "$gitea_access_token" \
     --arg gitea_repo "$gitea_repo" \
     --arg gitea_repo_id "$gitea_repo_id" \
     --arg gitea_file "$gitea_file" \
@@ -203,6 +191,7 @@ create_sentinels() {
       keycloak: {username: $keycloak_username, id: $keycloak_id},
       gitea: {
         owner: $gitea_owner,
+        access_token: $gitea_access_token,
         repository: $gitea_repo,
         repository_id: $gitea_repo_id,
         file: $gitea_file,
@@ -227,7 +216,8 @@ create_sentinels() {
 
 validate_sentinels() {
   local token keycloak_access_token keycloak_username keycloak_id
-  local gitea_owner gitea_repo gitea_repo_id gitea_file gitea_file_sha gitea_issue_title
+  local gitea_access_token gitea_owner gitea_repo gitea_repo_id gitea_file
+  local gitea_file_sha gitea_issue_title
   local harbor_project harbor_repository harbor_tag harbor_digest
   local openbao_mount openbao_path openbao_version
 
@@ -250,6 +240,7 @@ validate_sentinels() {
        .[0].enabled == false and
        .[0].attributes.dr_token == [$token]' >/dev/null
 
+  gitea_access_token="$(jq -er .gitea.access_token "$STATE_FILE")"
   gitea_owner="$(jq -er .gitea.owner "$STATE_FILE")"
   gitea_repo="$(jq -er .gitea.repository "$STATE_FILE")"
   gitea_repo_id="$(jq -er .gitea.repository_id "$STATE_FILE")"
@@ -257,18 +248,18 @@ validate_sentinels() {
   gitea_file_sha="$(jq -er .gitea.file_sha "$STATE_FILE")"
   gitea_issue_title="$(jq -er .gitea.issue_title "$STATE_FILE")"
   curl --fail --silent --show-error --cacert "$CA_FILE" \
-    -u "$GITEA_ADMIN_USER:$GITEA_ADMIN_PASSWORD" \
+    -H "Authorization: token $gitea_access_token" \
     "$GITEA_URL/api/v1/repos/$gitea_owner/$gitea_repo" |
     jq -e --argjson id "$gitea_repo_id" \
       --arg owner "$gitea_owner" --arg name "$gitea_repo" \
       '.id == $id and .name == $name and .owner.login == $owner and .private == true' >/dev/null
   curl --fail --silent --show-error --cacert "$CA_FILE" \
-    -u "$GITEA_ADMIN_USER:$GITEA_ADMIN_PASSWORD" \
+    -H "Authorization: token $gitea_access_token" \
     "$GITEA_URL/api/v1/repos/$gitea_owner/$gitea_repo/contents/$gitea_file" |
     jq -e --arg sha "$gitea_file_sha" --arg token "$token" \
       '.sha == $sha and ((.content | gsub("\\n"; "") | @base64d) == $token)' >/dev/null
   curl --fail --silent --show-error --cacert "$CA_FILE" \
-    -u "$GITEA_ADMIN_USER:$GITEA_ADMIN_PASSWORD" \
+    -H "Authorization: token $gitea_access_token" \
     "$GITEA_URL/api/v1/repos/$gitea_owner/$gitea_repo/issues?state=all&limit=100" |
     jq -e --arg title "$gitea_issue_title" --arg token "$token" \
       'any(.[]; .title == $title and .body == ("Immutable disaster recovery token: " + $token))' >/dev/null
