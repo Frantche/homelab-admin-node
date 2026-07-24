@@ -306,6 +306,56 @@
     - not (harbor_test_mode | default(false))
     - admin_mode != 'restore'
 
+- name: Require previous Harbor admin password for rotation
+  ansible.builtin.assert:
+    that:
+      - harbor.previous_admin_password | default('', true) | length > 0
+      - harbor.previous_admin_password != harbor_runtime.admin_password
+    fail_msg: "harbor.previous_admin_password must contain the current password when harbor.rotate_admin_password=true."
+  when:
+    - not (harbor_test_mode | default(false))
+    - admin_mode != 'restore'
+    - harbor.rotate_admin_password | default(false) | bool
+  no_log: true
+
+- name: Read current Harbor administrator
+  ansible.builtin.uri:
+    url: "https://{{ service_domains.harbor }}/api/v2.0/users/current"
+    method: GET
+    user: "{{ harbor.admin_user | default('admin') }}"
+    password: "{{ harbor.previous_admin_password }}"
+    force_basic_auth: true
+    validate_certs: "{{ not (ci_mode | default(false)) }}"
+    status_code: 200
+  register: harbor_current_admin
+  until: harbor_current_admin.status == 200
+  retries: 30
+  delay: 5
+  when:
+    - not (harbor_test_mode | default(false))
+    - admin_mode != 'restore'
+    - harbor.rotate_admin_password | default(false) | bool
+  no_log: true
+
+- name: Rotate Harbor administrator password
+  ansible.builtin.uri:
+    url: "https://{{ service_domains.harbor }}/api/v2.0/users/{{ harbor_current_admin.json.user_id }}/password"
+    method: PUT
+    user: "{{ harbor.admin_user | default('admin') }}"
+    password: "{{ harbor.previous_admin_password }}"
+    force_basic_auth: true
+    validate_certs: "{{ not (ci_mode | default(false)) }}"
+    body_format: json
+    body:
+      old_password: "{{ harbor.previous_admin_password }}"
+      new_password: "{{ harbor_runtime.admin_password }}"
+    status_code: 200
+  when:
+    - not (harbor_test_mode | default(false))
+    - admin_mode != 'restore'
+    - harbor.rotate_admin_password | default(false) | bool
+  no_log: true
+
 - name: Recreate Harbor registry services after authentication config change
   ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/harbor.env -f compose.yaml up --wait --wait-timeout 300 --force-recreate harbor-registry harbor-registryctl
   args:

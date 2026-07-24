@@ -704,6 +704,7 @@ func (a app) runRestore(_ context.Context, args []string) int {
 			ID:                    *restoreID,
 			Out:                   a.out,
 			LockFile:              a.cfg.OperationLock,
+			RestoreKeycloakAdmin:  func(ctx context.Context) error { return restore.RestoreKeycloakAdmin(ctx, a.cfg) },
 			RestoreHarborWritable: func(ctx context.Context) error { return restore.RestoreHarborWritable(ctx, a.cfg) },
 			SystemdTimers: []string{
 				"admin-converge.timer",

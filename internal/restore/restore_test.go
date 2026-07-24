@@ -233,6 +233,67 @@ exit 1
 	}
 }
 
+func TestRestoreOpenBaoBootstrapsEmptyRaftBeforeSnapshotRestore(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initMarker := filepath.Join(root, "openbao-initialized")
+	restoreMarker := filepath.Join(root, "openbao-snapshot-restored")
+	fakeDocker := filepath.Join(binDir, "docker")
+	fakeDockerScript := `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "compose" || "${1:-}" == "cp" ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"bao status -format=json"* ]]; then
+  if [[ -f "` + initMarker + `" ]]; then
+    echo '{"initialized":true,"sealed":false}'
+  else
+    echo '{"initialized":false,"sealed":true}'
+  fi
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"operator init -key-shares=1"* ]]; then
+  touch "` + initMarker + `"
+  echo '{"unseal_keys_b64":["temporary-key"],"root_token":"temporary-token"}'
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"operator unseal temporary-key"* ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"chown openbao:openbao /tmp/openbao.snap"* ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "${VAULT_TOKEN:-}" == "temporary-token" && "$*" == *"snapshot restore"* ]]; then
+  touch "` + restoreMarker + `"
+  exit 0
+fi
+echo unexpected docker "$@" >&2
+exit 1
+`
+	if err := os.WriteFile(fakeDocker, []byte(fakeDockerScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("OPENBAO_TOKEN", "")
+
+	snapPath := filepath.Join(root, "openbao.snap")
+	if err := os.WriteFile(snapPath, []byte("snapshot"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := restoreOpenBao(context.Background(), config.Config{AdminRoot: root, RepoRoot: filepath.Join(root, "repo")}, filepath.Join(root, "compose.yaml"), snapPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(restoreMarker); err != nil {
+		t.Fatal("snapshot restore did not use the temporary root token")
+	}
+}
+
 func TestFixOpenBaoDataPermissionsSetsRootMode(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "data/openbao")
@@ -321,6 +382,9 @@ if [[ "${1:-}" == "exec" && "$*" == *"pg_restore --exit-on-error --no-owner --no
   cat >/dev/null
   exit 0
 fi
+if [[ "${1:-}" == "exec" && "$*" == *"psql -U postgres -d registry -v ON_ERROR_STOP=1 -c"* && "$*" == *"UPDATE harbor_user"* ]]; then
+  exit 0
+fi
 echo unexpected docker "$@" >&2
 exit 1
 `
@@ -379,6 +443,9 @@ exit 1
 	}
 	if !strings.Contains(calls, "pg_restore --exit-on-error --no-owner --no-privileges -U postgres -d registry") {
 		t.Fatalf("pg_restore was not called: %s", calls)
+	}
+	if !strings.Contains(calls, "UPDATE harbor_user") {
+		t.Fatalf("Harbor administrator was not prepared for recovery-kit initialization: %s", calls)
 	}
 }
 
@@ -454,6 +521,126 @@ exit 1
 	}
 	if string(mode) != "restore_failed\n" {
 		t.Fatalf("mode = %q", mode)
+	}
+}
+
+func TestRestoreKeycloakAdminKeepsMatchingAdministrator(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "docker.log")
+	fakeDocker := filepath.Join(binDir, "docker")
+	fakeDockerScript := `#!/usr/bin/env bash
+set -euo pipefail
+printf '%q ' "$@" >> "` + logPath + `"
+printf '\n' >> "` + logPath + `"
+if [[ "$*" == *"openid-configuration"* ]]; then
+  exit 0
+fi
+if [[ "$*" == *"kcadm.sh get serverinfo"* && "${KC_CLI_PASSWORD:-}" == "current-secret" ]]; then
+  exit 0
+fi
+echo unexpected docker "$@" >&2
+exit 1
+`
+	if err := os.WriteFile(fakeDocker, []byte(fakeDockerScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	adminRoot := filepath.Join(root, "admin")
+	if err := os.MkdirAll(filepath.Join(adminRoot, "env"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(adminRoot, "env/keycloak.env"), []byte("KEYCLOAK_ADMIN=admin\nKEYCLOAK_ADMIN_PASSWORD=current-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RestoreKeycloakAdmin(context.Background(), config.Config{AdminRoot: adminRoot}); err != nil {
+		t.Fatal(err)
+	}
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(log), "bootstrap-admin") {
+		t.Fatalf("matching administrator should not be recovered: %s", log)
+	}
+	if strings.Contains(string(log), "current-secret") {
+		t.Fatal("administrator password leaked into docker arguments")
+	}
+}
+
+func TestRestoreKeycloakAdminRecoversMismatchedAdministrator(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "docker.log")
+	reconciledMarker := filepath.Join(root, "keycloak-admin-reconciled")
+	fakeDocker := filepath.Join(binDir, "docker")
+	fakeDockerScript := `#!/usr/bin/env bash
+set -euo pipefail
+printf '%q ' "$@" >> "` + logPath + `"
+printf '\n' >> "` + logPath + `"
+if [[ "$*" == *"openid-configuration"* ]]; then
+  exit 0
+fi
+if [[ "$*" == *"bootstrap-admin user"* && "${KEYCLOAK_RECOVERY_ADMIN:-}" == admin-recovery-* && -n "${KEYCLOAK_RECOVERY_PASSWORD:-}" ]]; then
+  exit 0
+fi
+if [[ "$*" == *"kcadm.sh get serverinfo"* && "${KC_CLI_PASSWORD:-}" != "rotated-secret" ]]; then
+  exit 0
+fi
+if [[ "$*" == *"set-password"* && "${KEYCLOAK_TARGET_ADMIN:-}" == "admin" && "${KEYCLOAK_TARGET_PASSWORD:-}" == "rotated-secret" ]]; then
+  touch "` + reconciledMarker + `"
+  exit 0
+fi
+if [[ "$*" == *"kcadm.sh get serverinfo"* && "${KC_CLI_PASSWORD:-}" == "rotated-secret" && -f "` + reconciledMarker + `" ]]; then
+  exit 0
+fi
+echo authentication failed >&2
+exit 1
+`
+	if err := os.WriteFile(fakeDocker, []byte(fakeDockerScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	adminRoot := filepath.Join(root, "admin")
+	if err := os.MkdirAll(filepath.Join(adminRoot, "env"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(adminRoot, "env/keycloak.env"), []byte("KEYCLOAK_ADMIN=admin\nKEYCLOAK_ADMIN_PASSWORD=rotated-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RestoreKeycloakAdmin(context.Background(), config.Config{AdminRoot: adminRoot}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(reconciledMarker); err != nil {
+		t.Fatal("Keycloak administrator password was not reconciled")
+	}
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := string(log)
+	if !strings.Contains(calls, "bootstrap-admin user") {
+		t.Fatalf("temporary recovery administrator was not bootstrapped: %s", calls)
+	}
+	if !strings.Contains(calls, "search=admin-recovery-") {
+		t.Fatalf("temporary recovery administrators were not removed: %s", calls)
+	}
+	if strings.Contains(calls, "rotated-secret") {
+		t.Fatal("administrator password leaked into docker arguments")
 	}
 }
 
@@ -594,6 +781,121 @@ func TestRunRestoresGiteaDataAndSetsNormalMode(t *testing.T) {
 	}
 	if string(mode) != "normal\n" {
 		t.Fatalf("mode = %q", mode)
+	}
+}
+
+func TestRunRestoresGiteaSnapshotDataAndLogicalDatabase(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "docker.log")
+	fakeDocker := filepath.Join(binDir, "docker")
+	fakeDockerScript := `#!/usr/bin/env bash
+set -euo pipefail
+printf '%q ' "$@" >> "` + logPath + `"
+printf '\n' >> "` + logPath + `"
+if [[ "${1:-}" == "compose" ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"pg_isready -U gitea"* ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"psql -U gitea -d postgres"* ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "exec" && "$*" == *"pg_restore --exit-on-error --no-owner --no-privileges -U gitea -d gitea"* ]]; then
+  cat >/dev/null
+  exit 0
+fi
+echo unexpected docker "$@" >&2
+exit 1
+`
+	if err := os.WriteFile(fakeDocker, []byte(fakeDockerScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	backupRoot := filepath.Join(root, "backups")
+	backupDir := filepath.Join(backupRoot, "20260625-120000")
+	for _, path := range []string{
+		filepath.Join(backupDir, "gitea-stack/gitea"),
+		filepath.Join(backupDir, "gitea-stack/postgres"),
+	} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, "gitea-stack/gitea/app.ini"), []byte("restored\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, "gitea-stack/postgres/PG_VERSION"), []byte("old database\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, "gitea.dump"), []byte("gitea-dump"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sealBackupV2(t, backupDir, "20260625-120000")
+
+	adminRoot := filepath.Join(root, "admin")
+	giteaStack := filepath.Join(adminRoot, "data/gitea-stack")
+	for _, path := range []string{
+		filepath.Join(adminRoot, "stacks/gitea"),
+		filepath.Join(adminRoot, "env"),
+		filepath.Join(giteaStack, "gitea"),
+		filepath.Join(giteaStack, "postgres"),
+	} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(adminRoot, "stacks/gitea/compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(adminRoot, "env/gitea.env"), []byte("GITEA_DB_PASSWORD=current\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	currentDatabase := filepath.Join(giteaStack, "postgres/PG_VERSION")
+	if err := os.WriteFile(currentDatabase, []byte("current database\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := Run(context.Background(), config.Config{
+		AdminRoot:      adminRoot,
+		GiteaStackPath: giteaStack,
+		ModeFile:       restoreModeFile(t, root),
+		BackupRoot:     backupRoot,
+	}, Options{
+		ID:       "20260625-120000",
+		Validate: func(context.Context) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(giteaStack, "gitea/app.ini"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "restored\n" {
+		t.Fatalf("gitea data = %q", content)
+	}
+	content, err = os.ReadFile(currentDatabase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "current database\n" {
+		t.Fatalf("physical database was replaced: %q", content)
+	}
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(log), "pg_restore --exit-on-error --no-owner --no-privileges -U gitea -d gitea") {
+		t.Fatalf("logical Gitea dump was not restored: %s", log)
 	}
 }
 

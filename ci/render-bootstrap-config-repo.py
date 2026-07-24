@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import secrets
 import shutil
 import string
@@ -82,6 +83,50 @@ def replace_secret_placeholders(value):
     return value
 
 
+def configure_offsite_repository(rendered_secrets) -> None:
+    endpoint = os.environ.get("CI_RESTIC_OFFSITE_ENDPOINT", "")
+    if not endpoint:
+        return
+
+    required = {
+        "CI_RESTIC_OFFSITE_ACCESS_KEY": os.environ.get(
+            "CI_RESTIC_OFFSITE_ACCESS_KEY", ""
+        ),
+        "CI_RESTIC_OFFSITE_SECRET_KEY": os.environ.get(
+            "CI_RESTIC_OFFSITE_SECRET_KEY", ""
+        ),
+        "CI_RESTIC_OFFSITE_PASSWORD": os.environ.get(
+            "CI_RESTIC_OFFSITE_PASSWORD", ""
+        ),
+        "CI_RESTIC_OFFSITE_CACERT": os.environ.get("CI_RESTIC_OFFSITE_CACERT", ""),
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        raise SystemExit(
+            "offsite repository configuration is missing: " + ", ".join(missing)
+        )
+
+    backup = rendered_secrets["backup"]
+    backup["require_remote_repository"] = True
+    backup["restic_repositories"] = [
+        repo for repo in backup["restic_repositories"] if repo["name"] != "offsite"
+    ]
+    backup["restic_repositories"].append(
+        {
+            "name": "offsite",
+            "repository": endpoint,
+            "password": required["CI_RESTIC_OFFSITE_PASSWORD"],
+            "forget_args": "none",
+            "options": f'--cacert {required["CI_RESTIC_OFFSITE_CACERT"]}',
+            "env": {
+                "AWS_ACCESS_KEY_ID": required["CI_RESTIC_OFFSITE_ACCESS_KEY"],
+                "AWS_SECRET_ACCESS_KEY": required["CI_RESTIC_OFFSITE_SECRET_KEY"],
+                "AWS_DEFAULT_REGION": "garage",
+            },
+        }
+    )
+
+
 def main() -> None:
     repo_root = Path(sys.argv[1])
     config_repo = Path(sys.argv[2])
@@ -96,6 +141,7 @@ def main() -> None:
         secrets_data = yaml.safe_load(f)
 
     rendered_secrets = replace_secret_placeholders(secrets_data)
+    configure_offsite_repository(rendered_secrets)
 
     with (group_vars / "secrets.plain.yaml").open("w") as f:
         yaml.safe_dump(rendered_secrets, f, default_flow_style=False, sort_keys=False)

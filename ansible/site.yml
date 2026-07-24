@@ -132,6 +132,8 @@
       when: admin_mode == 'normal' and (openbao_config.enabled | default(false))
     - role: harbor
       when: admin_mode in ['init', 'normal', 'restore']
+    - role: backup
+      when: admin_mode == 'restore'
     - role: restore
       when: admin_mode == 'restore'
     - role: harbor_config

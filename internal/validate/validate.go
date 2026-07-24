@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -961,7 +962,16 @@ func readEnvFileValue(path, key string) string {
 	}
 	for _, line := range strings.Split(string(content), "\n") {
 		if strings.HasPrefix(line, key+"=") {
-			return strings.TrimPrefix(line, key+"=")
+			value := strings.TrimSpace(strings.TrimPrefix(line, key+"="))
+			if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+				if decoded, decodeErr := strconv.Unquote(value); decodeErr == nil {
+					return decoded
+				}
+			}
+			if len(value) >= 2 && value[0] == '\'' && value[len(value)-1] == '\'' {
+				return value[1 : len(value)-1]
+			}
+			return value
 		}
 	}
 	return ""

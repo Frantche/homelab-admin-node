@@ -44,8 +44,7 @@ The normal convergence has passed with the CI OIDC inventory:
 
 After the normal convergence works, run the lifecycle scenarios when practical:
 
-- `sudo /opt/homelab-admin-node/ci/run-admin-lifecycle.sh fresh-branch`
-- `sudo /opt/homelab-admin-node/ci/run-admin-lifecycle.sh upgrade-main-to-branch`
-- `sudo /opt/homelab-admin-node/ci/run-admin-lifecycle.sh restore-main-backup-with-branch`
+- `sudo /opt/homelab-admin-node/ci/scenarios/bootstrap-user-journey.sh`
+- `make test-ci-full` pour la mise a niveau `main`, la reprise distante et la rotation des secrets techniques
 
 Do not use full lifecycle resets for every small OIDC iteration unless the runtime state is inconsistent.

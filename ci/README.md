@@ -1,49 +1,46 @@
-# CI — scripts de test du cycle de vie
+# CI - parcours utilisateur et reprise
 
-Ce dossier contient les scripts exécutés **à l'intérieur de la VM Arch Linux** lors des tests d'intégration GitHub Actions (`.github/workflows/admin-node-lifecycle.yml`).
+La CI valide les commandes qu'un operateur execute reellement, dans des VM Arch
+Linux creees depuis l'image cloud officielle.
 
-La logique runtime reutilisable doit vivre dans `bin/admin-node`. Les scripts CI restants doivent rester limites a l'orchestration de scenarios, a l'installation de prerequis de test, ou a la construction de harnais temporaires autour de commandes Go.
+## Parcours
 
-## Fichiers
+`scenarios/bootstrap-user-journey.sh` s'execute dans une VM deja creee par
+cloud-init. Il genere un config repo depuis les exemples, traverse les modes
+`locked`, `init` et `normal`, puis valide services, OIDC, observabilite,
+sauvegarde et restauration locale.
 
-| Fichier | Rôle |
-|---|---|
-| `run-admin-lifecycle.sh` | Point d'entrée principal. Reçoit le nom d'un scénario en argument et le délègue au script correspondant dans `scenarios/`. Appelé par le workflow CI et par `make test-ci-fast` / `make test-ci-full`. |
-| `setup-ci-env.sh` | Prérequis CI : ajoute les entrées `/etc/hosts` pour les domaines de service, installe les collections Ansible requises. Exécuté en premier dans chaque scénario. Les certificats TLS de fallback sont générés par le rôle Traefik pendant la convergence. |
-| `init-openbao-ci.sh` | Wrapper compatible vers `bin/admin-node ci init-openbao`. |
-| `create-sentinel-data.sh` | Wrapper compatible vers `bin/admin-node ci create-sentinel`. |
-| `setup-ci-config-repo.sh` | Wrapper compatible vers `bin/admin-node ci install-mock-config-repo`. |
-| `assertions.sh` | Fonctions d'assertion shell (`assert_file_exists`, `assert_contains`) sourcées par tous les scénarios pour valider les étapes intermédiaires. |
-| `test-oidc-contracts.sh` | Vérifie localement les contrats Ansible OIDC/Harbor/Keycloak (mocks CI, échec explicite hors CI, secret partagé, scope `offline_access`, mapper `groups`). |
-| `ci-extra-vars.json` | Variables Ansible supplémentaires pour le mode CI : mots de passe factices, token Cloudflare fictif, paramètres Keycloak/Harbor/OpenBao/Backup. Passé via `--extra-vars` à chaque exécution du playbook. |
+`scenarios/main-to-candidate-disaster-recovery.sh` expose une commande
+idempotente par etape GitHub Actions. Le job :
 
-## Scénarios (`scenarios/`)
+1. cree une VM source avec le SHA exact de `main` ;
+2. sauvegarde les donnees dans un Garage S3 externe a la VM ;
+3. redemarre le noeud et valide son durcissement ;
+4. detruit le disque source ;
+5. restaure le backup `main` sur une nouvelle VM avec l'outillage candidat ;
+6. converge et valide le deploiement restaure avec le candidat ;
+7. tourne les secrets techniques et les mots de passe de bases de donnees ;
+8. confirme que les mots de passe des utilisateurs OIDC n'ont pas change.
 
-| Scénario | Description |
-|---|---|
-| `fresh-branch.sh` | Déploiement complet depuis zéro : init → Ansible (mode init) → initialisation OpenBao → mode normal → Ansible (mode normal) → données sentinelles → sauvegardes + rétention → restauration. |
-| `upgrade-main-to-branch.sh` | Simule une mise à niveau de branche : déploiement initial → sauvegarde → écriture d'un nouveau `git-ref` → re-déploiement Ansible → sauvegarde post-upgrade. |
-| `restore-main-backup-with-branch.sh` | Vérifie la restauration à partir d'une sauvegarde existante : déploiement initial → sauvegarde → restauration → re-déploiement Ansible post-restauration. |
+Garage et son endpoint TLS sont prepares par `setup-garage.sh`. Les fonctions
+QEMU reutilisables vivent dans `lib/arch-vm.sh`.
 
-## Utilisation locale
+## Execution locale
 
-Les scénarios s'exécutent dans la VM. Pour un test rapide depuis la machine hôte :
+Le parcours rapide suppose qu'il est lance comme root dans une VM deja preparee :
 
 ```bash
-make test-ci-fast    # scénario fresh-branch uniquement
-make test-ci-full    # les 3 scénarios
+make test-ci-fast
 ```
 
-## Flux dans le workflow GitHub Actions
+Le parcours complet exige Docker, QEMU, cloud-localds, socat et un acces Internet :
 
+```bash
+make test-ci-full
 ```
-GitHub Actions (ubuntu-24.04)
-  └─ Lance une VM Arch Linux via QEMU
-       └─ cloud-init installe ansible, docker, sops, restic …
-            └─ ssh → /opt/homelab-admin-node/ci/run-admin-lifecycle.sh <scenario>
-                 ├─ setup-ci-env.sh
-                 ├─ ansible-playbook …
-                 ├─ bin/admin-node ci init-openbao
-                 ├─ bin/admin-node ci create-sentinel
-                 └─ bin/admin-node backup run / restore run …
-```
+
+Les SHA et URLs peuvent etre imposes avec `MAIN_SHA`, `CANDIDATE_SHA`,
+`MAIN_REPO_URL` et `CANDIDATE_REPO_URL`.
+
+Les fichiers sous `.ci/` sont ephemeres. Aucun kit de reprise ni secret genere
+n'est publie comme artefact GitHub Actions.
