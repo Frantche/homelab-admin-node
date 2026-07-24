@@ -524,6 +524,126 @@ exit 1
 	}
 }
 
+func TestRestoreKeycloakAdminKeepsMatchingAdministrator(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "docker.log")
+	fakeDocker := filepath.Join(binDir, "docker")
+	fakeDockerScript := `#!/usr/bin/env bash
+set -euo pipefail
+printf '%q ' "$@" >> "` + logPath + `"
+printf '\n' >> "` + logPath + `"
+if [[ "$*" == *"openid-configuration"* ]]; then
+  exit 0
+fi
+if [[ "$*" == *"kcadm.sh get serverinfo"* && "${KC_CLI_PASSWORD:-}" == "current-secret" ]]; then
+  exit 0
+fi
+echo unexpected docker "$@" >&2
+exit 1
+`
+	if err := os.WriteFile(fakeDocker, []byte(fakeDockerScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	adminRoot := filepath.Join(root, "admin")
+	if err := os.MkdirAll(filepath.Join(adminRoot, "env"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(adminRoot, "env/keycloak.env"), []byte("KEYCLOAK_ADMIN=admin\nKEYCLOAK_ADMIN_PASSWORD=current-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RestoreKeycloakAdmin(context.Background(), config.Config{AdminRoot: adminRoot}); err != nil {
+		t.Fatal(err)
+	}
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(log), "bootstrap-admin") {
+		t.Fatalf("matching administrator should not be recovered: %s", log)
+	}
+	if strings.Contains(string(log), "current-secret") {
+		t.Fatal("administrator password leaked into docker arguments")
+	}
+}
+
+func TestRestoreKeycloakAdminRecoversMismatchedAdministrator(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "docker.log")
+	reconciledMarker := filepath.Join(root, "keycloak-admin-reconciled")
+	fakeDocker := filepath.Join(binDir, "docker")
+	fakeDockerScript := `#!/usr/bin/env bash
+set -euo pipefail
+printf '%q ' "$@" >> "` + logPath + `"
+printf '\n' >> "` + logPath + `"
+if [[ "$*" == *"openid-configuration"* ]]; then
+  exit 0
+fi
+if [[ "$*" == *"bootstrap-admin user"* && "${KEYCLOAK_RECOVERY_ADMIN:-}" == admin-recovery-* && -n "${KEYCLOAK_RECOVERY_PASSWORD:-}" ]]; then
+  exit 0
+fi
+if [[ "$*" == *"kcadm.sh get serverinfo"* && "${KC_CLI_PASSWORD:-}" != "rotated-secret" ]]; then
+  exit 0
+fi
+if [[ "$*" == *"set-password"* && "${KEYCLOAK_TARGET_ADMIN:-}" == "admin" && "${KEYCLOAK_TARGET_PASSWORD:-}" == "rotated-secret" ]]; then
+  touch "` + reconciledMarker + `"
+  exit 0
+fi
+if [[ "$*" == *"kcadm.sh get serverinfo"* && "${KC_CLI_PASSWORD:-}" == "rotated-secret" && -f "` + reconciledMarker + `" ]]; then
+  exit 0
+fi
+echo authentication failed >&2
+exit 1
+`
+	if err := os.WriteFile(fakeDocker, []byte(fakeDockerScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	adminRoot := filepath.Join(root, "admin")
+	if err := os.MkdirAll(filepath.Join(adminRoot, "env"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(adminRoot, "env/keycloak.env"), []byte("KEYCLOAK_ADMIN=admin\nKEYCLOAK_ADMIN_PASSWORD=rotated-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RestoreKeycloakAdmin(context.Background(), config.Config{AdminRoot: adminRoot}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(reconciledMarker); err != nil {
+		t.Fatal("Keycloak administrator password was not reconciled")
+	}
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := string(log)
+	if !strings.Contains(calls, "bootstrap-admin user") {
+		t.Fatalf("temporary recovery administrator was not bootstrapped: %s", calls)
+	}
+	if !strings.Contains(calls, "search=admin-recovery-") {
+		t.Fatalf("temporary recovery administrators were not removed: %s", calls)
+	}
+	if strings.Contains(calls, "rotated-secret") {
+		t.Fatal("administrator password leaked into docker arguments")
+	}
+}
+
 func TestStartStacksSkipsCloudflaredComposeInCIMockMode(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fake docker script is unix-specific")

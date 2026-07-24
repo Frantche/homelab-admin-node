@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +26,7 @@ import (
 type Options struct {
 	ID                    string
 	Validate              func(context.Context) error
+	RestoreKeycloakAdmin  func(context.Context) error
 	RestoreHarborWritable func(context.Context) error
 	Out                   io.Writer
 	LockFile              string
@@ -165,6 +168,12 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 		writeMode(cfg.ModeFile, "restore_failed")
 		return err
 	}
+	if fileExists(set.KeycloakCompose) && opts.RestoreKeycloakAdmin != nil {
+		if err := opts.RestoreKeycloakAdmin(ctx); err != nil {
+			writeMode(cfg.ModeFile, "restore_failed")
+			return fmt.Errorf("restore Keycloak administrator: %w", err)
+		}
+	}
 	if fileExists(set.HarborCompose) && opts.RestoreHarborWritable != nil {
 		if err := opts.RestoreHarborWritable(ctx); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
@@ -191,6 +200,154 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 	}
 	restoreSucceeded = true
 	return nil
+}
+
+func RestoreKeycloakAdmin(ctx context.Context, cfg config.Config) error {
+	envFile := filepath.Join(cfg.AdminRoot, "env/keycloak.env")
+	user := envFileValue(envFile, "KEYCLOAK_ADMIN")
+	password := envFileValue(envFile, "KEYCLOAK_ADMIN_PASSWORD")
+	if user == "" {
+		user = "admin"
+	}
+	if password == "" {
+		return fmt.Errorf("Keycloak admin password is unavailable")
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	if err := waitKeycloakReady(waitCtx); err != nil {
+		return err
+	}
+	if err := keycloakAdminAuth(waitCtx, user, password); err == nil {
+		return nil
+	}
+
+	recoverySuffix, err := randomHex(6)
+	if err != nil {
+		return fmt.Errorf("generate Keycloak recovery username: %w", err)
+	}
+	recoveryPassword, err := randomHex(24)
+	if err != nil {
+		return fmt.Errorf("generate Keycloak recovery password: %w", err)
+	}
+	recoveryUser := "admin-recovery-" + recoverySuffix
+
+	if err := runWithEnv(waitCtx, nil, []string{
+		"KEYCLOAK_RECOVERY_ADMIN=" + recoveryUser,
+		"KEYCLOAK_RECOVERY_PASSWORD=" + recoveryPassword,
+	}, "docker", "exec",
+		"-e", "KEYCLOAK_RECOVERY_ADMIN",
+		"-e", "KEYCLOAK_RECOVERY_PASSWORD",
+		"keycloak",
+		"/opt/keycloak/bin/kc.sh", "bootstrap-admin", "user",
+		"--username:env=KEYCLOAK_RECOVERY_ADMIN",
+		"--password:env=KEYCLOAK_RECOVERY_PASSWORD",
+		"--no-prompt",
+	); err != nil {
+		return fmt.Errorf("bootstrap temporary Keycloak recovery administrator: %w", err)
+	}
+
+	for {
+		if err := keycloakAdminAuth(waitCtx, recoveryUser, recoveryPassword); err == nil {
+			break
+		}
+		if waitCtx.Err() != nil {
+			return fmt.Errorf("temporary Keycloak recovery administrator did not become available: %w", waitCtx.Err())
+		}
+		time.Sleep(5 * time.Second)
+	}
+
+	const reconcileScript = `set -euo pipefail
+kcadm_auth=(--no-config --server http://127.0.0.1:8080 --realm master --user "$KEYCLOAK_RECOVERY_ADMIN" --password "$KC_CLI_PASSWORD")
+target_admin_id="$(
+  /opt/keycloak/bin/kcadm.sh get users "${kcadm_auth[@]}" -r master \
+    -q username="$KEYCLOAK_TARGET_ADMIN" --fields id --format csv --noquotes \
+  | sed -n '/^[0-9a-fA-F-]\{36\}$/p' | head -n 1
+)"
+if [ -z "$target_admin_id" ]; then
+  /opt/keycloak/bin/kcadm.sh create users "${kcadm_auth[@]}" -r master \
+    -s username="$KEYCLOAK_TARGET_ADMIN" -s enabled=true
+  target_admin_id="$(
+    /opt/keycloak/bin/kcadm.sh get users "${kcadm_auth[@]}" -r master \
+      -q username="$KEYCLOAK_TARGET_ADMIN" --fields id --format csv --noquotes \
+    | sed -n '/^[0-9a-fA-F-]\{36\}$/p' | head -n 1
+  )"
+  if [ -z "$target_admin_id" ]; then
+    echo "Keycloak administrator could not be created in realm master" >&2
+    exit 1
+  fi
+  /opt/keycloak/bin/kcadm.sh add-roles "${kcadm_auth[@]}" -r master \
+    --uid "$target_admin_id" --rolename admin
+fi
+/opt/keycloak/bin/kcadm.sh set-password "${kcadm_auth[@]}" -r master \
+  --userid "$target_admin_id" --new-password "$KEYCLOAK_TARGET_PASSWORD"
+/opt/keycloak/bin/kcadm.sh get users "${kcadm_auth[@]}" -r master \
+  -q search=admin-recovery- --fields id,username --format csv --noquotes \
+| while IFS= read -r recovery_line; do
+    recovery_id="${recovery_line%%,*}"
+    recovery_username="${recovery_line#*,}"
+    case "$recovery_id:$recovery_username" in
+      ????????-????-????-????-????????????:admin-recovery-*)
+        /opt/keycloak/bin/kcadm.sh delete "users/$recovery_id" "${kcadm_auth[@]}" -r master
+        ;;
+    esac
+  done`
+	if err := runWithEnv(waitCtx, nil, []string{
+		"KC_CLI_PASSWORD=" + recoveryPassword,
+		"KEYCLOAK_RECOVERY_ADMIN=" + recoveryUser,
+		"KEYCLOAK_TARGET_ADMIN=" + user,
+		"KEYCLOAK_TARGET_PASSWORD=" + password,
+	}, "docker", "exec",
+		"-e", "KC_CLI_PASSWORD",
+		"-e", "KEYCLOAK_RECOVERY_ADMIN",
+		"-e", "KEYCLOAK_TARGET_ADMIN",
+		"-e", "KEYCLOAK_TARGET_PASSWORD",
+		"keycloak", "bash", "-lc", reconcileScript,
+	); err != nil {
+		return fmt.Errorf("reconcile Keycloak administrator from recovery kit: %w", err)
+	}
+	if err := keycloakAdminAuth(waitCtx, user, password); err != nil {
+		return fmt.Errorf("verify restored Keycloak administrator: %w", err)
+	}
+	return nil
+}
+
+func waitKeycloakReady(ctx context.Context) error {
+	const readinessScript = `exec 3<>/dev/tcp/127.0.0.1/8080
+printf 'GET /realms/master/.well-known/openid-configuration HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n' >&3
+IFS= read -r status <&3
+case "$status" in *" 200 "*) exit 0;; *) exit 1;; esac`
+	var lastErr error
+	for {
+		lastErr = run(ctx, nil, "docker", "exec", "keycloak", "bash", "-lc", readinessScript)
+		if lastErr == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return fmt.Errorf("Keycloak did not become ready: %w", ctx.Err())
+		}
+		time.Sleep(3 * time.Second)
+	}
+}
+
+func keycloakAdminAuth(ctx context.Context, user, password string) error {
+	return runWithEnv(ctx, nil, []string{"KC_CLI_PASSWORD=" + password},
+		"docker", "exec", "-e", "KC_CLI_PASSWORD", "keycloak",
+		"/opt/keycloak/bin/kcadm.sh", "get", "serverinfo",
+		"--no-config",
+		"--server", "http://127.0.0.1:8080",
+		"--realm", "master",
+		"--user", user,
+		"-r", "master",
+	)
+}
+
+func randomHex(byteCount int) (string, error) {
+	value := make([]byte, byteCount)
+	if _, err := rand.Read(value); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(value), nil
 }
 
 func RestoreHarborWritable(ctx context.Context, cfg config.Config) error {
