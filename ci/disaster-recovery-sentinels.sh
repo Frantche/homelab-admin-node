@@ -227,19 +227,20 @@ validate_sentinels() {
   keycloak_username="$(jq -er .keycloak.username "$STATE_FILE")"
   keycloak_id="$(jq -er .keycloak.id "$STATE_FILE")"
   keycloak_access_token="$(keycloak_token)"
+  echo "Validating Keycloak sentinel"
   curl --fail --silent --show-error --cacert "$CA_FILE" \
     -H "Authorization: Bearer $keycloak_access_token" \
-    "$KEYCLOAK_URL/admin/realms/homelab/users?username=$keycloak_username&exact=true" |
+    "$KEYCLOAK_URL/admin/realms/homelab/users/$keycloak_id" |
     jq -e \
       --arg username "$keycloak_username" \
       --arg id "$keycloak_id" \
       --arg token "$token" \
-      'length == 1 and
-       .[0].username == $username and
-       .[0].id == $id and
-       .[0].enabled == false and
-       .[0].attributes.dr_token == [$token]' >/dev/null
+      '.username == $username and
+       .id == $id and
+       .enabled == false and
+       .attributes.dr_token == [$token]' >/dev/null
 
+  echo "Validating Gitea sentinel"
   gitea_access_token="$(jq -er .gitea.access_token "$STATE_FILE")"
   gitea_owner="$(jq -er .gitea.owner "$STATE_FILE")"
   gitea_repo="$(jq -er .gitea.repository "$STATE_FILE")"
@@ -268,6 +269,7 @@ validate_sentinels() {
   harbor_repository="$(jq -er .harbor.repository "$STATE_FILE")"
   harbor_tag="$(jq -er .harbor.tag "$STATE_FILE")"
   harbor_digest="$(jq -er .harbor.digest "$STATE_FILE")"
+  echo "Validating Harbor sentinel"
   curl --fail --silent --show-error --cacert "$CA_FILE" \
     -u "$HARBOR_ADMIN_USER:$HARBOR_ADMIN_PASSWORD" \
     "$HARBOR_URL/api/v2.0/projects/$harbor_project" |
@@ -281,6 +283,7 @@ validate_sentinels() {
   openbao_mount="$(jq -er .openbao.mount "$STATE_FILE")"
   openbao_path="$(jq -er .openbao.path "$STATE_FILE")"
   openbao_version="$(jq -er .openbao.version "$STATE_FILE")"
+  echo "Validating OpenBao sentinel"
   curl --fail --silent --show-error --cacert "$CA_FILE" \
     -H "X-Vault-Token: $OPENBAO_TOKEN" \
     "$OPENBAO_URL/v1/sys/mounts" |
