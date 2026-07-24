@@ -70,7 +70,12 @@ create_sentinels() {
     --data "$(jq -cn \
       --arg username "$keycloak_username" \
       --arg token "$token" \
-      '{username: $username, enabled: false, attributes: {dr_token: [$token]}}')"
+      '{
+        username: $username,
+        firstName: $token,
+        lastName: "Disaster recovery sentinel",
+        enabled: false
+      }')"
   keycloak_id="$(
     curl --fail --silent --show-error --cacert "$CA_FILE" \
       -H "Authorization: Bearer $keycloak_access_token" \
@@ -238,7 +243,8 @@ validate_sentinels() {
       '.username == $username and
        .id == $id and
        .enabled == false and
-       .attributes.dr_token == [$token]' >/dev/null
+       .firstName == $token and
+       .lastName == "Disaster recovery sentinel"' >/dev/null
 
   echo "Validating Gitea sentinel"
   gitea_access_token="$(jq -er .gitea.access_token "$STATE_FILE")"
