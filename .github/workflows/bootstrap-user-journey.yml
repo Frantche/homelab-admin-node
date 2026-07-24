@@ -532,44 +532,32 @@ jobs:
       - name: Deploy and validate main
         run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh deploy-main
 
-      - name: Reboot main and validate hardening
-        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh reboot-hardening
-
       - name: Create immutable service data sentinels
         run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh create-sentinels
 
-      - name: Back up main to Garage
-        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh backup-main
-
-      - name: Destroy source VM
-        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh destroy-source
-
-      - name: Create fresh recovery VM
-        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh create-target
-
-      - name: Restore main backup from Garage
-        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh restore-main
-
-      - name: Validate restored main service data
-        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh validate-sentinels
-
-      - name: Converge restored deployment with candidate
+      - name: Upgrade main deployment to candidate
         run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh upgrade-candidate
 
-      - name: Validate service data after candidate upgrade
-        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh validate-sentinels
+      - name: Reboot candidate and validate hardening
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh reboot-candidate-hardening
+
+      - name: Validate upgraded service data and user journeys
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh validate-upgraded-candidate
 
       - name: Rotate technical secrets
         run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh rotate-secrets
 
-      - name: Validate service data after secret rotation
-        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh validate-sentinels
+      - name: Validate technical secret rotation and service data
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh validate-secret-rotation
 
-      - name: Back up and validate candidate
+      - name: Finalize technical secret rotation
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh finalize-secret-rotation
+
+      - name: Back up candidate to Garage
         run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh backup-candidate
 
-      - name: Destroy upgraded recovery VM
-        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh destroy-target
+      - name: Destroy upgraded source VM
+        run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh destroy-source
 
       - name: Create final recovery VM
         run: ./ci/scenarios/main-to-candidate-disaster-recovery.sh create-final-target

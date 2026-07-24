@@ -20,12 +20,9 @@ MAIN_REPO_URL="${MAIN_REPO_URL:?MAIN_REPO_URL is required}"
 CANDIDATE_REPO_URL="${CANDIDATE_REPO_URL:?CANDIDATE_REPO_URL is required}"
 SSH_PORT="${SSH_PORT:-2222}"
 SOURCE_VM_DIR="$REPO_ROOT/.ci/vms/main-source"
-TARGET_VM_DIR="$REPO_ROOT/.ci/vms/candidate-restore"
 FINAL_VM_DIR="$REPO_ROOT/.ci/vms/candidate-final-restore"
 STATE_DIR="$REPO_ROOT/.ci/disaster-recovery"
-MAIN_RECOVERY_KIT="$STATE_DIR/main-recovery-kit.tgz"
 CANDIDATE_RECOVERY_KIT="$STATE_DIR/candidate-recovery-kit.tgz"
-BACKUP_ID_FILE="$STATE_DIR/backup-id"
 CANDIDATE_BACKUP_ID_FILE="$STATE_DIR/candidate-backup-id"
 SENTINEL_STATE="$STATE_DIR/data-sentinels.json"
 ROTATION_AUDIT="$STATE_DIR/rotation-audit.json"
@@ -87,14 +84,13 @@ run_backup() {
     /opt/homelab-admin-node/bin/admin-node backup run"
 }
 
-create_recovery_kit() {
-  local destination="$1"
+create_candidate_recovery_kit() {
   vm_ssh "sudo tar -C / -czf /tmp/admin-node-recovery-kit.tgz etc/sops/age/keys.txt \
     etc/admin-config/homelab-node-admin-config opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml; \
     sudo chown admin:admin /tmp/admin-node-recovery-kit.tgz; sudo chmod 0600 /tmp/admin-node-recovery-kit.tgz"
-  rm -f "$destination"
-  ci_vm_scp_from "$SSH_PORT" /tmp/admin-node-recovery-kit.tgz "$destination"
-  chmod 0600 "$destination"
+  rm -f "$CANDIDATE_RECOVERY_KIT"
+  ci_vm_scp_from "$SSH_PORT" /tmp/admin-node-recovery-kit.tgz "$CANDIDATE_RECOVERY_KIT"
+  chmod 0600 "$CANDIDATE_RECOVERY_KIT"
 }
 
 install_sentinel_script() {
@@ -109,21 +105,18 @@ validate_sentinels() {
   vm_ssh "sudo /tmp/disaster-recovery-sentinels.sh validate /tmp/admin-node-data-sentinels.json"
 }
 
-restore_backup() {
-  local backup_id_file="$1"
-  local expected_revision="$2"
-  local recovery_kit="$3"
+restore_candidate_backup() {
   local backup_id restored_revision
 
-  backup_id="$(<"$backup_id_file")"
-  ci_vm_scp_to "$SSH_PORT" "$recovery_kit" /tmp/admin-node-recovery-kit.tgz
+  backup_id="$(<"$CANDIDATE_BACKUP_ID_FILE")"
+  ci_vm_scp_to "$SSH_PORT" "$CANDIDATE_RECOVERY_KIT" /tmp/admin-node-recovery-kit.tgz
   vm_ssh "sudo tar -C / -xzf /tmp/admin-node-recovery-kit.tgz; sudo chmod 0400 /etc/sops/age/keys.txt; \
     sudo chmod 0600 /opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml; \
     sudo /opt/homelab-admin-node/bin/admin-node mode set restore"
   run_converge "-e restore_repository=offsite -e restore_id=$backup_id"
   restored_revision="$(vm_ssh "sudo jq -r .cli_revision /srv/admin/backups/local/$backup_id/manifest.json")"
-  [[ "$restored_revision" == "$expected_revision" ]] || {
-    echo "restored revision $restored_revision does not match $expected_revision" >&2
+  [[ "$restored_revision" == "$CANDIDATE_SHA" ]] || {
+    echo "restored revision $restored_revision does not match $CANDIDATE_SHA" >&2
     return 1
   }
 }
@@ -143,7 +136,13 @@ case "$ACTION" in
       CI_SKIP_PUBLIC_URL_VALIDATION=true SKIP_PUBLIC_URL_VALIDATION=true \
       CI_SKIP_LOCAL_RESTORE=true /opt/homelab-admin-node/ci/scenarios/bootstrap-user-journey.sh"
     ;;
-  reboot-hardening)
+  upgrade-candidate)
+    vm_ssh "sudo git -C /opt/homelab-admin-node fetch --no-tags '$CANDIDATE_REPO_URL' '$CANDIDATE_SHA'; \
+      sudo git -C /opt/homelab-admin-node checkout --detach '$CANDIDATE_SHA'; \
+      sudo /opt/homelab-admin-node/scripts/build-admin-node.sh"
+    run_converge
+    ;;
+  reboot-candidate-hardening)
     vm_ssh "sudo reboot" || true
     sleep 10
     ci_vm_wait "$SSH_PORT" "$SOURCE_VM_DIR"
@@ -157,42 +156,20 @@ case "$ACTION" in
     ci_vm_scp_from "$SSH_PORT" /tmp/admin-node-data-sentinels.json "$SENTINEL_STATE"
     chmod 0600 "$SENTINEL_STATE"
     ;;
-  validate-sentinels)
+  validate-upgraded-candidate)
     validate_sentinels
-    ;;
-  backup-main)
-    run_backup
-    backup_id="$(vm_ssh "sudo find /srv/admin/backups/local -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tail -n1")"
-    [[ "$backup_id" =~ ^[0-9]{8}-[0-9]{6}$ ]] || { echo "invalid backup ID: $backup_id" >&2; exit 1; }
-    [[ "$(vm_ssh "sudo jq -r .cli_revision /srv/admin/backups/local/$backup_id/manifest.json")" == "$MAIN_SHA" ]]
-    printf '%s\n' "$backup_id" >"$BACKUP_ID_FILE"
-    vm_ssh "sudo cat /srv/admin/backups/local/$backup_id/manifest.json" >"$ARTIFACT_DIR/main-backup-manifest.json"
-    create_recovery_kit "$MAIN_RECOVERY_KIT"
-    ;;
-  destroy-source)
-    ci_vm_collect_logs "$SSH_PORT" "$SOURCE_VM_DIR" "$ARTIFACT_DIR/source-vm"
-    ci_vm_destroy "$SOURCE_VM_DIR"
-    [[ ! -e "$SOURCE_VM_DIR/disk.qcow2" ]]
-    ;;
-  create-target)
-    ci_vm_create "$TARGET_VM_DIR" admin-candidate-restore "$CANDIDATE_REPO_URL" "$CANDIDATE_SHA"
-    ci_vm_start "$TARGET_VM_DIR" "$SSH_PORT"
-    ci_vm_wait "$SSH_PORT" "$TARGET_VM_DIR"
-    vm_ssh "sudo /opt/homelab-admin-node/scripts/build-admin-node.sh"
-    install_offsite_access
-    ;;
-  restore-main)
-    restore_backup "$BACKUP_ID_FILE" "$MAIN_SHA" "$MAIN_RECOVERY_KIT"
-    ;;
-  upgrade-candidate)
-    run_converge
     run_validations
     ;;
   rotate-secrets)
     vm_ssh "sudo /opt/homelab-admin-node/ci/rotate-bootstrap-config.sh prepare"
     run_converge
+    ;;
+  validate-secret-rotation)
     vm_ssh "sudo /opt/homelab-admin-node/ci/validate-secret-rotation.sh"
+    validate_sentinels
     run_validations
+    ;;
+  finalize-secret-rotation)
     vm_ssh "sudo /opt/homelab-admin-node/ci/rotate-bootstrap-config.sh finalize"
     run_converge
     vm_ssh "sudo chown admin:admin /tmp/admin-node-secret-rotation-audit.json; \
@@ -205,21 +182,15 @@ case "$ACTION" in
     run_backup
     post_id="$(vm_ssh "sudo find /srv/admin/backups/local -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tail -n1")"
     [[ "$post_id" =~ ^[0-9]{8}-[0-9]{6}$ ]] || { echo "invalid backup ID: $post_id" >&2; exit 1; }
-    [[ "$post_id" != "$(<"$BACKUP_ID_FILE")" ]] || { echo "candidate backup did not create a new ID" >&2; exit 1; }
     [[ "$(vm_ssh "sudo jq -r .cli_revision /srv/admin/backups/local/$post_id/manifest.json")" == "$CANDIDATE_SHA" ]]
     printf '%s\n' "$post_id" >"$CANDIDATE_BACKUP_ID_FILE"
     vm_ssh "sudo cat /srv/admin/backups/local/$post_id/manifest.json" >"$ARTIFACT_DIR/post-rotation-manifest.json"
-    create_recovery_kit "$CANDIDATE_RECOVERY_KIT"
-    [[ "$(sha256sum "$CANDIDATE_RECOVERY_KIT" | cut -d' ' -f1)" != \
-      "$(sha256sum "$MAIN_RECOVERY_KIT" | cut -d' ' -f1)" ]] || {
-      echo "candidate recovery kit is identical to the main recovery kit" >&2
-      exit 1
-    }
-    run_validations
+    create_candidate_recovery_kit
     ;;
-  destroy-target)
-    ci_vm_collect_logs "$SSH_PORT" "$TARGET_VM_DIR" "$ARTIFACT_DIR/target-vm"
-    ci_vm_destroy "$TARGET_VM_DIR"
+  destroy-source)
+    ci_vm_collect_logs "$SSH_PORT" "$SOURCE_VM_DIR" "$ARTIFACT_DIR/source-vm"
+    ci_vm_destroy "$SOURCE_VM_DIR"
+    [[ ! -e "$SOURCE_VM_DIR/disk.qcow2" ]]
     ;;
   create-final-target)
     ci_vm_create "$FINAL_VM_DIR" admin-candidate-final-restore "$CANDIDATE_REPO_URL" "$CANDIDATE_SHA"
@@ -229,7 +200,7 @@ case "$ACTION" in
     install_offsite_access
     ;;
   restore-candidate)
-    restore_backup "$CANDIDATE_BACKUP_ID_FILE" "$CANDIDATE_SHA" "$CANDIDATE_RECOVERY_KIT"
+    restore_candidate_backup
     ;;
   validate-final-candidate)
     validate_sentinels
@@ -246,17 +217,14 @@ case "$ACTION" in
     ;;
   cleanup)
     ci_vm_collect_logs "$SSH_PORT" "$SOURCE_VM_DIR" "$ARTIFACT_DIR/source-vm-failure" || true
-    ci_vm_collect_logs "$SSH_PORT" "$TARGET_VM_DIR" "$ARTIFACT_DIR/target-vm-failure" || true
     ci_vm_collect_logs "$SSH_PORT" "$FINAL_VM_DIR" "$ARTIFACT_DIR/final-vm-failure" || true
     ci_vm_destroy "$SOURCE_VM_DIR" || true
-    ci_vm_destroy "$TARGET_VM_DIR" || true
     ci_vm_destroy "$FINAL_VM_DIR" || true
     docker logs "$CI_GARAGE_CONTAINER" >"$ARTIFACT_DIR/garage.log" 2>&1 || true
     cp "$REPO_ROOT/.ci/garage/socat.log" "$ARTIFACT_DIR/socat.log" 2>/dev/null || true
     [[ ! -f "$REPO_ROOT/.ci/garage/socat.pid" ]] || kill "$(<"$REPO_ROOT/.ci/garage/socat.pid")" 2>/dev/null || true
     docker rm -f "$CI_GARAGE_CONTAINER" >/dev/null 2>&1 || true
-    rm -f "$MAIN_RECOVERY_KIT" "$CANDIDATE_RECOVERY_KIT" \
-      "$GUEST_OFFSITE_ENV" "$BACKUP_ID_FILE" \
+    rm -f "$CANDIDATE_RECOVERY_KIT" "$GUEST_OFFSITE_ENV" \
       "$CANDIDATE_BACKUP_ID_FILE" "$SENTINEL_STATE" "$ROTATION_AUDIT"
     sudo rm -rf "$REPO_ROOT/.ci/garage"
     ;;
