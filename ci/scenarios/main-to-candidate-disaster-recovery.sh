@@ -144,6 +144,7 @@ case "$ACTION" in
     sleep 10
     ci_vm_wait "$SSH_PORT" "$SOURCE_VM_DIR"
     vm_ssh "sudo /opt/homelab-admin-node/bin/admin-node validate hardening"
+    vm_ssh "sudo /opt/homelab-admin-node/bin/admin-node openbao unseal"
     ;;
   create-sentinels)
     install_sentinel_script
