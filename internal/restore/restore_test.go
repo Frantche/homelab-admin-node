@@ -382,6 +382,9 @@ if [[ "${1:-}" == "exec" && "$*" == *"pg_restore --exit-on-error --no-owner --no
   cat >/dev/null
   exit 0
 fi
+if [[ "${1:-}" == "exec" && "$*" == *"psql -U postgres -d registry -v ON_ERROR_STOP=1 -c"* && "$*" == *"UPDATE harbor_user"* ]]; then
+  exit 0
+fi
 echo unexpected docker "$@" >&2
 exit 1
 `
@@ -440,6 +443,9 @@ exit 1
 	}
 	if !strings.Contains(calls, "pg_restore --exit-on-error --no-owner --no-privileges -U postgres -d registry") {
 		t.Fatalf("pg_restore was not called: %s", calls)
+	}
+	if !strings.Contains(calls, "UPDATE harbor_user") {
+		t.Fatalf("Harbor administrator was not prepared for recovery-kit initialization: %s", calls)
 	}
 }
 

@@ -137,19 +137,19 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 	}
 
 	if fileExists(filepath.Join(info.Path, "keycloak.dump")) {
-		if err := restorePostgres(ctx, stackCommand{Compose: set.KeycloakCompose, EnvFile: set.KeycloakEnv}, "keycloak-db", "keycloak", "keycloak", filepath.Join(info.Path, "keycloak.dump")); err != nil {
+		if err := restorePostgres(ctx, stackCommand{Compose: set.KeycloakCompose, EnvFile: set.KeycloakEnv}, "keycloak-db", "keycloak", "keycloak", filepath.Join(info.Path, "keycloak.dump"), ""); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore keycloak: %w", err)
 		}
 	}
 	if fileExists(filepath.Join(info.Path, "gitea.dump")) && fileExists(set.GiteaCompose) && fileExists(set.GiteaEnv) {
-		if err := restorePostgres(ctx, stackCommand{Compose: set.GiteaCompose, EnvFile: set.GiteaEnv}, "gitea-db", "gitea", "gitea", filepath.Join(info.Path, "gitea.dump")); err != nil {
+		if err := restorePostgres(ctx, stackCommand{Compose: set.GiteaCompose, EnvFile: set.GiteaEnv}, "gitea-db", "gitea", "gitea", filepath.Join(info.Path, "gitea.dump"), ""); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore gitea: %w", err)
 		}
 	}
 	if fileExists(filepath.Join(info.Path, "harbor.dump")) && fileExists(set.HarborCompose) && fileExists(set.HarborEnv) {
-		if err := restorePostgres(ctx, stackCommand{Compose: set.HarborCompose, EnvFile: set.HarborEnv}, "harbor-db", "postgres", "registry", filepath.Join(info.Path, "harbor.dump")); err != nil {
+		if err := restorePostgres(ctx, stackCommand{Compose: set.HarborCompose, EnvFile: set.HarborEnv}, "harbor-db", "postgres", "registry", filepath.Join(info.Path, "harbor.dump"), harborAdminInitializationSQL); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore harbor: %w", err)
 		}
@@ -407,7 +407,20 @@ func suspendSystemdTimers(ctx context.Context, timers []string) (func(), error) 
 	}, nil
 }
 
-func restorePostgres(ctx context.Context, command stackCommand, container string, user string, db string, dumpPath string) error {
+const harborAdminInitializationSQL = `DO $$
+DECLARE affected integer;
+BEGIN
+	UPDATE harbor_user
+	SET salt = '', password = '', password_version = ''
+	WHERE user_id = 1 AND username = 'admin';
+	GET DIAGNOSTICS affected = ROW_COUNT;
+	IF affected <> 1 THEN
+		RAISE EXCEPTION 'expected one Harbor administrator, updated %', affected;
+	END IF;
+END
+$$;`
+
+func restorePostgres(ctx context.Context, command stackCommand, container string, user string, db string, dumpPath string, postRestoreSQL string) error {
 	if err := dockerCompose(ctx, command, "up", "-d", container); err != nil {
 		return err
 	}
@@ -446,6 +459,11 @@ func restorePostgres(ctx context.Context, command stackCommand, container string
 	defer file.Close()
 	if err := run(ctx, file, "docker", "exec", "-i", container, "pg_restore", "--exit-on-error", "--no-owner", "--no-privileges", "-U", user, "-d", db); err != nil {
 		return err
+	}
+	if postRestoreSQL != "" {
+		if err := run(ctx, nil, "docker", "exec", container, "psql", "-U", user, "-d", db, "-v", "ON_ERROR_STOP=1", "-c", postRestoreSQL); err != nil {
+			return fmt.Errorf("prepare restored credentials: %w", err)
+		}
 	}
 	_ = dockerCompose(ctx, command, "down")
 	return nil
