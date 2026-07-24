@@ -61,22 +61,30 @@ new_harbor_admin="$(secret new harbor.admin_password)"
 old_gitea_admin="$(secret old gitea.admin_password)"
 new_gitea_admin="$(secret new gitea.admin_password)"
 
-old_status="$(curl --cacert "$ca_file" -sS -o /dev/null -w '%{http_code}' \
-  -X POST "https://keycloak.example.com/realms/master/protocol/openid-connect/token" \
-  --data-urlencode grant_type=password \
-  --data-urlencode client_id=admin-cli \
-  --data-urlencode username=admin \
-  --data-urlencode "password=$old_keycloak_admin" || true)"
 new_token="$(curl --fail --cacert "$ca_file" -sS \
   -X POST "https://keycloak.example.com/realms/master/protocol/openid-connect/token" \
   --data-urlencode grant_type=password \
   --data-urlencode client_id=admin-cli \
   --data-urlencode username=admin \
   --data-urlencode "password=$new_keycloak_admin" | jq -er .access_token)"
+keycloak_admin_id="$(curl --fail --cacert "$ca_file" -sS \
+  -H "Authorization: Bearer $new_token" \
+  "https://keycloak.example.com/admin/realms/master/users?username=admin&exact=true" |
+  jq -er 'if length == 1 then .[0].id else error("Keycloak administrator lookup mismatch") end')"
+old_status="$(curl --cacert "$ca_file" -sS -o /dev/null -w '%{http_code}' \
+  -X POST "https://keycloak.example.com/realms/master/protocol/openid-connect/token" \
+  --data-urlencode grant_type=password \
+  --data-urlencode client_id=admin-cli \
+  --data-urlencode username=admin \
+  --data-urlencode "password=$old_keycloak_admin" || true)"
 if [[ "$old_status" != "400" && "$old_status" != "401" ]]; then
   echo "ERROR: Keycloak still accepts the previous administrator password (HTTP $old_status)" >&2
   exit 1
 fi
+curl --fail --cacert "$ca_file" -sS -o /dev/null \
+  -X DELETE \
+  -H "Authorization: Bearer $new_token" \
+  "https://keycloak.example.com/admin/realms/master/attack-detection/brute-force/users/$keycloak_admin_id"
 
 expect_http_auth Harbor \
   "https://harbor.example.com/api/v2.0/users/current" \
