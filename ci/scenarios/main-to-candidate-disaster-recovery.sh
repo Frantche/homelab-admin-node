@@ -23,7 +23,8 @@ SOURCE_VM_DIR="$REPO_ROOT/.ci/vms/main-source"
 TARGET_VM_DIR="$REPO_ROOT/.ci/vms/candidate-restore"
 FINAL_VM_DIR="$REPO_ROOT/.ci/vms/candidate-final-restore"
 STATE_DIR="$REPO_ROOT/.ci/disaster-recovery"
-RECOVERY_KIT="$STATE_DIR/recovery-kit.tgz"
+MAIN_RECOVERY_KIT="$STATE_DIR/main-recovery-kit.tgz"
+CANDIDATE_RECOVERY_KIT="$STATE_DIR/candidate-recovery-kit.tgz"
 BACKUP_ID_FILE="$STATE_DIR/backup-id"
 CANDIDATE_BACKUP_ID_FILE="$STATE_DIR/candidate-backup-id"
 SENTINEL_STATE="$STATE_DIR/data-sentinels.json"
@@ -87,11 +88,13 @@ run_backup() {
 }
 
 create_recovery_kit() {
+  local destination="$1"
   vm_ssh "sudo tar -C / -czf /tmp/admin-node-recovery-kit.tgz etc/sops/age/keys.txt \
     etc/admin-config/homelab-node-admin-config opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml; \
     sudo chown admin:admin /tmp/admin-node-recovery-kit.tgz; sudo chmod 0600 /tmp/admin-node-recovery-kit.tgz"
-  ci_vm_scp_from "$SSH_PORT" /tmp/admin-node-recovery-kit.tgz "$RECOVERY_KIT"
-  chmod 0600 "$RECOVERY_KIT"
+  rm -f "$destination"
+  ci_vm_scp_from "$SSH_PORT" /tmp/admin-node-recovery-kit.tgz "$destination"
+  chmod 0600 "$destination"
 }
 
 install_sentinel_script() {
@@ -109,10 +112,11 @@ validate_sentinels() {
 restore_backup() {
   local backup_id_file="$1"
   local expected_revision="$2"
+  local recovery_kit="$3"
   local backup_id restored_revision
 
   backup_id="$(<"$backup_id_file")"
-  ci_vm_scp_to "$SSH_PORT" "$RECOVERY_KIT" /tmp/admin-node-recovery-kit.tgz
+  ci_vm_scp_to "$SSH_PORT" "$recovery_kit" /tmp/admin-node-recovery-kit.tgz
   vm_ssh "sudo tar -C / -xzf /tmp/admin-node-recovery-kit.tgz; sudo chmod 0400 /etc/sops/age/keys.txt; \
     sudo chmod 0600 /opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml; \
     sudo /opt/homelab-admin-node/bin/admin-node mode set restore"
@@ -163,7 +167,7 @@ case "$ACTION" in
     [[ "$(vm_ssh "sudo jq -r .cli_revision /srv/admin/backups/local/$backup_id/manifest.json")" == "$MAIN_SHA" ]]
     printf '%s\n' "$backup_id" >"$BACKUP_ID_FILE"
     vm_ssh "sudo cat /srv/admin/backups/local/$backup_id/manifest.json" >"$ARTIFACT_DIR/main-backup-manifest.json"
-    create_recovery_kit
+    create_recovery_kit "$MAIN_RECOVERY_KIT"
     ;;
   destroy-source)
     ci_vm_collect_logs "$SSH_PORT" "$SOURCE_VM_DIR" "$ARTIFACT_DIR/source-vm"
@@ -178,7 +182,7 @@ case "$ACTION" in
     install_offsite_access
     ;;
   restore-main)
-    restore_backup "$BACKUP_ID_FILE" "$MAIN_SHA"
+    restore_backup "$BACKUP_ID_FILE" "$MAIN_SHA" "$MAIN_RECOVERY_KIT"
     ;;
   upgrade-candidate)
     run_converge
@@ -205,7 +209,12 @@ case "$ACTION" in
     [[ "$(vm_ssh "sudo jq -r .cli_revision /srv/admin/backups/local/$post_id/manifest.json")" == "$CANDIDATE_SHA" ]]
     printf '%s\n' "$post_id" >"$CANDIDATE_BACKUP_ID_FILE"
     vm_ssh "sudo cat /srv/admin/backups/local/$post_id/manifest.json" >"$ARTIFACT_DIR/post-rotation-manifest.json"
-    create_recovery_kit
+    create_recovery_kit "$CANDIDATE_RECOVERY_KIT"
+    [[ "$(sha256sum "$CANDIDATE_RECOVERY_KIT" | cut -d' ' -f1)" != \
+      "$(sha256sum "$MAIN_RECOVERY_KIT" | cut -d' ' -f1)" ]] || {
+      echo "candidate recovery kit is identical to the main recovery kit" >&2
+      exit 1
+    }
     run_validations
     ;;
   destroy-target)
@@ -220,7 +229,7 @@ case "$ACTION" in
     install_offsite_access
     ;;
   restore-candidate)
-    restore_backup "$CANDIDATE_BACKUP_ID_FILE" "$CANDIDATE_SHA"
+    restore_backup "$CANDIDATE_BACKUP_ID_FILE" "$CANDIDATE_SHA" "$CANDIDATE_RECOVERY_KIT"
     ;;
   validate-final-candidate)
     validate_sentinels
@@ -246,7 +255,8 @@ case "$ACTION" in
     cp "$REPO_ROOT/.ci/garage/socat.log" "$ARTIFACT_DIR/socat.log" 2>/dev/null || true
     [[ ! -f "$REPO_ROOT/.ci/garage/socat.pid" ]] || kill "$(<"$REPO_ROOT/.ci/garage/socat.pid")" 2>/dev/null || true
     docker rm -f "$CI_GARAGE_CONTAINER" >/dev/null 2>&1 || true
-    rm -f "$RECOVERY_KIT" "$GUEST_OFFSITE_ENV" "$BACKUP_ID_FILE" \
+    rm -f "$MAIN_RECOVERY_KIT" "$CANDIDATE_RECOVERY_KIT" \
+      "$GUEST_OFFSITE_ENV" "$BACKUP_ID_FILE" \
       "$CANDIDATE_BACKUP_ID_FILE" "$SENTINEL_STATE" "$ROTATION_AUDIT"
     sudo rm -rf "$REPO_ROOT/.ci/garage"
     ;;

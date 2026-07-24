@@ -3,6 +3,12 @@ set -euo pipefail
 
 audit_file="${1:-/tmp/admin-node-secret-rotation-audit.json}"
 ca_file="${ADMIN_NODE_CA_FILE:-/srv/admin/certs/ca.pem}"
+config_secret_file="/etc/admin-config/homelab-node-admin-config/hosts/group_vars/secrets.sops.yaml"
+config_plain="$(mktemp /tmp/admin-node-rotation-config.XXXXXX.json)"
+trap 'rm -f "$config_plain"' EXIT
+chmod 0600 "$config_plain"
+SOPS_AGE_KEY_FILE=/etc/sops/age/keys.txt \
+  sops --decrypt --output-type json "$config_secret_file" >"$config_plain"
 
 secret() {
   local generation="$1"
@@ -60,6 +66,23 @@ old_harbor_admin="$(secret old harbor.admin_password)"
 new_harbor_admin="$(secret new harbor.admin_password)"
 old_gitea_admin="$(secret old gitea.admin_password)"
 new_gitea_admin="$(secret new gitea.admin_password)"
+
+for path in \
+  vault_oidc_harbor_client_secret \
+  vault_oidc_openbao_client_secret \
+  vault_oidc_gitea_client_secret \
+  keycloak.db_password \
+  keycloak.admin_password \
+  harbor.db_password \
+  harbor.admin_password \
+  gitea.db_password \
+  gitea.admin_password; do
+  configured_value="$(jq -er --arg path "$path" 'getpath($path | split("."))' "$config_plain")"
+  if [[ "$configured_value" != "$(secret new "$path")" ]]; then
+    echo "ERROR: recovery configuration does not contain the rotated $path" >&2
+    exit 1
+  fi
+done
 
 new_token="$(curl --fail --cacert "$ca_file" -sS \
   -X POST "https://keycloak.example.com/realms/master/protocol/openid-connect/token" \
