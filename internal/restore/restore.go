@@ -98,9 +98,14 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("inspect gitea stack artifact: %w", err)
 		}
-		if err := replaceDirContents(giteaSource, cfg.GiteaStackPath); err != nil {
+		giteaDataPath := filepath.Join(cfg.GiteaStackPath, "gitea")
+		if err := replaceDirContents(filepath.Join(giteaSource, "gitea"), giteaDataPath); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
-			return fmt.Errorf("restore gitea stack: %w", err)
+			return fmt.Errorf("restore gitea data: %w", err)
+		}
+		if err := fixGiteaDataPermissions(giteaDataPath); err != nil {
+			writeMode(cfg.ModeFile, "restore_failed")
+			return err
 		}
 	} else if dirExists(filepath.Join(info.Path, "gitea-data")) {
 		giteaDataPath := filepath.Join(cfg.AdminRoot, "data/gitea")
@@ -137,7 +142,7 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 			return fmt.Errorf("restore keycloak: %w", err)
 		}
 	}
-	if !dirExists(filepath.Join(info.Path, "gitea-stack")) && fileExists(filepath.Join(info.Path, "gitea.dump")) && fileExists(set.GiteaCompose) && fileExists(set.GiteaEnv) {
+	if fileExists(filepath.Join(info.Path, "gitea.dump")) && fileExists(set.GiteaCompose) && fileExists(set.GiteaEnv) {
 		if err := restorePostgres(ctx, stackCommand{Compose: set.GiteaCompose, EnvFile: set.GiteaEnv}, "gitea-db", "gitea", "gitea", filepath.Join(info.Path, "gitea.dump")); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore gitea: %w", err)
