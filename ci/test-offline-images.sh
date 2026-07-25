@@ -27,6 +27,9 @@ repo_root="$tmp_dir/repo"
 backup_env="$tmp_dir/backup.env"
 
 mkdir -p "$admin_root/stacks/test" "$admin_root/env" "$admin_root/data/gitea" "$fake_bin" "$repo_root" "$backup_root"
+git -C "$repo_root" init -q
+git -C "$repo_root" -c user.name="Offline Test" -c user.email="offline-test@example.invalid" \
+  commit --allow-empty -qm "offline test revision"
 printf 'normal\n' > "$mode_file"
 printf 'services:\n  app:\n    image: %s\n' "$IMAGE" > "$admin_root/stacks/test/compose.yaml"
 printf 'GITEA_ADMIN_PASSWORD=test\n' > "$admin_root/env/gitea.env"
@@ -80,7 +83,7 @@ fi
 if [[ "\${1:-}" == "exec" ]]; then
   exit 0
 fi
-if [[ "\${1:-}" == "save" || "\${1:-}" == "load" || "\${1:-}" == "pull" || "\${1:-}" == "image" ]]; then
+if [[ "\${1:-}" == "save" || "\${1:-}" == "load" || "\${1:-}" == "pull" || "\${1:-}" == "image" || "\${1:-}" == "tag" ]]; then
   exec "\$real_docker" "\$@"
 fi
 echo "[offline-images] unexpected docker args: \$*" >&2
@@ -129,6 +132,10 @@ if [[ ! -s "$offline_tar" ]]; then
   echo "[offline-images] expected non-empty offline image archive: $offline_tar" >&2
   exit 1
 fi
+if [[ ! -s "$backup_dir/repository.bundle" ]]; then
+  echo "[offline-images] expected repository bundle in backup" >&2
+  exit 1
+fi
 
 echo "[offline-images] removing local image $IMAGE"
 "$REAL_DOCKER" image rm "$IMAGE" >/dev/null 2>&1 || true
@@ -151,8 +158,23 @@ ADMIN_NODE_VALIDATE_MOCK_ALL=true \
   "$REPO_ROOT/bin/admin-node" restore run --id "$backup_id" >/dev/null
 
 if ! "$REAL_DOCKER" image inspect "$IMAGE" >/dev/null 2>&1; then
-  echo "[offline-images] image was not restored by docker load: $IMAGE" >&2
+  archive_tag="$(jq -er '.offline_image_archives[0].archive_tag' "$backup_dir/manifest.json")"
+  if ! "$REAL_DOCKER" image inspect "$archive_tag" >/dev/null 2>&1; then
+    echo "[offline-images] image was not restored by docker load: $IMAGE ($archive_tag)" >&2
+    exit 1
+  fi
+fi
+
+if ! grep -qF "$(jq -er '.offline_image_archives[0].archive_tag' "$backup_dir/manifest.json")" \
+  "$backup_dir/stack-definitions/test/compose.yaml"; then
+  echo "[offline-images] restored stack does not use its immutable archive tag" >&2
   exit 1
 fi
+
+compose_project="admin-offline-test-$$"
+"$REAL_DOCKER" compose -p "$compose_project" \
+  -f "$admin_root/stacks/test/compose.yaml" up --pull never --no-start >/dev/null
+"$REAL_DOCKER" compose -p "$compose_project" \
+  -f "$admin_root/stacks/test/compose.yaml" down >/dev/null
 
 echo "[offline-images] offline image backup and restore passed for $IMAGE"

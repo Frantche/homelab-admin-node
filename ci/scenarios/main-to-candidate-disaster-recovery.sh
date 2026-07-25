@@ -19,6 +19,11 @@ CANDIDATE_SHA="${CANDIDATE_SHA:?CANDIDATE_SHA is required}"
 MAIN_REPO_URL="${MAIN_REPO_URL:?MAIN_REPO_URL is required}"
 CANDIDATE_REPO_URL="${CANDIDATE_REPO_URL:?CANDIDATE_REPO_URL is required}"
 SSH_PORT="${SSH_PORT:-2222}"
+DR_INCLUDE_IMAGES="${DR_INCLUDE_IMAGES:-false}"
+if [[ "$DR_INCLUDE_IMAGES" != "true" && "$DR_INCLUDE_IMAGES" != "false" ]]; then
+  echo "DR_INCLUDE_IMAGES must be true or false" >&2
+  exit 2
+fi
 SOURCE_VM_DIR="$REPO_ROOT/.ci/vms/main-source"
 FINAL_VM_DIR="$REPO_ROOT/.ci/vms/candidate-final-restore"
 STATE_DIR="$REPO_ROOT/.ci/disaster-recovery"
@@ -62,6 +67,13 @@ install_offsite_access() {
     sudo install -m 0600 /tmp/ci-offsite.env /etc/admin-node/ci-offsite.env"
 }
 
+block_public_docker_registries() {
+  vm_ssh "for domain in registry-1.docker.io auth.docker.io production.cloudflare.docker.com ghcr.io docker.gitea.com; do \
+    grep -qF \"127.0.0.1 \$domain\" /etc/hosts || \
+      echo \"127.0.0.1 \$domain\" | sudo tee -a /etc/hosts >/dev/null; \
+    done"
+}
+
 run_converge() {
   local extra="${1:-}"
   vm_ssh "sudo CI_MOCK_PIHOLE=true CI_MOCK_CLOUDFLARE_TUNNEL=true \
@@ -79,9 +91,13 @@ run_validations() {
 }
 
 run_backup() {
+  local image_args=""
+  if [[ "$DR_INCLUDE_IMAGES" == "true" ]]; then
+    image_args=" --include-images"
+  fi
   vm_ssh "sudo CI_MOCK_PIHOLE=true CI_MOCK_CLOUDFLARE_TUNNEL=true \
     CI_SKIP_PUBLIC_URL_VALIDATION=true SKIP_PUBLIC_URL_VALIDATION=true \
-    /opt/homelab-admin-node/bin/admin-node backup run"
+    /opt/homelab-admin-node/bin/admin-node backup run$image_args"
 }
 
 create_candidate_recovery_kit() {
@@ -119,6 +135,11 @@ restore_candidate_backup() {
     echo "restored revision $restored_revision does not match $CANDIDATE_SHA" >&2
     return 1
   }
+  [[ "$(vm_ssh "sudo git -C /opt/homelab-admin-node rev-parse HEAD")" == "$CANDIDATE_SHA" ]]
+  if [[ "$DR_INCLUDE_IMAGES" == "true" ]]; then
+    vm_ssh "sudo jq -r '.offline_image_archives[].archive_tag' /srv/admin/backups/local/$backup_id/manifest.json | \
+      while IFS= read -r image; do sudo docker image inspect \"\$image\" >/dev/null; done"
+  fi
 }
 
 case "$ACTION" in
@@ -183,6 +204,21 @@ case "$ACTION" in
     post_id="$(vm_ssh "sudo find /srv/admin/backups/local -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tail -n1")"
     [[ "$post_id" =~ ^[0-9]{8}-[0-9]{6}$ ]] || { echo "invalid backup ID: $post_id" >&2; exit 1; }
     [[ "$(vm_ssh "sudo jq -r .cli_revision /srv/admin/backups/local/$post_id/manifest.json")" == "$CANDIDATE_SHA" ]]
+    if [[ "$DR_INCLUDE_IMAGES" == "true" ]]; then
+      vm_ssh "sudo jq -e '.offline_images == true and .stack_definitions == true and .repository_bundle == true and \
+          (.images | length > 0) and (.offline_image_archives | length == (.images | length))' \
+        /srv/admin/backups/local/$post_id/manifest.json >/dev/null; \
+        sudo test -s /srv/admin/backups/local/$post_id/offline-images.tar; \
+        sudo test -s /srv/admin/backups/local/$post_id/repository.bundle; \
+        sudo test -f /srv/admin/backups/local/$post_id/stack-definitions/gitea/compose.yaml"
+    else
+      vm_ssh "sudo jq -e '.offline_images == false and \
+          ((.stack_definitions // false) == false) and ((.repository_bundle // false) == false)' \
+        /srv/admin/backups/local/$post_id/manifest.json >/dev/null; \
+        sudo test ! -e /srv/admin/backups/local/$post_id/offline-images.tar; \
+        sudo test ! -e /srv/admin/backups/local/$post_id/repository.bundle; \
+        sudo test ! -e /srv/admin/backups/local/$post_id/stack-definitions"
+    fi
     printf '%s\n' "$post_id" >"$CANDIDATE_BACKUP_ID_FILE"
     vm_ssh "sudo cat /srv/admin/backups/local/$post_id/manifest.json" >"$ARTIFACT_DIR/post-rotation-manifest.json"
     create_candidate_recovery_kit
@@ -198,6 +234,9 @@ case "$ACTION" in
     ci_vm_wait "$SSH_PORT" "$FINAL_VM_DIR"
     vm_ssh "sudo /opt/homelab-admin-node/scripts/build-admin-node.sh"
     install_offsite_access
+    if [[ "$DR_INCLUDE_IMAGES" == "true" ]]; then
+      block_public_docker_registries
+    fi
     ;;
   restore-candidate)
     restore_candidate_backup

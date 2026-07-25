@@ -3,6 +3,7 @@ package backup
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -64,6 +65,13 @@ if [[ "${1:-}" == "save" ]]; then
   echo "images" > "$3"
   exit 0
 fi
+if [[ "${1:-} ${2:-} ${3:-}" == "image inspect --format" ]]; then
+  echo "sha256:offline-image-id"
+  exit 0
+fi
+if [[ "${1:-}" == "tag" || "${1:-} ${2:-}" == "image rm" ]]; then
+  exit 0
+fi
 echo "unexpected docker args: $*" >&2
 exit 1
 `), 0o755); err != nil {
@@ -97,6 +105,27 @@ exit 1
 	if err := os.WriteFile(filepath.Join(adminRoot, "data/gitea/app.ini"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	repoRoot := filepath.Join(root, "repo")
+	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"config", "user.name", "Backup Test"},
+		{"config", "user.email", "backup-test@example.invalid"},
+	} {
+		if output, err := exec.Command("git", append([]string{"-C", repoRoot}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "tracked"), []byte("revision\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "tracked"}, {"commit", "-qm", "test revision"}} {
+		if output, err := exec.Command("git", append([]string{"-C", repoRoot}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
 
 	resticLog := filepath.Join(root, "restic.log")
 	fakeRestic := filepath.Join(binDir, "restic")
@@ -122,6 +151,7 @@ RESTIC_DEFAULT_FORGET_ARGS="--keep-last 2 --prune"
 
 	cfg := config.Config{
 		AdminRoot:     adminRoot,
+		RepoRoot:      repoRoot,
 		ModeFile:      modeFile,
 		BackupRoot:    filepath.Join(root, "backups"),
 		BackupEnvFile: backupEnv,
@@ -145,7 +175,7 @@ RESTIC_DEFAULT_FORGET_ARGS="--keep-last 2 --prune"
 	if info.ID != "20260625-120000" {
 		t.Fatalf("ID = %q", info.ID)
 	}
-	for _, name := range []string{"keycloak.dump", "gitea.dump", "harbor.dump", "openbao.snap", "gitea-data", "offline-images.tar", ManifestName} {
+	for _, name := range []string{"keycloak.dump", "gitea.dump", "harbor.dump", "openbao.snap", "gitea-data", "offline-images.tar", "stack-definitions", "repository.bundle", ManifestName} {
 		if !fileExists(filepath.Join(info.Path, name)) && !dirExists(filepath.Join(info.Path, name)) {
 			t.Fatalf("expected %s in backup", name)
 		}
@@ -161,8 +191,11 @@ RESTIC_DEFAULT_FORGET_ARGS="--keep-last 2 --prune"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok || manifest.ID != "20260625-120000" || !manifest.OfflineImages || len(manifest.Images) != 1 {
+	if !ok || manifest.ID != "20260625-120000" || !manifest.OfflineImages || !manifest.StackDefinitions || !manifest.RepositoryBundle || len(manifest.Images) != 1 {
 		t.Fatalf("manifest = %#v ok=%t", manifest, ok)
+	}
+	if len(manifest.OfflineImageArchives) != 1 || manifest.OfflineImageArchives[0].ImageID != "sha256:offline-image-id" {
+		t.Fatalf("offline image archive manifest = %#v", manifest.OfflineImageArchives)
 	}
 }
 

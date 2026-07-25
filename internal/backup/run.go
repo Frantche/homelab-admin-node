@@ -73,6 +73,27 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		return Info{}, fmt.Errorf("backup already exists: %s", stamp)
 	}
 
+	cliRevision := repoRevision(ctx, cfg.RepoRoot)
+	if opts.IncludeImages {
+		if cliRevision == "" {
+			return Info{}, fmt.Errorf("include docker images: repository HEAD revision is unavailable")
+		}
+		status, err := commandOutput(ctx, "git", "-C", cfg.RepoRoot, "status", "--porcelain", "--untracked-files=no")
+		if err != nil {
+			return Info{}, fmt.Errorf("inspect repository state: %w", err)
+		}
+		if status != "" {
+			return Info{}, fmt.Errorf("include docker images: repository has tracked changes and cannot be tied to an exact revision")
+		}
+		bundlePath := filepath.Join(partial, "repository.bundle")
+		if err := run(ctx, "git", "-C", cfg.RepoRoot, "bundle", "create", bundlePath, "HEAD"); err != nil {
+			return Info{}, fmt.Errorf("create repository bundle for revision %s: %w", cliRevision, err)
+		}
+		if err := os.Chmod(bundlePath, 0o600); err != nil {
+			return Info{}, err
+		}
+	}
+
 	if err := dumpPostgres(ctx, partial, "keycloak.dump", "keycloak-db", "keycloak", "keycloak"); err != nil {
 		return Info{}, fmt.Errorf("dump keycloak: %w", err)
 	}
@@ -127,12 +148,43 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	if err != nil {
 		return Info{}, fmt.Errorf("detect images: %w", err)
 	}
+	var offlineImageArchives []OfflineImageArchive
 	if opts.IncludeImages {
 		if len(images) > 0 {
-			args := append([]string{"save", "-o", filepath.Join(partial, "offline-images.tar")}, images...)
+			var archiveTags []string
+			for index, image := range images {
+				imageID, err := commandOutput(ctx, "docker", "image", "inspect", "--format", "{{.Id}}", image)
+				if err != nil {
+					return Info{}, fmt.Errorf("inspect docker image %s: %w", image, err)
+				}
+				archiveTag := fmt.Sprintf("admin-node-backup.local/%s:image-%03d", stamp, index+1)
+				if err := run(ctx, "docker", "tag", image, archiveTag); err != nil {
+					return Info{}, fmt.Errorf("tag docker image %s for offline archive: %w", image, err)
+				}
+				defer func(tag string) {
+					_ = run(context.Background(), "docker", "image", "rm", tag)
+				}(archiveTag)
+				archiveTags = append(archiveTags, archiveTag)
+				offlineImageArchives = append(offlineImageArchives, OfflineImageArchive{
+					Source:     image,
+					ArchiveTag: archiveTag,
+					ImageID:    imageID,
+				})
+			}
+			args := append([]string{"save", "-o", filepath.Join(partial, "offline-images.tar")}, archiveTags...)
 			if err := run(ctx, "docker", args...); err != nil {
 				return Info{}, fmt.Errorf("export docker images: %w", err)
 			}
+		}
+		stackRoot := filepath.Join(cfg.AdminRoot, "stacks")
+		if !dirExists(stackRoot) {
+			return Info{}, fmt.Errorf("include docker images: rendered stack definitions are missing: %s", stackRoot)
+		}
+		if err := copyPath(stackRoot, filepath.Join(partial, "stack-definitions")); err != nil {
+			return Info{}, fmt.Errorf("copy rendered stack definitions: %w", err)
+		}
+		if err := rewriteStackImageReferences(filepath.Join(partial, "stack-definitions"), offlineImageArchives); err != nil {
+			return Info{}, fmt.Errorf("prepare offline stack definitions: %w", err)
 		}
 	}
 
@@ -140,7 +192,21 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	if err != nil {
 		return Info{}, fmt.Errorf("build manifest: %w", err)
 	}
-	manifest := Manifest{Version: ManifestVersion, ID: stamp, CreatedAt: now().UTC(), Hostname: hostname(), CLIRevision: repoRevision(ctx, cfg.RepoRoot), OfflineImages: opts.IncludeImages, Images: images, Consistency: consistency, Complete: true, Files: files}
+	manifest := Manifest{
+		Version:              ManifestVersion,
+		ID:                   stamp,
+		CreatedAt:            now().UTC(),
+		Hostname:             hostname(),
+		CLIRevision:          cliRevision,
+		OfflineImages:        opts.IncludeImages,
+		Images:               images,
+		OfflineImageArchives: offlineImageArchives,
+		StackDefinitions:     opts.IncludeImages,
+		RepositoryBundle:     opts.IncludeImages,
+		Consistency:          consistency,
+		Complete:             true,
+		Files:                files,
+	}
 	if err := WriteManifest(partial, manifest); err != nil {
 		return Info{}, fmt.Errorf("write manifest: %w", err)
 	}
@@ -160,6 +226,45 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		return Info{}, err
 	}
 	return inspect(target, stamp)
+}
+
+func commandOutput(ctx context.Context, name string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("%s failed: %w: %s", name, err, strings.TrimSpace(string(output)))
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func rewriteStackImageReferences(root string, archives []OfflineImageArchive) error {
+	return filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("unsupported rendered stack entry: %s", path)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		updated := string(data)
+		for _, archive := range archives {
+			updated = strings.ReplaceAll(updated, archive.Source, archive.ArchiveTag)
+		}
+		if updated == string(data) {
+			return nil
+		}
+		return os.WriteFile(path, []byte(updated), info.Mode().Perm())
+	})
 }
 
 func repoRevision(ctx context.Context, repoRoot string) string {

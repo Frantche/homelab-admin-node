@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -33,6 +34,60 @@ func TestResolveLatest(t *testing.T) {
 func TestResolveRejectsPathTraversal(t *testing.T) {
 	if _, _, err := Resolve(t.TempDir(), "../outside"); err == nil {
 		t.Fatal("expected invalid backup id")
+	}
+}
+
+func TestRestoreRepositoryRevisionUsesBundledBackupCommit(t *testing.T) {
+	root := t.TempDir()
+	repoRoot := filepath.Join(root, "repo")
+	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) string {
+		t.Helper()
+		output, err := exec.Command("git", append([]string{"-C", repoRoot}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+		return strings.TrimSpace(string(output))
+	}
+	git("init", "-q")
+	git("config", "user.name", "Restore Test")
+	git("config", "user.email", "restore-test@example.invalid")
+	tracked := filepath.Join(repoRoot, "revision")
+	if err := os.WriteFile(tracked, []byte("backup\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "revision")
+	git("commit", "-qm", "backup revision")
+	backupRevision := git("rev-parse", "HEAD")
+
+	backupPath := filepath.Join(root, "backup")
+	if err := os.MkdirAll(backupPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	git("bundle", "create", filepath.Join(backupPath, "repository.bundle"), "HEAD")
+
+	if err := os.WriteFile(tracked, []byte("main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("commit", "-qam", "newer main revision")
+	if git("rev-parse", "HEAD") == backupRevision {
+		t.Fatal("test repository did not advance")
+	}
+
+	if err := restoreRepositoryRevision(context.Background(), repoRoot, backupPath, backupRevision); err != nil {
+		t.Fatal(err)
+	}
+	if got := git("rev-parse", "HEAD"); got != backupRevision {
+		t.Fatalf("restored revision = %s, want %s", got, backupRevision)
+	}
+	content, err := os.ReadFile(tracked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "backup\n" {
+		t.Fatalf("restored repository content = %q", content)
 	}
 }
 
@@ -70,23 +125,82 @@ func TestRunLoadsOfflineImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	loadMarker := filepath.Join(root, "docker-load-called")
+	oldStackMarker := filepath.Join(root, "old-stack-started")
 	fakeDocker := filepath.Join(binDir, "docker")
-	if err := os.WriteFile(fakeDocker, []byte("#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1:-}\" == \"load\" ]]; then touch \""+loadMarker+"\"; exit 0; fi\necho unexpected >&2\nexit 1\n"), 0o755); err != nil {
+	fakeDockerScript := `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "load" ]]; then
+  touch "` + loadMarker + `"
+  exit 0
+fi
+if [[ "${1:-} ${2:-} ${3:-}" == "image inspect --format" ]]; then
+  echo "sha256:offline-image-id"
+  exit 0
+fi
+if [[ "${1:-}" == "compose" ]]; then
+  if [[ "$*" == *"up --pull never -d"* ]]; then
+    compose_file=""
+    for ((i=1; i <= $#; i++)); do
+      if [[ "${!i}" == "-f" ]]; then
+        next=$((i + 1))
+        compose_file="${!next}"
+      fi
+    done
+    grep -q "example.invalid/app:backup" "$compose_file"
+    touch "` + oldStackMarker + `"
+  fi
+  exit 0
+fi
+echo unexpected docker "$@" >&2
+exit 1
+`
+	if err := os.WriteFile(fakeDocker, []byte(fakeDockerScript), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
+	adminRoot := filepath.Join(root, "admin")
+	if err := os.MkdirAll(filepath.Join(adminRoot, "stacks/gitea"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(adminRoot, "stacks/gitea/compose.yaml"), []byte("services:\n  app:\n    image: example.invalid/app:main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	backupRoot := filepath.Join(root, "backups")
 	backupDir := filepath.Join(backupRoot, "20260625-120000")
-	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(backupDir, "stack-definitions/gitea"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(backupDir, "offline-images.tar"), []byte("images"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	sealBackupV2(t, backupDir, "20260625-120000")
-	err := Run(context.Background(), config.Config{
-		AdminRoot:  filepath.Join(root, "admin"),
+	if err := os.WriteFile(filepath.Join(backupDir, "stack-definitions/gitea/compose.yaml"), []byte("services:\n  app:\n    image: example.invalid/app:backup\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files, err := backup.BuildManifestFiles(backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := backup.WriteManifest(backupDir, backup.Manifest{
+		Version:       backup.ManifestVersion,
+		ID:            "20260625-120000",
+		CreatedAt:     time.Now().UTC(),
+		CLIRevision:   strings.Repeat("a", 40),
+		OfflineImages: true,
+		OfflineImageArchives: []backup.OfflineImageArchive{{
+			Source:     "example.invalid/app:backup@sha256:source",
+			ArchiveTag: "example.invalid/app:backup",
+			ImageID:    "sha256:offline-image-id",
+		}},
+		StackDefinitions: true,
+		Consistency:      "test",
+		Complete:         true,
+		Files:            files,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err = Run(context.Background(), config.Config{
+		AdminRoot:  adminRoot,
 		ModeFile:   restoreModeFile(t, root),
 		BackupRoot: backupRoot,
 	}, Options{
@@ -98,6 +212,9 @@ func TestRunLoadsOfflineImages(t *testing.T) {
 	}
 	if _, err := os.Stat(loadMarker); err != nil {
 		t.Fatal("docker load was not called")
+	}
+	if _, err := os.Stat(oldStackMarker); err != nil {
+		t.Fatal("restore did not start the stack definition captured by the backup")
 	}
 }
 

@@ -8,12 +8,24 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Parcours a executer
+        required: true
+        default: disaster-recovery
+        type: choice
+        options:
+          - disaster-recovery
+          - bootstrap
+          - all
+  schedule:
+    - cron: "0 3 * * 0"
 
 permissions:
   contents: read
 
 concurrency:
-  group: admin-node-user-journeys-${{ github.event.pull_request.number || github.ref }}
+  group: admin-node-user-journeys-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -81,6 +93,11 @@ jobs:
           PATH="$HOME/.local/bin:$PATH" ./ci/test-oidc-contracts.sh
 
   bootstrap:
+    if: >-
+      github.event_name != 'schedule' &&
+      (github.event_name != 'workflow_dispatch' ||
+       inputs.scope == 'bootstrap' ||
+       inputs.scope == 'all')
     needs: [quality, oidc-contracts]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -496,15 +513,29 @@ jobs:
           fi
 
   main-to-candidate-disaster-recovery:
+    name: Disaster recovery (${{ matrix.mode }})
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.scope == 'disaster-recovery' || inputs.scope == 'all'))
     needs: [quality, oidc-contracts]
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: standard
+            include_images: "false"
+          - mode: offline-images
+            include_images: "true"
     env:
       MAIN_SHA: "${{ github.event.pull_request.base.sha || github.sha }}"
       CANDIDATE_SHA: "${{ github.event.pull_request.head.sha || github.sha }}"
       MAIN_REPO_URL: "${{ github.event.pull_request.base.repo.clone_url || format('https://github.com/{0}.git', github.repository) }}"
       CANDIDATE_REPO_URL: "${{ github.event.pull_request.head.repo.clone_url || format('https://github.com/{0}.git', github.repository) }}"
       SSH_PORT: "2222"
+      DR_INCLUDE_IMAGES: "${{ matrix.include_images }}"
 
     steps:
       - name: Checkout candidate
@@ -590,7 +621,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: main-to-candidate-disaster-recovery-logs
+          name: main-to-candidate-disaster-recovery-${{ matrix.mode }}-logs
           path: .ci/artifacts/disaster-recovery
           if-no-files-found: ignore
           retention-days: 2
