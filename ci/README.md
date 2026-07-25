@@ -11,7 +11,20 @@ cloud-init. Il genere un config repo depuis les exemples, traverse les modes
 sauvegarde et restauration locale.
 
 `scenarios/main-to-candidate-disaster-recovery.sh` expose une commande
-idempotente par etape GitHub Actions. Le job :
+idempotente par etape GitHub Actions. GitHub Actions execute deux variantes :
+
+- `standard`, identique au parcours historique et autorisant les pulls registry ;
+- `offline-images`, avec `DR_INCLUDE_IMAGES=true`, qui archive les images et le
+  commit Git, bloque les registries sur la VM cible et impose un restore sans pull.
+
+Ces variantes ne s'executent pas sur les pull requests ni sur les push. Elles
+sont lancees manuellement avec `workflow_dispatch` en choisissant le scope
+`disaster-recovery`, selectionne par defaut, ou automatiquement chaque dimanche
+a `03:00 UTC`. Le cron hebdomadaire n'execute pas le parcours `bootstrap`, mais
+conserve les controles `quality` et `oidc-contracts` requis par le scenario DR.
+Le lancement manuel propose aussi les scopes `bootstrap` et `all`.
+
+Chaque variante :
 
 1. cree une VM source avec le SHA exact de `main` ;
 2. sauvegarde les donnees dans un Garage S3 externe a la VM ;

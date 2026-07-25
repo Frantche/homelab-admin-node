@@ -21,17 +21,26 @@ type ManifestFile struct {
 	SHA256 string `json:"sha256"`
 }
 
+type OfflineImageArchive struct {
+	Source     string `json:"source"`
+	ArchiveTag string `json:"archive_tag"`
+	ImageID    string `json:"image_id"`
+}
+
 type Manifest struct {
-	Version       int            `json:"version"`
-	ID            string         `json:"id"`
-	CreatedAt     time.Time      `json:"created_at"`
-	Hostname      string         `json:"hostname"`
-	CLIRevision   string         `json:"cli_revision,omitempty"`
-	OfflineImages bool           `json:"offline_images"`
-	Images        []string       `json:"images,omitempty"`
-	Consistency   string         `json:"consistency"`
-	Complete      bool           `json:"complete"`
-	Files         []ManifestFile `json:"files"`
+	Version              int                   `json:"version"`
+	ID                   string                `json:"id"`
+	CreatedAt            time.Time             `json:"created_at"`
+	Hostname             string                `json:"hostname"`
+	CLIRevision          string                `json:"cli_revision,omitempty"`
+	OfflineImages        bool                  `json:"offline_images"`
+	Images               []string              `json:"images,omitempty"`
+	OfflineImageArchives []OfflineImageArchive `json:"offline_image_archives,omitempty"`
+	StackDefinitions     bool                  `json:"stack_definitions,omitempty"`
+	RepositoryBundle     bool                  `json:"repository_bundle,omitempty"`
+	Consistency          string                `json:"consistency"`
+	Complete             bool                  `json:"complete"`
+	Files                []ManifestFile        `json:"files"`
 }
 
 func WriteManifest(dir string, manifest Manifest) error {

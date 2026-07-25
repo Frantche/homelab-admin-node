@@ -33,6 +33,8 @@ type Options struct {
 	SystemdTimers         []string
 }
 
+type offlineImagesContextKey struct{}
+
 func Run(ctx context.Context, cfg config.Config, opts Options) error {
 	currentMode, err := adminmode.Read(cfg.ModeFile)
 	if err != nil || currentMode != "restore" {
@@ -73,9 +75,19 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 		writeMode(cfg.ModeFile, "restore_failed")
 		return fmt.Errorf("restore source not found")
 	}
-	if _, err := backup.Verify(info.Path); err != nil {
+	manifest, err := backup.Verify(info.Path)
+	if err != nil {
 		writeMode(cfg.ModeFile, "restore_failed")
 		return fmt.Errorf("backup verification failed: %w", err)
+	}
+	if manifest.RepositoryBundle {
+		if err := restoreRepositoryRevision(ctx, cfg.RepoRoot, info.Path, manifest.CLIRevision); err != nil {
+			writeMode(cfg.ModeFile, "restore_failed")
+			return err
+		}
+	}
+	if len(manifest.OfflineImageArchives) > 0 {
+		ctx = context.WithValue(ctx, offlineImagesContextKey{}, true)
 	}
 
 	set := stackSet(cfg.AdminRoot)
@@ -88,10 +100,33 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 		return err
 	}
 
+	stackDefinitions := filepath.Join(info.Path, "stack-definitions")
+	if manifest.StackDefinitions {
+		if !dirExists(stackDefinitions) {
+			writeMode(cfg.ModeFile, "restore_failed")
+			return fmt.Errorf("backup declares rendered stack definitions but they are missing")
+		}
+		if err := replaceDirContents(stackDefinitions, filepath.Join(cfg.AdminRoot, "stacks")); err != nil {
+			writeMode(cfg.ModeFile, "restore_failed")
+			return fmt.Errorf("restore rendered stack definitions from revision %s: %w", manifest.CLIRevision, err)
+		}
+	}
+
 	if fileExists(filepath.Join(info.Path, "offline-images.tar")) {
 		if err := run(ctx, nil, "docker", "load", "-i", filepath.Join(info.Path, "offline-images.tar")); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return err
+		}
+		for _, image := range manifest.OfflineImageArchives {
+			imageID, err := commandOutput(ctx, "docker", "image", "inspect", "--format", "{{.Id}}", image.ArchiveTag)
+			if err != nil {
+				writeMode(cfg.ModeFile, "restore_failed")
+				return fmt.Errorf("inspect restored offline image %s: %w", image.Source, err)
+			}
+			if imageID != image.ImageID {
+				writeMode(cfg.ModeFile, "restore_failed")
+				return fmt.Errorf("restored offline image %s has ID %s, expected %s", image.Source, imageID, image.ImageID)
+			}
 		}
 	}
 
@@ -199,6 +234,26 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 		fmt.Fprintln(opts.Out, "Restore completed and mode set to normal")
 	}
 	restoreSucceeded = true
+	return nil
+}
+
+func restoreRepositoryRevision(ctx context.Context, repoRoot, backupPath, revision string) error {
+	if revision == "" {
+		return fmt.Errorf("backup repository revision is missing")
+	}
+	bundlePath := filepath.Join(backupPath, "repository.bundle")
+	if !fileExists(bundlePath) {
+		return fmt.Errorf("backup repository bundle is missing")
+	}
+	if err := run(ctx, nil, "git", "-C", repoRoot, "bundle", "verify", bundlePath); err != nil {
+		return fmt.Errorf("verify backup repository bundle: %w", err)
+	}
+	if err := run(ctx, nil, "git", "-C", repoRoot, "fetch", "--no-tags", bundlePath, revision); err != nil {
+		return fmt.Errorf("import backup repository revision %s: %w", revision, err)
+	}
+	if err := run(ctx, nil, "git", "-C", repoRoot, "checkout", "--detach", revision); err != nil {
+		return fmt.Errorf("checkout backup repository revision %s: %w", revision, err)
+	}
 	return nil
 }
 
@@ -881,8 +936,20 @@ func dockerCompose(ctx context.Context, command stackCommand, args ...string) er
 		base = append(base, "--env-file", command.EnvFile)
 	}
 	base = append(base, "-f", command.Compose)
+	if len(args) > 0 && args[0] == "up" && ctx.Value(offlineImagesContextKey{}) == true {
+		args = append([]string{"up", "--pull", "never"}, args[1:]...)
+	}
 	base = append(base, args...)
 	return run(ctx, nil, "docker", base...)
+}
+
+func commandOutput(ctx context.Context, name string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("%s failed: %w: %s", name, err, strings.TrimSpace(string(output)))
+	}
+	return strings.TrimSpace(string(output)), nil
 }
 
 func run(ctx context.Context, stdin io.Reader, name string, args ...string) error {

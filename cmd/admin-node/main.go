@@ -572,7 +572,7 @@ func (a app) runBackup(ctx context.Context, args []string) int {
 	subcommand, rest := splitSubcommand(args, "run")
 	fs := flag.NewFlagSet("backup", flag.ContinueOnError)
 	fs.SetOutput(a.errOut)
-	includeImages := fs.Bool("include-images", false, "include Docker images in the backup")
+	includeImages := fs.Bool("include-images", false, "include Docker images, rendered stack definitions, and repository bundle in the backup")
 	verifyID := fs.String("id", "latest", "backup id to verify")
 	if err := fs.Parse(rest); err != nil {
 		return 2

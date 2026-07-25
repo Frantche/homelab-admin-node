@@ -43,9 +43,7 @@ bin/admin-node backup run --include-images
 bin/admin-node backup restic
 ```
 
-`backup run` reprend le comportement historique: validation pre-backup, dumps Keycloak/Gitea, snapshot OpenBao si un token est disponible, copie des fichiers applicatifs, restic et retention locale. Un `manifest.json` est ecrit dans chaque nouveau backup.
-
-Avec `--include-images`, les images Docker detectees depuis les compose files rendus sont exportees dans `offline-images.tar`.
+`backup run` effectue la validation pre-backup, les dumps Keycloak/Gitea, le snapshot OpenBao si un token est disponible, la copie des fichiers applicatifs, Restic et la retention locale. Un `manifest.json` est ecrit avec le SHA `cli_revision`. Avec `--include-images`, les images Docker detectees, les fichiers Compose rendus et un bundle Git de ce meme deploiement sont exportes dans `offline-images.tar`, `stack-definitions/` et `repository.bundle`.
 
 ## Restore
 
@@ -55,7 +53,7 @@ bin/admin-node restore run --id 20260625-120000
 bin/admin-node restore select
 ```
 
-Le restore charge automatiquement `offline-images.tar` s'il est present, restaure les donnees disponibles, redemarre les stacks et lance la validation post-restore avec creation de sentinelle Gitea desactivee.
+Le restore importe le commit de `repository.bundle`, checkout le SHA sauvegarde, remet en place `stack-definitions/`, charge automatiquement `offline-images.tar`, verifie les image IDs, puis redemarre avec les pulls desactives. Il utilise ainsi les images du backup meme si `main` reference depuis d'autres versions.
 
 ## Mode, Converge Et Secrets
 
