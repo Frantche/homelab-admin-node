@@ -23,6 +23,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Scan repository for secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
@@ -382,6 +391,7 @@ jobs:
           name: hardening-audit
           path: .ci/artifacts/lynis
           if-no-files-found: ignore
+          retention-days: 2
 
       - name: Collect bootstrap logs
         if: always()
@@ -443,6 +453,7 @@ jobs:
           name: bootstrap-user-journey-logs
           path: .ci/artifacts/bootstrap
           if-no-files-found: ignore
+          retention-days: 2
 
       - name: Show VM logs on failure
         if: failure()
@@ -582,3 +593,4 @@ jobs:
           name: main-to-candidate-disaster-recovery-logs
           path: .ci/artifacts/disaster-recovery
           if-no-files-found: ignore
+          retention-days: 2

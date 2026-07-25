@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Credentials factices utilisees uniquement par les mocks CI"
+paths = [
+  '''(^|/)ci/ci-extra-vars\.json$''',
+  '''(^|/)ci/mock-config-repo/group_vars/all\.yml$''',
+]

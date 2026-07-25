@@ -4,7 +4,14 @@
   "labels": ["dependencies", "renovate", "admin-critical", "requires-lifecycle-ci"],
   "semanticCommits": "enabled",
   "semanticCommitType": "fix",
-  "enabledManagers": ["docker-compose", "dockerfile", "github-actions", "custom.regex"],
+  "enabledManagers": [
+    "docker-compose",
+    "dockerfile",
+    "github-actions",
+    "gomod",
+    "npm",
+    "custom.regex"
+  ],
   "customManagers": [
     {
       "customType": "regex",
@@ -33,6 +40,16 @@
     "**/secrets/**"
   ],
   "packageRules": [
+    {
+      "matchManagers": ["npm"],
+      "matchFileNames": ["ci/oidc-user-journey/package.json"],
+      "groupName": "playwright test dependencies"
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["site/go.mod"],
+      "groupName": "hugo modules"
+    },
     {
       "matchFileNames": ["stacks/harbor/**"],
       "groupName": "harbor stack"
