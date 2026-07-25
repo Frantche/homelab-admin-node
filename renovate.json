@@ -1,6 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "dependencyDashboard": true,
+  "timezone": "Europe/Paris",
   "labels": ["dependencies", "renovate", "admin-critical", "requires-lifecycle-ci"],
   "semanticCommits": "enabled",
   "semanticCommitType": "fix",
@@ -51,35 +52,43 @@
       "groupName": "hugo modules"
     },
     {
-      "matchFileNames": ["stacks/harbor/**"],
-      "groupName": "harbor stack"
-    },
-    {
-      "matchPackageNames": ["ghcr.io/frantche/gitea-backup-restore-process"],
-      "groupName": "gitea backup restore process",
-      "automerge": false
-    },
-    {
-      "matchPackageNames": ["traefik", "cloudflare/cloudflared"],
-      "groupName": "edge stack"
-    },
-    {
-      "matchPackageNames": [
-        "keycloak/keycloak",
-        "openbao/openbao",
-        "goharbor/harbor-core",
-        "goharbor/harbor-jobservice",
-        "goharbor/harbor-db",
-        "postgres",
-        "traefik",
-        "cloudflare/cloudflared"
-      ],
-      "automerge": false
-    },
-    {
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true,
       "automerge": false
+    },
+    {
+      "description": "Regrouper les mises a jour Docker majeures une fois par semaine",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["major"],
+      "schedule": ["before 6am on monday"],
+      "groupName": "docker major updates",
+      "groupSlug": "docker-major",
+      "dependencyDashboardApproval": true,
+      "automerge": false
+    },
+    {
+      "description": "Regrouper et fusionner les mises a jour Docker mineures une fois par semaine",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["minor"],
+      "schedule": ["before 6am on monday"],
+      "groupName": "docker minor updates",
+      "groupSlug": "docker-minor",
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash",
+      "platformAutomerge": true
+    },
+    {
+      "description": "Regrouper et fusionner les correctifs et digests Docker une fois par semaine",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["patch", "pin", "pinDigest", "digest"],
+      "schedule": ["before 6am on monday"],
+      "groupName": "docker patch updates",
+      "groupSlug": "docker-patch",
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash",
+      "platformAutomerge": true
     }
   ]
 }
