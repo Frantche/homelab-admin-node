@@ -13,6 +13,9 @@
     "npm",
     "custom.regex"
   ],
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
   "customManagers": [
     {
       "customType": "regex",
@@ -42,49 +45,18 @@
   ],
   "packageRules": [
     {
-      "matchManagers": ["npm"],
-      "matchFileNames": ["ci/oidc-user-journey/package.json"],
-      "groupName": "playwright test dependencies"
-    },
-    {
-      "matchManagers": ["gomod"],
-      "matchFileNames": ["site/go.mod"],
-      "groupName": "hugo modules"
-    },
-    {
+      "description": "Regrouper toutes les mises a jour majeures pour validation manuelle hebdomadaire",
       "matchUpdateTypes": ["major"],
+      "groupName": "weekly major dependency updates",
+      "groupSlug": "weekly-major-dependencies",
       "dependencyDashboardApproval": true,
       "automerge": false
     },
     {
-      "description": "Regrouper les mises a jour Docker majeures une fois par semaine",
-      "matchDatasources": ["docker"],
-      "matchUpdateTypes": ["major"],
-      "schedule": ["before 6am on monday"],
-      "groupName": "docker major updates",
-      "groupSlug": "docker-major",
-      "dependencyDashboardApproval": true,
-      "automerge": false
-    },
-    {
-      "description": "Regrouper et fusionner les mises a jour Docker mineures une fois par semaine",
-      "matchDatasources": ["docker"],
-      "matchUpdateTypes": ["minor"],
-      "schedule": ["before 6am on monday"],
-      "groupName": "docker minor updates",
-      "groupSlug": "docker-minor",
-      "automerge": true,
-      "automergeType": "pr",
-      "automergeStrategy": "squash",
-      "platformAutomerge": true
-    },
-    {
-      "description": "Regrouper et fusionner les correctifs et digests Docker une fois par semaine",
-      "matchDatasources": ["docker"],
-      "matchUpdateTypes": ["patch", "pin", "pinDigest", "digest"],
-      "schedule": ["before 6am on monday"],
-      "groupName": "docker patch updates",
-      "groupSlug": "docker-patch",
+      "description": "Regrouper et fusionner les mises a jour non majeures une fois par semaine",
+      "matchUpdateTypes": ["minor", "patch", "pin", "pinDigest", "digest"],
+      "groupName": "weekly non-major dependency updates",
+      "groupSlug": "weekly-non-major-dependencies",
       "automerge": true,
       "automergeType": "pr",
       "automergeStrategy": "squash",
