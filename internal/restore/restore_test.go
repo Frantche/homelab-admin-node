@@ -889,6 +889,52 @@ func TestFixOpenBaoStackPermissionsMatchesAnsible(t *testing.T) {
 	assertMode(filepath.Join(stackRoot, "openbao.hcl"), 0o644)
 }
 
+func TestRestoreActiveStackDefinitionsPreservesCapturedModes(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "backup", "stack-definitions")
+	adminRoot := filepath.Join(root, "admin")
+	fixtures := map[string]os.FileMode{
+		"harbor/config/registry.yml":        0o644,
+		"observability/otel-collector.yaml": 0o644,
+		"openbao/openbao.hcl":               0o644,
+	}
+	for rel, mode := range fixtures {
+		path := filepath.Join(sourceRoot, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("rendered\n"), mode); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"harbor", "observability", "openbao"} {
+		compose := filepath.Join(sourceRoot, name, "compose.yaml")
+		if err := os.WriteFile(compose, []byte("services: {}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(compose, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := restoreActiveStackDefinitions(sourceRoot, adminRoot, []string{"harbor", "observability", "openbao"}); err != nil {
+		t.Fatal(err)
+	}
+	for rel, want := range fixtures {
+		path := filepath.Join(adminRoot, "stacks", rel)
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != want {
+			t.Fatalf("%s mode = %04o, want %04o", path, got, want)
+		}
+	}
+}
+
 func TestStartRestoreStacksUsesOnlyManifestStacks(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fake docker script is unix-specific")

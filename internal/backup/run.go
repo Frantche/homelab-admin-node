@@ -241,7 +241,7 @@ func copyActiveStackDefinitions(adminRoot, partial string, activeStacks []string
 	}
 	for _, name := range activeStacks {
 		source := filepath.Join(adminRoot, "stacks", name)
-		if err := copyPath(source, filepath.Join(target, name)); err != nil {
+		if err := copyPathPreservingMode(source, filepath.Join(target, name)); err != nil {
 			return fmt.Errorf("copy rendered stack definition %s: %w", name, err)
 		}
 	}
@@ -368,14 +368,22 @@ func openBaoToken(cfg config.Config) string {
 }
 
 func copyPath(src, dst string) error {
+	return copyPathWithMode(src, dst, false)
+}
+
+func copyPathPreservingMode(src, dst string) error {
+	return copyPathWithMode(src, dst, true)
+}
+
+func copyPathWithMode(src, dst string, preserveMode bool) error {
 	root, err := filepath.Abs(src)
 	if err != nil {
 		return err
 	}
-	return copyPathWithin(root, src, dst)
+	return copyPathWithin(root, src, dst, preserveMode)
 }
 
-func copyPathWithin(root, src, dst string) error {
+func copyPathWithin(root, src, dst string, preserveMode bool) error {
 	info, err := os.Lstat(src)
 	if err != nil {
 		return err
@@ -392,10 +400,17 @@ func copyPathWithin(root, src, dst string) error {
 		if resolvedAbs != root && !strings.HasPrefix(resolvedAbs, root+string(os.PathSeparator)) {
 			return fmt.Errorf("symlink escapes backup source: %s", src)
 		}
-		return copyPathWithin(root, resolvedAbs, dst)
+		return copyPathWithin(root, resolvedAbs, dst, preserveMode)
 	}
 	if info.IsDir() {
-		if err := os.MkdirAll(dst, info.Mode().Perm()&0o700); err != nil {
+		mode := info.Mode().Perm()
+		if !preserveMode {
+			mode &= 0o700
+		}
+		if err := os.MkdirAll(dst, mode); err != nil {
+			return err
+		}
+		if err := os.Chmod(dst, mode); err != nil {
 			return err
 		}
 		entries, err := os.ReadDir(src)
@@ -403,7 +418,7 @@ func copyPathWithin(root, src, dst string) error {
 			return err
 		}
 		for _, entry := range entries {
-			if err := copyPathWithin(root, filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name())); err != nil {
+			if err := copyPathWithin(root, filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name()), preserveMode); err != nil {
 				return err
 			}
 		}
@@ -412,7 +427,11 @@ func copyPathWithin(root, src, dst string) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("unsupported backup source: %s", src)
 	}
-	return copyFile(src, dst, info.Mode().Perm()&0o600)
+	mode := info.Mode().Perm()
+	if !preserveMode {
+		mode &= 0o600
+	}
+	return copyFile(src, dst, mode)
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {
@@ -429,8 +448,10 @@ func copyFile(src, dst string, mode os.FileMode) error {
 		return err
 	}
 	defer out.Close()
-	_, err = io.Copy(out, in)
-	return err
+	if _, err = io.Copy(out, in); err != nil {
+		return err
+	}
+	return os.Chmod(dst, mode)
 }
 
 func copyBtrfsSnapshot(ctx context.Context, source, snapshotRoot, id, dst string) (bool, error) {

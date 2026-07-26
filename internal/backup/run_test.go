@@ -266,6 +266,67 @@ func TestRunStandardBackupIncludesActiveStackDefinitions(t *testing.T) {
 	}
 }
 
+func TestCopyActiveStackDefinitionsPreservesRenderedModes(t *testing.T) {
+	root := t.TempDir()
+	adminRoot := filepath.Join(root, "admin")
+	fixtures := map[string]os.FileMode{
+		"harbor/config/registry.yml":            0o644,
+		"openbao/openbao.hcl":                   0o644,
+		"observability/otel-collector.yaml":     0o644,
+		"observability/private-rendered.secret": 0o600,
+	}
+	for rel, mode := range fixtures {
+		path := filepath.Join(adminRoot, "stacks", rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("rendered\n"), mode); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"harbor", "observability", "openbao"} {
+		compose := filepath.Join(adminRoot, "stacks", name, "compose.yaml")
+		if err := os.WriteFile(compose, []byte("services: {}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(compose, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	partial := filepath.Join(root, "backup")
+	if err := copyActiveStackDefinitions(adminRoot, partial, []string{"harbor", "observability", "openbao"}); err != nil {
+		t.Fatal(err)
+	}
+	for rel, want := range fixtures {
+		assertBackupMode(t, filepath.Join(partial, "stack-definitions", rel), want)
+	}
+	assertBackupMode(t, filepath.Join(partial, "stack-definitions/harbor/config"), 0o755)
+}
+
+func TestCopyPathStillRestrictsNonStackArtifacts(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "artifact"), []byte("sensitive\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "target")
+	if err := copyPath(source, target); err != nil {
+		t.Fatal(err)
+	}
+	assertBackupMode(t, target, 0o700)
+	assertBackupMode(t, filepath.Join(target, "artifact"), 0o600)
+}
+
 func TestRotateLocalKeepsNewest(t *testing.T) {
 	root := t.TempDir()
 	for _, id := range []string{"20260623-120000", "20260624-120000", "20260625-120000"} {
@@ -289,6 +350,17 @@ func TestDirectoryContentsPathPreservesDotSuffix(t *testing.T) {
 	want := filepath.Join("tmp", "snapshot") + string(os.PathSeparator) + "."
 	if got != want {
 		t.Fatalf("directoryContentsPath() = %q, want %q", got, want)
+	}
+}
+
+func assertBackupMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("%s mode = %04o, want %04o", path, got, want)
 	}
 }
 
