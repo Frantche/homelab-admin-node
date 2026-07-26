@@ -859,6 +859,36 @@ func TestRestoreActiveStackDefinitionsLeavesExtraStackUntouched(t *testing.T) {
 	}
 }
 
+func TestFixOpenBaoStackPermissionsMatchesAnsible(t *testing.T) {
+	adminRoot := t.TempDir()
+	stackRoot := filepath.Join(adminRoot, "stacks", "openbao")
+	if err := os.MkdirAll(stackRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"compose.yaml", "openbao.hcl"} {
+		if err := os.WriteFile(filepath.Join(stackRoot, name), []byte("test\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := fixOpenBaoStackPermissions(adminRoot); err != nil {
+		t.Fatal(err)
+	}
+	assertMode := func(path string, want os.FileMode) {
+		t.Helper()
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != want {
+			t.Fatalf("%s mode = %04o, want %04o", path, got, want)
+		}
+	}
+	assertMode(stackRoot, 0o755)
+	assertMode(filepath.Join(stackRoot, "compose.yaml"), 0o644)
+	assertMode(filepath.Join(stackRoot, "openbao.hcl"), 0o644)
+}
+
 func TestStartRestoreStacksUsesOnlyManifestStacks(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fake docker script is unix-specific")

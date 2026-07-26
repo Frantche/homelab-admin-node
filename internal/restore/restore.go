@@ -119,6 +119,12 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 			return err
 		}
 	}
+	if restoreIncludesStack(manifest.ActiveStacks, "openbao") {
+		if err := fixOpenBaoStackPermissions(cfg.AdminRoot); err != nil {
+			writeMode(cfg.ModeFile, "restore_failed")
+			return err
+		}
+	}
 
 	if fileExists(filepath.Join(info.Path, "offline-images.tar")) {
 		if err := run(ctx, nil, "docker", "load", "-i", filepath.Join(info.Path, "offline-images.tar")); err != nil {
@@ -857,6 +863,26 @@ func fixOpenBaoDataPermissions(adminRoot string) error {
 		}
 		return nil
 	})
+}
+
+func fixOpenBaoStackPermissions(adminRoot string) error {
+	stackRoot := filepath.Join(adminRoot, "stacks/openbao")
+	if !dirExists(stackRoot) {
+		return nil
+	}
+	if err := os.Chmod(stackRoot, 0o755); err != nil {
+		return fmt.Errorf("fix openbao stack directory permissions: %w", err)
+	}
+	for _, name := range []string{"compose.yaml", "openbao.hcl"} {
+		path := filepath.Join(stackRoot, name)
+		if !fileExists(path) {
+			continue
+		}
+		if err := os.Chmod(path, 0o644); err != nil {
+			return fmt.Errorf("fix openbao stack file permissions %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func restoreOpenBao(ctx context.Context, cfg config.Config, compose string, snapPath string) error {
