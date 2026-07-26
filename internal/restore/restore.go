@@ -21,6 +21,7 @@ import (
 	adminmode "github.com/Frantche/homelab-admin-node/internal/mode"
 	"github.com/Frantche/homelab-admin-node/internal/openbao"
 	"github.com/Frantche/homelab-admin-node/internal/operation"
+	"github.com/Frantche/homelab-admin-node/internal/stackscope"
 )
 
 type Options struct {
@@ -91,13 +92,15 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 	}
 
 	set := stackSet(cfg.AdminRoot)
-	if err := stopStacks(ctx, cfg, set); err != nil {
+	if err := stopRestoreStacks(ctx, cfg, set, manifest.ActiveStacks); err != nil {
 		writeMode(cfg.ModeFile, "restore_failed")
 		return err
 	}
-	if err := fixOpenBaoDataPermissions(cfg.AdminRoot); err != nil {
-		writeMode(cfg.ModeFile, "restore_failed")
-		return err
+	if restoreIncludesStack(manifest.ActiveStacks, "openbao") {
+		if err := fixOpenBaoDataPermissions(cfg.AdminRoot); err != nil {
+			writeMode(cfg.ModeFile, "restore_failed")
+			return err
+		}
 	}
 
 	stackDefinitions := filepath.Join(info.Path, "stack-definitions")
@@ -106,9 +109,14 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("backup declares rendered stack definitions but they are missing")
 		}
-		if err := replaceDirContents(stackDefinitions, filepath.Join(cfg.AdminRoot, "stacks")); err != nil {
+		if manifest.ActiveStacks == nil {
+			if err := replaceDirContents(stackDefinitions, filepath.Join(cfg.AdminRoot, "stacks")); err != nil {
+				writeMode(cfg.ModeFile, "restore_failed")
+				return fmt.Errorf("restore rendered stack definitions from revision %s: %w", manifest.CLIRevision, err)
+			}
+		} else if err := restoreActiveStackDefinitions(stackDefinitions, cfg.AdminRoot, manifest.ActiveStacks); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
-			return fmt.Errorf("restore rendered stack definitions from revision %s: %w", manifest.CLIRevision, err)
+			return err
 		}
 	}
 
@@ -130,7 +138,7 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 		}
 	}
 
-	if dirExists(filepath.Join(info.Path, "gitea-stack")) {
+	if restoreIncludesStack(manifest.ActiveStacks, "gitea") && dirExists(filepath.Join(info.Path, "gitea-stack")) {
 		giteaSource, err := snapshotArtifactSource(filepath.Join(info.Path, "gitea-stack"), ".gitea-", "gitea", "postgres")
 		if err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
@@ -145,7 +153,7 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return err
 		}
-	} else if dirExists(filepath.Join(info.Path, "gitea-data")) {
+	} else if restoreIncludesStack(manifest.ActiveStacks, "gitea") && dirExists(filepath.Join(info.Path, "gitea-data")) {
 		giteaDataPath := filepath.Join(cfg.AdminRoot, "data/gitea")
 		if err := replaceDirContents(filepath.Join(info.Path, "gitea-data"), giteaDataPath); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
@@ -156,7 +164,7 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 			return err
 		}
 	}
-	if dirExists(filepath.Join(info.Path, "harbor-data")) {
+	if restoreIncludesStack(manifest.ActiveStacks, "harbor") && dirExists(filepath.Join(info.Path, "harbor-data")) {
 		harborRoot := filepath.Join(cfg.AdminRoot, "data/harbor")
 		for _, rel := range []string{"registry", "core", "job_logs", "trivy-adapter/reports"} {
 			source := filepath.Join(info.Path, "harbor-data", rel)
@@ -174,48 +182,48 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 		}
 	}
 
-	if fileExists(filepath.Join(info.Path, "keycloak.dump")) {
+	if restoreIncludesStack(manifest.ActiveStacks, "keycloak") && fileExists(filepath.Join(info.Path, "keycloak.dump")) {
 		if err := restorePostgres(ctx, stackCommand{Compose: set.KeycloakCompose, EnvFile: set.KeycloakEnv}, "keycloak-db", "keycloak", "keycloak", filepath.Join(info.Path, "keycloak.dump"), ""); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore keycloak: %w", err)
 		}
 	}
-	if fileExists(filepath.Join(info.Path, "gitea.dump")) && fileExists(set.GiteaCompose) && fileExists(set.GiteaEnv) {
+	if restoreIncludesStack(manifest.ActiveStacks, "gitea") && fileExists(filepath.Join(info.Path, "gitea.dump")) && fileExists(set.GiteaCompose) && fileExists(set.GiteaEnv) {
 		if err := restorePostgres(ctx, stackCommand{Compose: set.GiteaCompose, EnvFile: set.GiteaEnv}, "gitea-db", "gitea", "gitea", filepath.Join(info.Path, "gitea.dump"), ""); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore gitea: %w", err)
 		}
 	}
-	if fileExists(filepath.Join(info.Path, "harbor.dump")) && fileExists(set.HarborCompose) && fileExists(set.HarborEnv) {
+	if restoreIncludesStack(manifest.ActiveStacks, "harbor") && fileExists(filepath.Join(info.Path, "harbor.dump")) && fileExists(set.HarborCompose) && fileExists(set.HarborEnv) {
 		if err := restorePostgres(ctx, stackCommand{Compose: set.HarborCompose, EnvFile: set.HarborEnv}, "harbor-db", "postgres", "registry", filepath.Join(info.Path, "harbor.dump"), harborAdminInitializationSQL); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore harbor: %w", err)
 		}
 	}
-	if fileExists(filepath.Join(info.Path, "openbao.snap")) {
+	if restoreIncludesStack(manifest.ActiveStacks, "openbao") && fileExists(filepath.Join(info.Path, "openbao.snap")) {
 		if err := restoreOpenBao(ctx, cfg, set.OpenBaoCompose, filepath.Join(info.Path, "openbao.snap")); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore openbao: %w", err)
 		}
 	}
 
-	if err := startStacks(ctx, cfg, set); err != nil {
+	if err := startRestoreStacks(ctx, cfg, set, manifest.ActiveStacks); err != nil {
 		writeMode(cfg.ModeFile, "restore_failed")
 		return err
 	}
-	if fileExists(set.KeycloakCompose) && opts.RestoreKeycloakAdmin != nil {
+	if restoreIncludesStack(manifest.ActiveStacks, "keycloak") && fileExists(set.KeycloakCompose) && opts.RestoreKeycloakAdmin != nil {
 		if err := opts.RestoreKeycloakAdmin(ctx); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore Keycloak administrator: %w", err)
 		}
 	}
-	if fileExists(set.HarborCompose) && opts.RestoreHarborWritable != nil {
+	if restoreIncludesStack(manifest.ActiveStacks, "harbor") && fileExists(set.HarborCompose) && opts.RestoreHarborWritable != nil {
 		if err := opts.RestoreHarborWritable(ctx); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return fmt.Errorf("restore Harbor writable mode: %w", err)
 		}
 	}
-	if fileExists(set.OpenBaoCompose) {
+	if restoreIncludesStack(manifest.ActiveStacks, "openbao") && fileExists(set.OpenBaoCompose) {
 		if err := unsealOpenBao(ctx, cfg); err != nil {
 			writeMode(cfg.ModeFile, "restore_failed")
 			return err
@@ -544,6 +552,79 @@ func stackSet(adminRoot string) stacks {
 		CloudflaredCompose: filepath.Join(adminRoot, "stacks/cloudflared/compose.yaml"),
 		CloudflaredEnv:     filepath.Join(adminRoot, "env/cloudflared.env"),
 	}
+}
+
+func restoreIncludesStack(activeStacks []string, name string) bool {
+	return activeStacks == nil || stackscope.Contains(activeStacks, name)
+}
+
+func restoreActiveStackDefinitions(sourceRoot, adminRoot string, activeStacks []string) error {
+	for _, name := range activeStacks {
+		source := filepath.Join(sourceRoot, name)
+		target := filepath.Join(adminRoot, "stacks", name)
+		if err := replaceDirContents(source, target); err != nil {
+			return fmt.Errorf("restore rendered stack definition %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func stopRestoreStacks(ctx context.Context, cfg config.Config, set stacks, activeStacks []string) error {
+	if activeStacks == nil {
+		return stopStacks(ctx, cfg, set)
+	}
+	names := orderedActiveStacks(activeStacks)
+	for index := len(names) - 1; index >= 0; index-- {
+		command := stackCommandFor(cfg.AdminRoot, names[index])
+		if !fileExists(command.Compose) {
+			continue
+		}
+		if err := dockerCompose(ctx, command, "down"); err != nil {
+			return fmt.Errorf("stop stack %s: %w", names[index], err)
+		}
+	}
+	return nil
+}
+
+func startRestoreStacks(ctx context.Context, cfg config.Config, set stacks, activeStacks []string) error {
+	if activeStacks == nil {
+		return startStacks(ctx, cfg, set)
+	}
+	for _, name := range orderedActiveStacks(activeStacks) {
+		command := stackCommandFor(cfg.AdminRoot, name)
+		if name == "cloudflared" {
+			_ = removeStoppedContainer(ctx, "cloudflared")
+		}
+		if err := dockerCompose(ctx, command, "up", "-d"); err != nil {
+			return fmt.Errorf("start stack %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func stackCommandFor(adminRoot, name string) stackCommand {
+	return stackCommand{
+		Compose: filepath.Join(adminRoot, "stacks", name, "compose.yaml"),
+		EnvFile: filepath.Join(adminRoot, "env", name+".env"),
+	}
+}
+
+func orderedActiveStacks(activeStacks []string) []string {
+	priority := []string{"openbao", "traefik", "keycloak", "harbor", "gitea", "observability", "cloudflared"}
+	known := make(map[string]bool, len(priority))
+	ordered := make([]string, 0, len(activeStacks))
+	for _, name := range priority {
+		known[name] = true
+		if stackscope.Contains(activeStacks, name) {
+			ordered = append(ordered, name)
+		}
+	}
+	for _, name := range activeStacks {
+		if !known[name] {
+			ordered = append(ordered, name)
+		}
+	}
+	return ordered
 }
 
 func stopStacks(ctx context.Context, cfg config.Config, set stacks) error {

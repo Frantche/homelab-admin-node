@@ -1,8 +1,10 @@
 package config
 
 import (
+	"bufio"
 	"os"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -47,19 +49,21 @@ type Config struct {
 	CIMockCloudflareTunnel    bool
 	PiholeDisabled            bool
 	CloudflareDisabled        bool
+	ObservabilityDisabled     bool
 	SkipPublicURLValidation   bool
 	CISkipPublicURLValidation bool
 	ValidateMockAll           bool
 }
 
 func FromEnv() Config {
+	backupEnvFile := getenv("RESTIC_BACKUP_ENV_FILE", DefaultBackupEnvFile)
 	return Config{
 		RepoRoot:                  getenv("ADMIN_NODE_REPO_ROOT", DefaultRepoRoot),
 		AdminRoot:                 getenv("ADMIN_NODE_ROOT", DefaultAdminRoot),
 		ModeFile:                  getenv("ADMIN_MODE_FILE", DefaultModeFile),
 		RestoreIDFile:             getenv("ADMIN_RESTORE_ID_FILE", DefaultRestoreIDFile),
 		BackupRoot:                getenv("ADMIN_BACKUP_ROOT", DefaultBackupRoot),
-		BackupEnvFile:             getenv("RESTIC_BACKUP_ENV_FILE", DefaultBackupEnvFile),
+		BackupEnvFile:             backupEnvFile,
 		OperationLock:             getenv("ADMIN_OPERATION_LOCK", DefaultOperationLock),
 		GiteaStackPath:            getenv("GITEA_STACK_PATH", DefaultGiteaStackPath),
 		SnapshotRoot:              getenv("ADMIN_SNAPSHOT_ROOT", DefaultSnapshotRoot),
@@ -75,8 +79,9 @@ func FromEnv() Config {
 		CIMode:                    getenvBool("CI_MODE", false),
 		CIMockPihole:              getenvBool("CI_MOCK_PIHOLE", false),
 		CIMockCloudflareTunnel:    getenvBool("CI_MOCK_CLOUDFLARE_TUNNEL", false),
-		PiholeDisabled:            !getenvBool("PIHOLE_ENABLED", true),
-		CloudflareDisabled:        !getenvBool("CLOUDFLARE_ENABLED", true),
+		PiholeDisabled:            !getenvBoolFromFile("PIHOLE_ENABLED", backupEnvFile, true),
+		CloudflareDisabled:        !getenvBoolFromFile("CLOUDFLARE_ENABLED", backupEnvFile, true),
+		ObservabilityDisabled:     !getenvBoolFromFile("OBSERVABILITY_ENABLED", backupEnvFile, false),
 		SkipPublicURLValidation:   getenvBool("SKIP_PUBLIC_URL_VALIDATION", false),
 		CISkipPublicURLValidation: getenvBool("CI_SKIP_PUBLIC_URL_VALIDATION", false),
 		ValidateMockAll:           getenvBool("ADMIN_NODE_VALIDATE_MOCK_ALL", false),
@@ -113,4 +118,32 @@ func getenvBool(key string, fallback bool) bool {
 		return fallback
 	}
 	return parsed
+}
+
+func getenvBoolFromFile(key, path string, fallback bool) bool {
+	if _, exists := os.LookupEnv(key); exists {
+		return getenvBool(key, fallback)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return fallback
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		name, value, ok := strings.Cut(strings.TrimSpace(scanner.Text()), "=")
+		if !ok || strings.TrimSpace(name) != key {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if decoded, err := strconv.Unquote(value); err == nil {
+			value = decoded
+		}
+		parsed, err := strconv.ParseBool(value)
+		if err == nil {
+			return parsed
+		}
+		return fallback
+	}
+	return fallback
 }

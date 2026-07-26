@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -812,6 +813,87 @@ func TestStartStacksSkipsCloudflaredComposeWhenCloudflareDisabled(t *testing.T) 
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRestoreActiveStackDefinitionsLeavesExtraStackUntouched(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "backup", "stack-definitions")
+	adminRoot := filepath.Join(root, "admin")
+	for _, path := range []string{
+		filepath.Join(sourceRoot, "gitea"),
+		filepath.Join(adminRoot, "stacks", "gitea"),
+		filepath.Join(adminRoot, "stacks", "extra"),
+	} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(sourceRoot, "gitea", "compose.yaml"), []byte("backup\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(adminRoot, "stacks", "gitea", "compose.yaml"), []byte("current\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	extra := filepath.Join(adminRoot, "stacks", "extra", "compose.yaml")
+	if err := os.WriteFile(extra, []byte("untouched\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := restoreActiveStackDefinitions(sourceRoot, adminRoot, []string{"gitea"}); err != nil {
+		t.Fatal(err)
+	}
+	gitea, err := os.ReadFile(filepath.Join(adminRoot, "stacks", "gitea", "compose.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gitea) != "backup\n" {
+		t.Fatalf("gitea definition = %q", gitea)
+	}
+	extraData, err := os.ReadFile(extra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(extraData) != "untouched\n" {
+		t.Fatalf("extra definition = %q", extraData)
+	}
+}
+
+func TestStartRestoreStacksUsesOnlyManifestStacks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	root := t.TempDir()
+	adminRoot := filepath.Join(root, "admin")
+	for _, name := range []string{"extra", "gitea"} {
+		dir := filepath.Join(adminRoot, "stacks", name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "docker.log")
+	script := "#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" >> " + strconv.Quote(logPath) + "\n"
+	if err := os.WriteFile(filepath.Join(binDir, "docker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if err := startRestoreStacks(context.Background(), config.Config{AdminRoot: adminRoot}, stacks{}, []string{"gitea"}); err != nil {
+		t.Fatal(err)
+	}
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(log), "extra") || !strings.Contains(string(log), "stacks/gitea/compose.yaml") {
+		t.Fatalf("docker log = %s", log)
 	}
 }
 

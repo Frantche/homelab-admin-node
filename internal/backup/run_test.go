@@ -93,10 +93,22 @@ exit 1
 	if err := os.WriteFile(filepath.Join(adminRoot, "stacks/compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(adminRoot, "stacks/gitea"), 0o755); err != nil {
+	for _, name := range []string{"gitea", "harbor", "keycloak", "openbao"} {
+		if err := os.MkdirAll(filepath.Join(adminRoot, "stacks", name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		compose := "services: {}\n"
+		if name == "gitea" {
+			compose = "services:\n  gitea:\n    image: docker.gitea.com/gitea:1.26.4\n"
+		}
+		if err := os.WriteFile(filepath.Join(adminRoot, "stacks", name, "compose.yaml"), []byte(compose), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(adminRoot, "stacks/cloudflared"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(adminRoot, "stacks/gitea/compose.yaml"), []byte("services:\n  gitea:\n    image: docker.gitea.com/gitea:1.26.4\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(adminRoot, "stacks/cloudflared/compose.yaml"), []byte("services:\n  tunnel:\n    image: cloudflare/cloudflared:missing\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(adminRoot, "env/service.env"), []byte("A=B\n"), 0o644); err != nil {
@@ -150,11 +162,12 @@ RESTIC_DEFAULT_FORGET_ARGS="--keep-last 2 --prune"
 	validateCalled := false
 
 	cfg := config.Config{
-		AdminRoot:     adminRoot,
-		RepoRoot:      repoRoot,
-		ModeFile:      modeFile,
-		BackupRoot:    filepath.Join(root, "backups"),
-		BackupEnvFile: backupEnv,
+		AdminRoot:              adminRoot,
+		RepoRoot:               repoRoot,
+		ModeFile:               modeFile,
+		BackupRoot:             filepath.Join(root, "backups"),
+		BackupEnvFile:          backupEnv,
+		CIMockCloudflareTunnel: true,
 	}
 	info, err := Run(context.Background(), cfg, RunOptions{
 		Validate: func(context.Context) error {
@@ -196,6 +209,60 @@ RESTIC_DEFAULT_FORGET_ARGS="--keep-last 2 --prune"
 	}
 	if len(manifest.OfflineImageArchives) != 1 || manifest.OfflineImageArchives[0].ImageID != "sha256:offline-image-id" {
 		t.Fatalf("offline image archive manifest = %#v", manifest.OfflineImageArchives)
+	}
+	if strings.Join(manifest.ActiveStacks, ",") != "gitea,harbor,keycloak,openbao" {
+		t.Fatalf("active stacks = %#v", manifest.ActiveStacks)
+	}
+}
+
+func TestRunStandardBackupIncludesActiveStackDefinitions(t *testing.T) {
+	root := t.TempDir()
+	adminRoot := filepath.Join(root, "admin")
+	stackDir := filepath.Join(adminRoot, "stacks", "custom")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stackDir, "compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	modeFile := filepath.Join(root, "mode")
+	if err := os.WriteFile(modeFile, []byte("normal\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "docker"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	info, err := Run(context.Background(), config.Config{
+		AdminRoot:     adminRoot,
+		ModeFile:      modeFile,
+		BackupRoot:    filepath.Join(root, "backups"),
+		BackupEnvFile: filepath.Join(root, "missing-backup.env"),
+	}, RunOptions{
+		Now: func() time.Time {
+			return time.Date(2026, 6, 25, 13, 0, 0, 0, time.UTC)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := Verify(info.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !manifest.StackDefinitions || strings.Join(manifest.ActiveStacks, ",") != "custom" {
+		t.Fatalf("manifest = %#v", manifest)
+	}
+	if !fileExists(filepath.Join(info.Path, "stack-definitions/custom/compose.yaml")) {
+		t.Fatal("active stack definition is missing")
+	}
+	if fileExists(filepath.Join(info.Path, "offline-images.tar")) || fileExists(filepath.Join(info.Path, "repository.bundle")) {
+		t.Fatal("standard backup unexpectedly contains offline-only artifacts")
 	}
 }
 

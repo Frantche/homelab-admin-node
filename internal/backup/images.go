@@ -17,6 +17,18 @@ func DetectImages(ctx context.Context, adminRoot string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return detectComposeImages(ctx, composeFiles), nil
+}
+
+func DetectImagesForStacks(ctx context.Context, adminRoot string, stacks []string) []string {
+	composeFiles := make([]string, 0, len(stacks))
+	for _, name := range stacks {
+		composeFiles = append(composeFiles, filepath.Join(adminRoot, "stacks", name, "compose.yaml"))
+	}
+	return detectComposeImages(ctx, composeFiles)
+}
+
+func detectComposeImages(ctx context.Context, composeFiles []string) []string {
 	imageSet := map[string]bool{}
 	for _, composeFile := range composeFiles {
 		for _, image := range composeImages(ctx, composeFile) {
@@ -28,7 +40,7 @@ func DetectImages(ctx context.Context, adminRoot string) ([]string, error) {
 		images = append(images, image)
 	}
 	sort.Strings(images)
-	return images, nil
+	return images
 }
 
 func composeImages(ctx context.Context, composeFile string) []string {
