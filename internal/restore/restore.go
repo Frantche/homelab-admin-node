@@ -171,20 +171,9 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 		}
 	}
 	if restoreIncludesStack(manifest.ActiveStacks, "harbor") && dirExists(filepath.Join(info.Path, "harbor-data")) {
-		harborRoot := filepath.Join(cfg.AdminRoot, "data/harbor")
-		for _, rel := range []string{"registry", "core", "job_logs", "trivy-adapter/reports"} {
-			source := filepath.Join(info.Path, "harbor-data", rel)
-			if dirExists(source) {
-				// Backups produced before V2 layout normalization wrapped each
-				// selected path once under its basename.
-				if nested := filepath.Join(source, filepath.Base(source)); dirExists(nested) {
-					source = nested
-				}
-				if err := replaceDirContents(source, filepath.Join(harborRoot, rel)); err != nil {
-					writeMode(cfg.ModeFile, "restore_failed")
-					return fmt.Errorf("restore harbor data %s: %w", rel, err)
-				}
-			}
+		if err := restoreHarborData(info.Path, cfg.AdminRoot); err != nil {
+			writeMode(cfg.ModeFile, "restore_failed")
+			return err
 		}
 	}
 
@@ -1133,6 +1122,46 @@ func replaceDirContents(src, dst string) error {
 	cmd := exec.Command("cp", "--archive", "--reflink=auto", "--", filepath.Clean(src)+"/.", dst+"/")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("copy restored data: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func restoreHarborData(backupPath, adminRoot string) error {
+	harborRoot := filepath.Join(adminRoot, "data/harbor")
+	for _, rel := range []string{"registry", "core", "job_logs", "trivy-adapter/reports"} {
+		source := filepath.Join(backupPath, "harbor-data", rel)
+		if !dirExists(source) {
+			continue
+		}
+		// Backups produced before V2 layout normalization wrapped each
+		// selected path once under its basename.
+		if nested := filepath.Join(source, filepath.Base(source)); dirExists(nested) {
+			source = nested
+		}
+		if err := replaceDirContents(source, filepath.Join(harborRoot, rel)); err != nil {
+			return fmt.Errorf("restore harbor data %s: %w", rel, err)
+		}
+	}
+	if err := validateHarborRegistryPasswordFile(harborRoot); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateHarborRegistryPasswordFile(harborRoot string) error {
+	path := filepath.Join(harborRoot, "core", "registry.passwd")
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("restored Harbor registry password file is missing")
+		}
+		return fmt.Errorf("inspect restored Harbor registry password file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("restored Harbor registry password file is not a regular file")
+	}
+	if info.Size() == 0 {
+		return fmt.Errorf("restored Harbor registry password file is empty")
 	}
 	return nil
 }

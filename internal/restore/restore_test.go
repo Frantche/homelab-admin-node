@@ -430,6 +430,101 @@ func TestFixOpenBaoDataPermissionsSetsRootMode(t *testing.T) {
 	}
 }
 
+func TestRestoreHarborDataPreservesRegistryPasswordFile(t *testing.T) {
+	root := t.TempDir()
+	backupRoot := filepath.Join(root, "backup")
+	sourceCore := filepath.Join(backupRoot, "harbor-data/core")
+	if err := os.MkdirAll(sourceCore, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sourcePassword := filepath.Join(sourceCore, "registry.passwd")
+	if err := os.WriteFile(sourcePassword, []byte("harbor_registry_user:$2y$05$backup\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(sourcePassword, 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	adminRoot := filepath.Join(root, "admin")
+	targetCore := filepath.Join(adminRoot, "data/harbor/core")
+	if err := os.MkdirAll(targetCore, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	targetPassword := filepath.Join(targetCore, "registry.passwd")
+	if err := os.WriteFile(targetPassword, []byte("stale\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := restoreHarborData(backupRoot, adminRoot); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(targetPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "harbor_registry_user:$2y$05$backup\n" {
+		t.Fatalf("registry password content = %q", content)
+	}
+	info, err := os.Stat(targetPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o640 {
+		t.Fatalf("registry password mode = %#o, want 0640", info.Mode().Perm())
+	}
+}
+
+func TestRestoreHarborDataRejectsInvalidRegistryPasswordFile(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(*testing.T, string)
+		wantErr string
+	}{
+		{
+			name:    "missing",
+			prepare: func(*testing.T, string) {},
+			wantErr: "is missing",
+		},
+		{
+			name: "empty",
+			prepare: func(t *testing.T, path string) {
+				t.Helper()
+				if err := os.WriteFile(path, nil, 0o640); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantErr: "is empty",
+		},
+		{
+			name: "not regular",
+			prepare: func(t *testing.T, path string) {
+				t.Helper()
+				if err := os.Mkdir(path, 0o750); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantErr: "is not a regular file",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			backupRoot := filepath.Join(root, "backup")
+			sourceCore := filepath.Join(backupRoot, "harbor-data/core")
+			if err := os.MkdirAll(sourceCore, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			test.prepare(t, filepath.Join(sourceCore, "registry.passwd"))
+
+			err := restoreHarborData(backupRoot, filepath.Join(root, "admin"))
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("restoreHarborData error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestOpenBaoTokenReadsSOPSSecret(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fake sops script is unix-specific")
