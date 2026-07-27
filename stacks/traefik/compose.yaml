@@ -18,7 +18,7 @@ services:
       - traefik-docker
 
   traefik:
-    image: traefik:v3.7@sha256:54c598430bee8479c93179940c37f793cbe1e9e0405036b67ed11ba2f1fa252d
+    image: traefik:v3.7@sha256:66b901df20c5b92a43ac79d92d14bd0a1fda50fdb3cae8f77d562aa8f279f748
     container_name: traefik
     init: true
     restart: "no"

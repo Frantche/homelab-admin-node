@@ -25,7 +25,7 @@ services:
       - harbor-host
 
   harbor-db:
-    image: pgautoupgrade/pgautoupgrade:18-trixie@sha256:08818ad7ee0064f9cb586a2fe596b8c360a9958025dc31975784faa7b571403c
+    image: pgautoupgrade/pgautoupgrade:18-trixie@sha256:e5bc29961be866fc4ab099d4785bbfdd69df05f1ffcef05563cfc35e3372c864
     container_name: harbor-db
     restart: "no"
     cap_drop:
