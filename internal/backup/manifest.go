@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Frantche/homelab-admin-node/internal/stackscope"
 )
 
 const ManifestName = "manifest.json"
@@ -36,6 +38,7 @@ type Manifest struct {
 	OfflineImages        bool                  `json:"offline_images"`
 	Images               []string              `json:"images,omitempty"`
 	OfflineImageArchives []OfflineImageArchive `json:"offline_image_archives,omitempty"`
+	ActiveStacks         []string              `json:"active_stacks,omitempty"`
 	StackDefinitions     bool                  `json:"stack_definitions,omitempty"`
 	RepositoryBundle     bool                  `json:"repository_bundle,omitempty"`
 	Consistency          string                `json:"consistency"`
@@ -106,6 +109,11 @@ func Verify(dir string) (Manifest, error) {
 	if manifest.ID == "" || filepath.Base(manifest.ID) != manifest.ID || strings.Contains(manifest.ID, "..") {
 		return Manifest{}, fmt.Errorf("invalid manifest id")
 	}
+	if manifest.ActiveStacks != nil {
+		if err := validateActiveStacks(manifest, dir); err != nil {
+			return Manifest{}, err
+		}
+	}
 	actual, err := BuildManifestFiles(dir)
 	if err != nil {
 		return Manifest{}, err
@@ -119,6 +127,23 @@ func Verify(dir string) (Manifest, error) {
 		}
 	}
 	return manifest, nil
+}
+
+func validateActiveStacks(manifest Manifest, dir string) error {
+	if !manifest.StackDefinitions {
+		return fmt.Errorf("active stacks require rendered stack definitions")
+	}
+	if err := stackscope.Validate(manifest.ActiveStacks); err != nil {
+		return err
+	}
+	for _, name := range manifest.ActiveStacks {
+		compose := filepath.Join(dir, "stack-definitions", name, "compose.yaml")
+		info, err := os.Stat(compose)
+		if err != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("active stack definition is missing: %s", name)
+		}
+	}
+	return nil
 }
 
 func ReadManifest(dir string) (Manifest, bool, error) {

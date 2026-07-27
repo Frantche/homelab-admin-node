@@ -17,6 +17,7 @@ import (
 	"github.com/Frantche/homelab-admin-node/internal/config"
 	"github.com/Frantche/homelab-admin-node/internal/mode"
 	"github.com/Frantche/homelab-admin-node/internal/operation"
+	"github.com/Frantche/homelab-admin-node/internal/stackscope"
 )
 
 type RunOptions struct {
@@ -72,6 +73,13 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	if _, err := os.Stat(target); err == nil {
 		return Info{}, fmt.Errorf("backup already exists: %s", stamp)
 	}
+	activeStacks, err := stackscope.Discover(cfg)
+	if err != nil {
+		return Info{}, fmt.Errorf("discover active stacks: %w", err)
+	}
+	if len(activeStacks) == 0 {
+		return Info{}, fmt.Errorf("no active rendered stacks found")
+	}
 
 	cliRevision := repoRevision(ctx, cfg.RepoRoot)
 	if opts.IncludeImages {
@@ -94,23 +102,25 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		}
 	}
 
-	if err := dumpPostgres(ctx, partial, "keycloak.dump", "keycloak-db", "keycloak", "keycloak"); err != nil {
-		return Info{}, fmt.Errorf("dump keycloak: %w", err)
+	if stackscope.Contains(activeStacks, "keycloak") {
+		if err := dumpPostgres(ctx, partial, "keycloak.dump", "keycloak-db", "keycloak", "keycloak"); err != nil {
+			return Info{}, fmt.Errorf("dump keycloak: %w", err)
+		}
 	}
 
-	if containerExists(ctx, "gitea-db") {
+	if stackscope.Contains(activeStacks, "gitea") && containerExists(ctx, "gitea-db") {
 		if err := dumpPostgres(ctx, partial, "gitea.dump", "gitea-db", "gitea", "gitea"); err != nil {
 			return Info{}, fmt.Errorf("dump gitea: %w", err)
 		}
 	}
 
-	if containerExists(ctx, "harbor-db") {
+	if stackscope.Contains(activeStacks, "harbor") && containerExists(ctx, "harbor-db") {
 		if err := backupHarbor(ctx, cfg, partial, stamp); err != nil {
 			return Info{}, err
 		}
 	}
 
-	if token := openBaoToken(cfg); token != "" {
+	if token := openBaoToken(cfg); stackscope.Contains(activeStacks, "openbao") && token != "" {
 		if err := runWithEnv(ctx, []string{"VAULT_TOKEN=" + token}, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN", "openbao", "bao", "operator", "raft", "snapshot", "save", "/tmp/openbao.snap"); err != nil {
 			return Info{}, fmt.Errorf("openbao snapshot save: %w", err)
 		}
@@ -120,7 +130,7 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	}
 
 	consistency := "logical-online"
-	if dirExists(cfg.GiteaStackPath) {
+	if stackscope.Contains(activeStacks, "gitea") && dirExists(cfg.GiteaStackPath) {
 		usedSnapshot, err := copyBtrfsSnapshot(ctx, cfg.GiteaStackPath, cfg.SnapshotRoot, stamp, filepath.Join(partial, "gitea-stack"))
 		if err != nil {
 			return Info{}, fmt.Errorf("snapshot gitea stack: %w", err)
@@ -132,7 +142,7 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		} else if err := copyPath(cfg.GiteaStackPath, filepath.Join(partial, "gitea-stack")); err != nil {
 			return Info{}, err
 		}
-	} else {
+	} else if stackscope.Contains(activeStacks, "gitea") {
 		giteaData := filepath.Join(cfg.AdminRoot, "data/gitea")
 		if cfg.RequireBtrfsHotBackup {
 			return Info{}, fmt.Errorf("required Gitea stack subvolume is missing: %s", cfg.GiteaStackPath)
@@ -144,10 +154,7 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		}
 	}
 
-	images, err := DetectImages(ctx, cfg.AdminRoot)
-	if err != nil {
-		return Info{}, fmt.Errorf("detect images: %w", err)
-	}
+	images := DetectImagesForStacks(ctx, cfg.AdminRoot, activeStacks)
 	var offlineImageArchives []OfflineImageArchive
 	if opts.IncludeImages {
 		if len(images) > 0 {
@@ -176,13 +183,11 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 				return Info{}, fmt.Errorf("export docker images: %w", err)
 			}
 		}
-		stackRoot := filepath.Join(cfg.AdminRoot, "stacks")
-		if !dirExists(stackRoot) {
-			return Info{}, fmt.Errorf("include docker images: rendered stack definitions are missing: %s", stackRoot)
-		}
-		if err := copyPath(stackRoot, filepath.Join(partial, "stack-definitions")); err != nil {
-			return Info{}, fmt.Errorf("copy rendered stack definitions: %w", err)
-		}
+	}
+	if err := copyActiveStackDefinitions(cfg.AdminRoot, partial, activeStacks); err != nil {
+		return Info{}, err
+	}
+	if opts.IncludeImages {
 		if err := rewriteStackImageReferences(filepath.Join(partial, "stack-definitions"), offlineImageArchives); err != nil {
 			return Info{}, fmt.Errorf("prepare offline stack definitions: %w", err)
 		}
@@ -201,7 +206,8 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		OfflineImages:        opts.IncludeImages,
 		Images:               images,
 		OfflineImageArchives: offlineImageArchives,
-		StackDefinitions:     opts.IncludeImages,
+		ActiveStacks:         activeStacks,
+		StackDefinitions:     true,
 		RepositoryBundle:     opts.IncludeImages,
 		Consistency:          consistency,
 		Complete:             true,
@@ -226,6 +232,20 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		return Info{}, err
 	}
 	return inspect(target, stamp)
+}
+
+func copyActiveStackDefinitions(adminRoot, partial string, activeStacks []string) error {
+	target := filepath.Join(partial, "stack-definitions")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		return err
+	}
+	for _, name := range activeStacks {
+		source := filepath.Join(adminRoot, "stacks", name)
+		if err := copyPathPreservingMode(source, filepath.Join(target, name)); err != nil {
+			return fmt.Errorf("copy rendered stack definition %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func commandOutput(ctx context.Context, name string, args ...string) (string, error) {
@@ -348,14 +368,22 @@ func openBaoToken(cfg config.Config) string {
 }
 
 func copyPath(src, dst string) error {
+	return copyPathWithMode(src, dst, false)
+}
+
+func copyPathPreservingMode(src, dst string) error {
+	return copyPathWithMode(src, dst, true)
+}
+
+func copyPathWithMode(src, dst string, preserveMode bool) error {
 	root, err := filepath.Abs(src)
 	if err != nil {
 		return err
 	}
-	return copyPathWithin(root, src, dst)
+	return copyPathWithin(root, src, dst, preserveMode)
 }
 
-func copyPathWithin(root, src, dst string) error {
+func copyPathWithin(root, src, dst string, preserveMode bool) error {
 	info, err := os.Lstat(src)
 	if err != nil {
 		return err
@@ -372,10 +400,17 @@ func copyPathWithin(root, src, dst string) error {
 		if resolvedAbs != root && !strings.HasPrefix(resolvedAbs, root+string(os.PathSeparator)) {
 			return fmt.Errorf("symlink escapes backup source: %s", src)
 		}
-		return copyPathWithin(root, resolvedAbs, dst)
+		return copyPathWithin(root, resolvedAbs, dst, preserveMode)
 	}
 	if info.IsDir() {
-		if err := os.MkdirAll(dst, info.Mode().Perm()&0o700); err != nil {
+		mode := info.Mode().Perm()
+		if !preserveMode {
+			mode &= 0o700
+		}
+		if err := os.MkdirAll(dst, mode); err != nil {
+			return err
+		}
+		if err := os.Chmod(dst, mode); err != nil {
 			return err
 		}
 		entries, err := os.ReadDir(src)
@@ -383,7 +418,7 @@ func copyPathWithin(root, src, dst string) error {
 			return err
 		}
 		for _, entry := range entries {
-			if err := copyPathWithin(root, filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name())); err != nil {
+			if err := copyPathWithin(root, filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name()), preserveMode); err != nil {
 				return err
 			}
 		}
@@ -392,7 +427,11 @@ func copyPathWithin(root, src, dst string) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("unsupported backup source: %s", src)
 	}
-	return copyFile(src, dst, info.Mode().Perm()&0o600)
+	mode := info.Mode().Perm()
+	if !preserveMode {
+		mode &= 0o600
+	}
+	return copyFile(src, dst, mode)
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {
@@ -409,8 +448,10 @@ func copyFile(src, dst string, mode os.FileMode) error {
 		return err
 	}
 	defer out.Close()
-	_, err = io.Copy(out, in)
-	return err
+	if _, err = io.Copy(out, in); err != nil {
+		return err
+	}
+	return os.Chmod(dst, mode)
 }
 
 func copyBtrfsSnapshot(ctx context.Context, source, snapshotRoot, id, dst string) (bool, error) {

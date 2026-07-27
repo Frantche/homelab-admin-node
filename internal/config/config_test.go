@@ -1,11 +1,16 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestFromEnvDefaults(t *testing.T) {
 	t.Setenv("ADMIN_NODE_REPO_ROOT", "")
 	t.Setenv("ADMIN_NODE_ROOT", "")
 	t.Setenv("CI_MODE", "")
+	t.Setenv("RESTIC_BACKUP_ENV_FILE", filepath.Join(t.TempDir(), "missing.env"))
 
 	cfg := FromEnv()
 
@@ -27,6 +32,34 @@ func TestFromEnvDefaults(t *testing.T) {
 	if cfg.CloudflareDisabled {
 		t.Fatal("CloudflareDisabled = true, want false")
 	}
+	if !cfg.ObservabilityDisabled {
+		t.Fatal("ObservabilityDisabled = false, want true")
+	}
+}
+
+func TestFromEnvReadsStackFlagsFromBackupEnv(t *testing.T) {
+	envFile := filepath.Join(t.TempDir(), "backup.env")
+	if err := os.WriteFile(envFile, []byte("CLOUDFLARE_ENABLED=\"false\"\nOBSERVABILITY_ENABLED=\"true\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RESTIC_BACKUP_ENV_FILE", envFile)
+	t.Setenv("CLOUDFLARE_ENABLED", "")
+	t.Setenv("OBSERVABILITY_ENABLED", "")
+	os.Unsetenv("CLOUDFLARE_ENABLED")
+	os.Unsetenv("OBSERVABILITY_ENABLED")
+
+	cfg := FromEnv()
+	if !cfg.CloudflareDisabled {
+		t.Fatal("CloudflareDisabled = false, want true")
+	}
+	if cfg.ObservabilityDisabled {
+		t.Fatal("ObservabilityDisabled = true, want false")
+	}
+
+	t.Setenv("OBSERVABILITY_ENABLED", "false")
+	if cfg := FromEnv(); !cfg.ObservabilityDisabled {
+		t.Fatal("explicit OBSERVABILITY_ENABLED did not override backup.env")
+	}
 }
 
 func TestFromEnvOverrides(t *testing.T) {
@@ -38,6 +71,7 @@ func TestFromEnvOverrides(t *testing.T) {
 	t.Setenv("CI_MOCK_PIHOLE", "true")
 	t.Setenv("PIHOLE_ENABLED", "false")
 	t.Setenv("CLOUDFLARE_ENABLED", "false")
+	t.Setenv("OBSERVABILITY_ENABLED", "true")
 	t.Setenv("ADMIN_NODE_VALIDATE_MOCK_ALL", "true")
 
 	cfg := FromEnv()
@@ -65,6 +99,9 @@ func TestFromEnvOverrides(t *testing.T) {
 	}
 	if !cfg.CloudflareDisabled {
 		t.Fatal("CloudflareDisabled = false, want true")
+	}
+	if cfg.ObservabilityDisabled {
+		t.Fatal("ObservabilityDisabled = true, want false")
 	}
 	if !cfg.ValidateMockAll {
 		t.Fatal("ValidateMockAll = false, want true")

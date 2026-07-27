@@ -95,7 +95,7 @@ run_backup() {
   if [[ "$DR_INCLUDE_IMAGES" == "true" ]]; then
     image_args=" --include-images"
   fi
-  vm_ssh "sudo CI_MOCK_PIHOLE=true CI_MOCK_CLOUDFLARE_TUNNEL=true \
+  vm_ssh "sudo CI_MOCK_PIHOLE=true CI_MOCK_CLOUDFLARE_TUNNEL=true OBSERVABILITY_ENABLED=true \
     CI_SKIP_PUBLIC_URL_VALIDATION=true SKIP_PUBLIC_URL_VALIDATION=true \
     /opt/homelab-admin-node/bin/admin-node backup run$image_args"
 }
@@ -206,18 +206,25 @@ case "$ACTION" in
     [[ "$(vm_ssh "sudo jq -r .cli_revision /srv/admin/backups/local/$post_id/manifest.json")" == "$CANDIDATE_SHA" ]]
     if [[ "$DR_INCLUDE_IMAGES" == "true" ]]; then
       vm_ssh "sudo jq -e '.offline_images == true and .stack_definitions == true and .repository_bundle == true and \
-          (.images | length > 0) and (.offline_image_archives | length == (.images | length))' \
+          (.active_stacks | index(\"cloudflared\") | not) and (.active_stacks | index(\"observability\") != null) and \
+          ([.images[] | select(startswith(\"cloudflare/cloudflared:\"))] | length == 0) and \
+          (.images | length > 0) and ((.offline_image_archives | length) == (.images | length))' \
         /srv/admin/backups/local/$post_id/manifest.json >/dev/null; \
         sudo test -s /srv/admin/backups/local/$post_id/offline-images.tar; \
         sudo test -s /srv/admin/backups/local/$post_id/repository.bundle; \
-        sudo test -f /srv/admin/backups/local/$post_id/stack-definitions/gitea/compose.yaml"
+        sudo test -f /srv/admin/backups/local/$post_id/stack-definitions/gitea/compose.yaml; \
+        sudo test -f /srv/admin/backups/local/$post_id/stack-definitions/observability/compose.yaml; \
+        sudo test ! -e /srv/admin/backups/local/$post_id/stack-definitions/cloudflared"
     else
-      vm_ssh "sudo jq -e '.offline_images == false and \
-          ((.stack_definitions // false) == false) and ((.repository_bundle // false) == false)' \
+      vm_ssh "sudo jq -e '.offline_images == false and .stack_definitions == true and \
+          (.active_stacks | length > 0) and (.active_stacks | index(\"cloudflared\") | not) and \
+          (.active_stacks | index(\"observability\") != null) and ((.repository_bundle // false) == false)' \
         /srv/admin/backups/local/$post_id/manifest.json >/dev/null; \
         sudo test ! -e /srv/admin/backups/local/$post_id/offline-images.tar; \
         sudo test ! -e /srv/admin/backups/local/$post_id/repository.bundle; \
-        sudo test ! -e /srv/admin/backups/local/$post_id/stack-definitions"
+        sudo test -f /srv/admin/backups/local/$post_id/stack-definitions/gitea/compose.yaml; \
+        sudo test -f /srv/admin/backups/local/$post_id/stack-definitions/observability/compose.yaml; \
+        sudo test ! -e /srv/admin/backups/local/$post_id/stack-definitions/cloudflared"
     fi
     printf '%s\n' "$post_id" >"$CANDIDATE_BACKUP_ID_FILE"
     vm_ssh "sudo cat /srv/admin/backups/local/$post_id/manifest.json" >"$ARTIFACT_DIR/post-rotation-manifest.json"

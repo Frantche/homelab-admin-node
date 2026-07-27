@@ -11,6 +11,7 @@ TRAEFIK_DOMAIN={{ service_domains.traefik | quote }}
 OPENBAO_DOMAIN={{ service_domains.openbao | quote }}
 PIHOLE_ENABLED={{ ((pihole.enabled | default(true) | bool) | ternary('true', 'false')) | quote }}
 CLOUDFLARE_ENABLED={{ ((cloudflare.enabled | default(true) | bool) | ternary('true', 'false')) | quote }}
+OBSERVABILITY_ENABLED={{ ((observability.enabled | default(false) | bool) | ternary('true', 'false')) | quote }}
 ADMIN_OPERATION_LOCK=/run/admin-node-operation.lock
 GITEA_STACK_PATH={{ (admin_node_root ~ '/data/gitea-stack') | quote }}
 ADMIN_SNAPSHOT_ROOT={{ (admin_node_root ~ '/backups/snapshots') | quote }}

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -429,6 +430,101 @@ func TestFixOpenBaoDataPermissionsSetsRootMode(t *testing.T) {
 	}
 }
 
+func TestRestoreHarborDataPreservesRegistryPasswordFile(t *testing.T) {
+	root := t.TempDir()
+	backupRoot := filepath.Join(root, "backup")
+	sourceCore := filepath.Join(backupRoot, "harbor-data/core")
+	if err := os.MkdirAll(sourceCore, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sourcePassword := filepath.Join(sourceCore, "registry.passwd")
+	if err := os.WriteFile(sourcePassword, []byte("harbor_registry_user:$2y$05$backup\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(sourcePassword, 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	adminRoot := filepath.Join(root, "admin")
+	targetCore := filepath.Join(adminRoot, "data/harbor/core")
+	if err := os.MkdirAll(targetCore, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	targetPassword := filepath.Join(targetCore, "registry.passwd")
+	if err := os.WriteFile(targetPassword, []byte("stale\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := restoreHarborData(backupRoot, adminRoot); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(targetPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "harbor_registry_user:$2y$05$backup\n" {
+		t.Fatalf("registry password content = %q", content)
+	}
+	info, err := os.Stat(targetPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o640 {
+		t.Fatalf("registry password mode = %#o, want 0640", info.Mode().Perm())
+	}
+}
+
+func TestRestoreHarborDataRejectsInvalidRegistryPasswordFile(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(*testing.T, string)
+		wantErr string
+	}{
+		{
+			name:    "missing",
+			prepare: func(*testing.T, string) {},
+			wantErr: "is missing",
+		},
+		{
+			name: "empty",
+			prepare: func(t *testing.T, path string) {
+				t.Helper()
+				if err := os.WriteFile(path, nil, 0o640); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantErr: "is empty",
+		},
+		{
+			name: "not regular",
+			prepare: func(t *testing.T, path string) {
+				t.Helper()
+				if err := os.Mkdir(path, 0o750); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantErr: "is not a regular file",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			backupRoot := filepath.Join(root, "backup")
+			sourceCore := filepath.Join(backupRoot, "harbor-data/core")
+			if err := os.MkdirAll(sourceCore, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			test.prepare(t, filepath.Join(sourceCore, "registry.passwd"))
+
+			err := restoreHarborData(backupRoot, filepath.Join(root, "admin"))
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("restoreHarborData error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestOpenBaoTokenReadsSOPSSecret(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fake sops script is unix-specific")
@@ -812,6 +908,163 @@ func TestStartStacksSkipsCloudflaredComposeWhenCloudflareDisabled(t *testing.T) 
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRestoreActiveStackDefinitionsLeavesExtraStackUntouched(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "backup", "stack-definitions")
+	adminRoot := filepath.Join(root, "admin")
+	for _, path := range []string{
+		filepath.Join(sourceRoot, "gitea"),
+		filepath.Join(adminRoot, "stacks", "gitea"),
+		filepath.Join(adminRoot, "stacks", "extra"),
+	} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(sourceRoot, "gitea", "compose.yaml"), []byte("backup\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(adminRoot, "stacks", "gitea", "compose.yaml"), []byte("current\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	extra := filepath.Join(adminRoot, "stacks", "extra", "compose.yaml")
+	if err := os.WriteFile(extra, []byte("untouched\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := restoreActiveStackDefinitions(sourceRoot, adminRoot, []string{"gitea"}); err != nil {
+		t.Fatal(err)
+	}
+	gitea, err := os.ReadFile(filepath.Join(adminRoot, "stacks", "gitea", "compose.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gitea) != "backup\n" {
+		t.Fatalf("gitea definition = %q", gitea)
+	}
+	extraData, err := os.ReadFile(extra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(extraData) != "untouched\n" {
+		t.Fatalf("extra definition = %q", extraData)
+	}
+}
+
+func TestFixOpenBaoStackPermissionsMatchesAnsible(t *testing.T) {
+	adminRoot := t.TempDir()
+	stackRoot := filepath.Join(adminRoot, "stacks", "openbao")
+	if err := os.MkdirAll(stackRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"compose.yaml", "openbao.hcl"} {
+		if err := os.WriteFile(filepath.Join(stackRoot, name), []byte("test\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := fixOpenBaoStackPermissions(adminRoot); err != nil {
+		t.Fatal(err)
+	}
+	assertMode := func(path string, want os.FileMode) {
+		t.Helper()
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != want {
+			t.Fatalf("%s mode = %04o, want %04o", path, got, want)
+		}
+	}
+	assertMode(stackRoot, 0o755)
+	assertMode(filepath.Join(stackRoot, "compose.yaml"), 0o644)
+	assertMode(filepath.Join(stackRoot, "openbao.hcl"), 0o644)
+}
+
+func TestRestoreActiveStackDefinitionsPreservesCapturedModes(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "backup", "stack-definitions")
+	adminRoot := filepath.Join(root, "admin")
+	fixtures := map[string]os.FileMode{
+		"harbor/config/registry.yml":        0o644,
+		"observability/otel-collector.yaml": 0o644,
+		"openbao/openbao.hcl":               0o644,
+	}
+	for rel, mode := range fixtures {
+		path := filepath.Join(sourceRoot, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("rendered\n"), mode); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"harbor", "observability", "openbao"} {
+		compose := filepath.Join(sourceRoot, name, "compose.yaml")
+		if err := os.WriteFile(compose, []byte("services: {}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(compose, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := restoreActiveStackDefinitions(sourceRoot, adminRoot, []string{"harbor", "observability", "openbao"}); err != nil {
+		t.Fatal(err)
+	}
+	for rel, want := range fixtures {
+		path := filepath.Join(adminRoot, "stacks", rel)
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != want {
+			t.Fatalf("%s mode = %04o, want %04o", path, got, want)
+		}
+	}
+}
+
+func TestStartRestoreStacksUsesOnlyManifestStacks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	root := t.TempDir()
+	adminRoot := filepath.Join(root, "admin")
+	for _, name := range []string{"extra", "gitea"} {
+		dir := filepath.Join(adminRoot, "stacks", name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "docker.log")
+	script := "#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" >> " + strconv.Quote(logPath) + "\n"
+	if err := os.WriteFile(filepath.Join(binDir, "docker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if err := startRestoreStacks(context.Background(), config.Config{AdminRoot: adminRoot}, stacks{}, []string{"gitea"}); err != nil {
+		t.Fatal(err)
+	}
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(log), "extra") || !strings.Contains(string(log), "stacks/gitea/compose.yaml") {
+		t.Fatalf("docker log = %s", log)
 	}
 }
 

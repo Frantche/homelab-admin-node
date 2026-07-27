@@ -1,6 +1,6 @@
 # Restore runbook
 
-Les restaurations exigent le mode `restore` et un artefact V2 valide. Un echec place l'hote en `restore_failed`, garde les stacks arretees et ne relance pas les timers.
+Les restaurations exigent le mode `restore` et un artefact V2 valide. Pour un nouveau manifeste contenant `active_stacks`, seules les stacks actives au moment du backup sont arretees, restaurees et redemarrees. Une stack supplementaire deja presente sur la cible reste intacte. Les anciens manifestes V2 sans cette liste conservent le comportement historique. Un echec place l'hote en `restore_failed`, garde les stacks concernees arretees et ne relance pas les timers.
 
 ```bash
 sudo bin/admin-node mode set restore
@@ -49,7 +49,7 @@ bin/admin-node restore select
 bin/admin-node restore run --id <backup-id>
 ```
 
-Si `offline-images.tar` est present dans le backup, le restore importe `repository.bundle`, checkout le `cli_revision` en detached HEAD, remet en place les fichiers rendus de `stack-definitions/`, puis charge les images Docker avec `docker load`. Il controle les image IDs enregistres avant de redemarrer les stacks avec `--pull never`. Les versions d'images peuvent ainsi differer de celles de la branche `main` courante sans acces Git ni pull registry.
+Le restore remet en place individuellement les fichiers rendus de `stack-definitions/` pour les stacks de `active_stacks`, sans supprimer les autres definitions de la cible. Si `offline-images.tar` est present, il importe aussi `repository.bundle`, checkout le `cli_revision` en detached HEAD, charge les images Docker et controle les image IDs enregistres avant de redemarrer avec `--pull never`. Les versions d'images peuvent ainsi differer de celles de la branche `main` courante sans acces Git ni pull registry.
 
 Les bases PostgreSQL sont restaurees depuis les archives custom `keycloak.dump`, `gitea.dump` et `harbor.dump` avec `pg_restore`. Le restore recree la base cible avant import et ne prend pas en charge les anciens dumps SQL plats.
 

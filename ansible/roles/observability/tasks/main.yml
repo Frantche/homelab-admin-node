@@ -18,12 +18,11 @@
     mode: "0755"
   loop:
     - "{{ admin_node_root }}/stacks/observability"
-    - "{{ admin_node_root }}/config/otel-collector"
 
 - name: Render OpenTelemetry collector config
   ansible.builtin.template:
     src: "{{ playbook_dir }}/../stacks/observability/otel-collector.yaml"
-    dest: "{{ admin_node_root }}/config/otel-collector/config.yaml"
+    dest: "{{ admin_node_root }}/stacks/observability/otel-collector.yaml"
     owner: root
     group: root
     mode: "0644"

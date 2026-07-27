@@ -153,7 +153,9 @@
   register: harbor_registry_password_check
   changed_when: false
   failed_when: false
-  when: not (harbor_test_mode | default(false))
+  when:
+    - not (harbor_test_mode | default(false))
+    - admin_mode != 'restore'
   no_log: true
 
 - name: Generate Harbor registry password file
@@ -175,7 +177,8 @@
   register: harbor_registry_password_render
   when:
     - not (harbor_test_mode | default(false))
-    - harbor_registry_password_check.rc != 0
+    - admin_mode != 'restore'
+    - harbor_registry_password_check.rc | default(1) != 0
   no_log: true
 
 - name: Copy Harbor static config files

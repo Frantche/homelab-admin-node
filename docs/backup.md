@@ -1,6 +1,8 @@
 # Backup
 
-`bin/admin-node backup run` cree un artefact V2 verifie sous `/srv/admin/backups/local`, puis envoie uniquement cet artefact immuable vers Restic. Avec `--include-images`, cet artefact contient aussi les images Docker, les definitions de stacks rendues et un `repository.bundle` qui correspondent au commit `cli_revision` du manifeste. Ce mode refuse un depot contenant des modifications suivies non commitees, car un SHA ne suffirait pas a le reproduire.
+`bin/admin-node backup run` cree un artefact V2 verifie sous `/srv/admin/backups/local`, puis envoie uniquement cet artefact immuable vers Restic. Chaque nouveau manifeste enregistre `active_stacks` et l'artefact contient les definitions rendues de ces seules stacks. Une stack est active lorsque son fichier `stacks/<nom>/compose.yaml` est rendu et qu'elle n'est ni desactivee dans la configuration, ni remplacee par un mock CI. Les definitions residuelles de `cloudflared` ou `observability` ne les rendent donc pas actives.
+
+Avec `--include-images`, l'artefact contient aussi uniquement les images Docker de ces stacks et un `repository.bundle` correspondant au commit `cli_revision` du manifeste. Ce mode refuse un depot contenant des modifications suivies non commitees, car un SHA ne suffirait pas a le reproduire.
 
 Le mode `normal` est obligatoire. Un verrou commun empeche tout chevauchement avec un converge ou une restauration. Les repertoires partiels ne sont jamais publies et les fichiers locaux utilisent les modes `0700`/`0600`.
 
@@ -193,4 +195,4 @@ Pour produire une sauvegarde restaurable hors ligne :
 bin/admin-node backup run --include-images
 ```
 
-Le backup contient `offline-images.tar`, `stack-definitions/` et `repository.bundle`. Le manifeste associe chaque reference d'origine a un tag d'archive local et a son image ID. Pendant le restore, `bin/admin-node restore run` importe et checkout le SHA `cli_revision`, remet en place les definitions rendues, charge le tar, controle chaque image ID, puis redemarre avec `--pull never`. Le restore ne depend donc ni des tags actuellement presents sur `main`, ni de la disponibilite de Git ou des registries pour cette revision.
+Tous les nouveaux backups contiennent `stack-definitions/` pour les stacks de `active_stacks`. Le mode offline ajoute `offline-images.tar` et `repository.bundle`. Le manifeste associe chaque reference d'origine a un tag d'archive local et a son image ID. Pendant le restore, `bin/admin-node restore run` importe et checkout le SHA `cli_revision`, remet en place les definitions rendues des seules stacks enregistrees, charge le tar, controle chaque image ID, puis redemarre avec `--pull never`. Le restore ne depend donc ni des tags actuellement presents sur `main`, ni de la disponibilite de Git ou des registries pour cette revision.
