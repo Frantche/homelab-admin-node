@@ -56,6 +56,8 @@ func (a app) run(ctx context.Context, args []string) int {
 		return 0
 	case "validate":
 		return a.runValidate(ctx, args[1:])
+	case "test":
+		return a.runTest(ctx, args[1:])
 	case "backup":
 		return a.runBackup(ctx, args[1:])
 	case "restore":
@@ -84,6 +86,7 @@ func (a app) printRootUsage() {
 	fmt.Fprintln(a.out)
 	fmt.Fprintln(a.out, "Commands:")
 	fmt.Fprintln(a.out, "  validate   Validate admin-node services")
+	fmt.Fprintln(a.out, "  test       Run explicit state-changing service tests")
 	fmt.Fprintln(a.out, "  backup     Manage backups")
 	fmt.Fprintln(a.out, "  restore    Restore backups")
 	fmt.Fprintln(a.out, "  mode       Manage admin-node mode")
@@ -193,6 +196,44 @@ func (a app) runValidate(_ context.Context, args []string) int {
 		return 2
 	}
 
+	if validate.HasFailure(results) {
+		return 1
+	}
+	return 0
+}
+
+func (a app) runTest(_ context.Context, args []string) int {
+	subcommand, rest := splitSubcommand(args, "")
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	output := fs.String("output", "text", "output format: text or json")
+	if err := fs.Parse(rest); err != nil {
+		return 2
+	}
+
+	validator := validate.NewValidator(a.cfg, a.runner)
+	ctx := context.Background()
+	var results []validate.CheckResult
+	switch subcommand {
+	case "harbor-scanner":
+		results = []validate.CheckResult{validator.HarborScanner(ctx)}
+	default:
+		fmt.Fprintf(a.errOut, "unknown test command: %s\n", subcommand)
+		return 2
+	}
+
+	switch *output {
+	case "text":
+		validate.WriteText(a.out, results)
+	case "json":
+		if err := validate.WriteJSON(a.out, results); err != nil {
+			fmt.Fprintf(a.errOut, "write json output: %v\n", err)
+			return 1
+		}
+	default:
+		fmt.Fprintf(a.errOut, "unknown output format: %s\n", *output)
+		return 2
+	}
 	if validate.HasFailure(results) {
 		return 1
 	}

@@ -44,7 +44,10 @@ https://git.example.com/user/oauth2/keycloak/callback
 
 ## Validation
 
-`bin/admin-node validate gitea` valide l'API Gitea, crée si besoin le dépôt `admin-node-validation`, puis crée si besoin l'issue `Backup restore sentinel`.
+`bin/admin-node validate gitea` lit l'API Gitea et vérifie l'authentification
+administrateur. La validation est strictement passive et ne suppose pas qu'un
+sentinel existe lors de la première convergence. Les sentinels de restauration
+sont créés et vérifiés par les scénarios de disaster recovery dédiés.
 
 Cette validation est appelée par `bin/admin-node backup run` et après restore.
 

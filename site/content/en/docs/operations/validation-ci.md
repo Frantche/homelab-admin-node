@@ -20,6 +20,7 @@ Equivalent CLI checks:
 sudo ./bin/admin-node validate all
 sudo ./bin/admin-node validate apis
 sudo ./bin/admin-node validate harbor
+sudo ./bin/admin-node test harbor-scanner
 sudo ./bin/admin-node validate openbao
 sudo ./bin/admin-node validate gitea
 sudo ./bin/admin-node validate dns

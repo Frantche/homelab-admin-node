@@ -254,7 +254,7 @@
     - gitea_config.oidc.enabled | default(false)
     - gitea.restart_after_oidc_secret_rotation | default(false) | bool
 
-- name: Validate Gitea repository and issue sentinel
+- name: Validate Gitea API and admin authentication
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node validate gitea
   environment:
     GITEA_DOMAIN: "{{ service_domains.gitea | default('git.example.com') }}"
