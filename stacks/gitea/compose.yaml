@@ -3,6 +3,22 @@ services:
     image: pgautoupgrade/pgautoupgrade:18-trixie@sha256:e5bc29961be866fc4ab099d4785bbfdd69df05f1ffcef05563cfc35e3372c864
     container_name: gitea-db
     restart: "no"
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 2.0
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /var/run/postgresql:size=16m,mode=0775
     command:
       - postgres
       - -c
@@ -29,6 +45,18 @@ services:
     image: docker.gitea.com/gitea:1.27.0@sha256:7b58541345f52eda63f11f3ec3d575193e91a0934b7841a66a7ee245a66f764a
     container_name: gitea
     restart: "no"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    mem_limit: 1g
+    cpus: 2.0
     environment:
       USER_UID: "1000"
       USER_GID: "1000"

@@ -195,6 +195,7 @@ for svc in traefik keycloak openbao harbor-core gitea; do
   fi
   echo "Service ${svc} is running"
 done
+"$REPO_ROOT/scripts/validate-container-hardening.sh"
 
 openbao_networks="$(docker inspect -f '{{json .NetworkSettings.Networks}}' openbao)"
 if [[ "$(jq -r 'keys | sort | join(",")' <<<"$openbao_networks")" != "openbao-metrics,traefik-openbao" ]]; then

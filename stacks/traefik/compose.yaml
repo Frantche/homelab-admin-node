@@ -4,10 +4,21 @@ services:
     container_name: traefik
     init: true
     restart: "no"
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    pids_limit: 256
+    mem_limit: 256m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=32m,mode=0700
     command:
       - --configFile=/etc/traefik/traefik.yml
-{% if (hardening.apparmor.enabled | default(true) | bool) and (admin_apparmor_runtime_active | default(false) | bool) and ((hardening.apparmor.profiles | default({})).traefik | default(true) | bool) %}
     security_opt:
+      - no-new-privileges:true
+{% if (hardening.apparmor.enabled | default(true) | bool) and (admin_apparmor_runtime_active | default(false) | bool) and ((hardening.apparmor.profiles | default({})).traefik | default(true) | bool) %}
       - "apparmor=admin-node-traefik"
 {% endif %}
     ports:

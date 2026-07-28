@@ -4,6 +4,16 @@ services:
     image: python:3.14-alpine@sha256:47f36929d95852c8aa959380eeeea761ba7411ebe793d090da4cd518ac3af237
     container_name: otel-mock-backend
     restart: "no"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 128m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=16m,mode=1777
     command:
       - python
       - /otel-mock-backend.py
@@ -43,6 +53,9 @@ services:
       - no-new-privileges:true
     tmpfs:
       - /tmp:size=32m,mode=0700
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 2.0
     command:
       - --config=/etc/otelcol/config.yaml
     healthcheck:

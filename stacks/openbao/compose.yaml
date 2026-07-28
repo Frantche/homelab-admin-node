@@ -3,10 +3,19 @@ services:
     image: openbao/openbao:2.6.1@sha256:15e90b578c970ae57b596ed51295380cd54f93860fe36758f05b455d71aae0e0
     container_name: openbao
     restart: "no"
-{% if (hardening.apparmor.enabled | default(true) | bool) and (admin_apparmor_runtime_active | default(false) | bool) and ((hardening.apparmor.profiles | default({})).openbao | default(true) | bool) %}
+    read_only: true
+    cap_drop:
+      - ALL
     security_opt:
+      - no-new-privileges:true
+{% if (hardening.apparmor.enabled | default(true) | bool) and (admin_apparmor_runtime_active | default(false) | bool) and ((hardening.apparmor.profiles | default({})).openbao | default(true) | bool) %}
       - "apparmor=admin-node-openbao"
 {% endif %}
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 2.0
+    tmpfs:
+      - /tmp:size=32m,mode=0700
     command: server -config=/etc/openbao/openbao.hcl
     volumes:
       - ./openbao.hcl:/etc/openbao/openbao.hcl:ro
