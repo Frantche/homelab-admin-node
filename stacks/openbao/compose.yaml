@@ -15,7 +15,8 @@ services:
     mem_limit: 512m
     cpus: 2.0
     tmpfs:
-      - /tmp:size=32m,mode=0700
+      # Snapshot and backup commands run as the image's openbao user.
+      - /tmp:size=32m,mode=0700,uid=100,gid=1000
     command: server -config=/etc/openbao/openbao.hcl
     volumes:
       - ./openbao.hcl:/etc/openbao/openbao.hcl:ro
