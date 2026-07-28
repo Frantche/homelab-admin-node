@@ -15,7 +15,7 @@ user_exceptions=(
   harbor-nginx
 )
 write_exceptions=(
-  gitea harbor-log harbor-db harbor-redis harbor-registry harbor-registryctl
+  gitea keycloak harbor-log harbor-db harbor-redis harbor-registry harbor-registryctl
   harbor-core harbor-portal harbor-jobservice harbor-trivy harbor-exporter
   harbor-nginx
 )

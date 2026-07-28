@@ -13,7 +13,7 @@ persistantes attendues.
 | `gitea-db` | entrypoint root puis postgres | `CHOWN`, `DAC_OVERRIDE`, `SETGID`, `SETUID` | rootfs RO, données PostgreSQL et tmpfs |
 | `gitea` | entrypoint root puis `1000:1000` | `CHOWN`, `DAC_OVERRIDE`, `SETGID`, `SETUID` | rootfs RW requis par l'entrypoint Gitea, `/data` persistant |
 | `keycloak-db` | entrypoint root puis postgres | `CHOWN`, `DAC_OVERRIDE`, `SETGID`, `SETUID` | rootfs RO, données PostgreSQL et tmpfs |
-| `keycloak` | `1000:0` | aucune | rootfs RO, tmpfs Quarkus |
+| `keycloak` | `1000:0` | aucune | rootfs RW requis par la première augmentation Quarkus de l'image fournisseur, tmpfs temporaires |
 | `harbor-log` | entrypoint Harbor | `CHOWN`, `DAC_OVERRIDE`, `SETGID`, `SETUID` | rootfs RW fournisseur, logs persistants |
 | `harbor-db` | entrypoint root puis postgres | `CHOWN`, `DAC_OVERRIDE`, `SETGID`, `SETUID` | rootfs RW fournisseur, données PostgreSQL |
 | `harbor-redis` | entrypoint Harbor | `CHOWN`, `SETGID`, `SETUID` | rootfs RW fournisseur, données Redis |

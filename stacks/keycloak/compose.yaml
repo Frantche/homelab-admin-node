@@ -2,8 +2,8 @@ services:
   keycloak-db:
     image: pgautoupgrade/pgautoupgrade:18-trixie@sha256:e5bc29961be866fc4ab099d4785bbfdd69df05f1ffcef05563cfc35e3372c864
     restart: "no"
-    container_name: keycloak-db
     read_only: true
+    container_name: keycloak-db
     cap_drop:
       - ALL
     cap_add:
@@ -48,7 +48,6 @@ services:
     container_name: keycloak
     restart: "no"
     user: "1000:0"
-    read_only: true
     cap_drop:
       - ALL
     security_opt:

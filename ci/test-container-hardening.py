@@ -30,6 +30,7 @@ USER_EXCEPTIONS = {
 
 WRITE_EXCEPTIONS = {
     "gitea",
+    "keycloak",
     "harbor-log",
     "harbor-db",
     "harbor-redis",
