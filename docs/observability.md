@@ -12,8 +12,8 @@ stacks/observability/grafana/dashboards/
 
 Dashboards disponibles:
 
-- `admin-node-overview.json`: vue globale du noeud admin, des scrapes, de l'hote et des conteneurs.
-- `admin-node-host-docker.json`: metriques hostmetrics et docker_stats.
+- `admin-node-overview.json`: vue globale du noeud admin, des scrapes et de l'hote.
+- `admin-node-host-docker.json`: metriques hostmetrics. Les panneaux Docker historiques restent presents mais ne sont plus alimentes.
 - `admin-node-traefik.json`: trafic, codes HTTP, latence et erreurs Traefik.
 - `admin-node-harbor.json`: Harbor core/exporter, inventaire et activite API.
 - `admin-node-openbao.json`: etat OpenBao, requetes, latence et stockage Raft.
@@ -28,4 +28,4 @@ Import manuel:
 
 Les dashboards utilisent les labels ajoutes par le Collector, notamment `service_namespace="homelab-admin-node"`, `deployment_environment` et `host_name`. Le filtre `Environment` vaut `homelab` par defaut et peut etre change apres import.
 
-Certains panneaux peuvent afficher `No data` si la version du service n'expose pas la metrique correspondante. Les panneaux essentiels reposent sur les sources deja collectees par le repo: `hostmetrics`, `docker_stats`, Gitea, Harbor core/exporter, OpenBao et Traefik.
+Certains panneaux peuvent afficher `No data` si la version du service n'expose pas la metrique correspondante. Les panneaux Docker historiques affichent volontairement `No data`: le recepteur `docker_stats` a ete retire pour qu'aucun conteneur n'ait acces, directement ou via un proxy, a l'API Docker. Les panneaux essentiels reposent sur les sources collectees par le repo: `hostmetrics`, Gitea, Harbor core/exporter, OpenBao et Traefik.

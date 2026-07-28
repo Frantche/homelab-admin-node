@@ -1,6 +1,39 @@
 http:
-{% if traefik_external_services | default([]) | length > 0 %}
   routers:
+    openbao:
+      rule: "Host(`{{ service_domains.openbao }}`)"
+      entryPoints:
+        - websecure
+      tls: true
+      service: openbao
+    keycloak:
+      rule: "Host(`{{ service_domains.keycloak }}`)"
+      entryPoints:
+        - websecure
+      tls: true
+      service: keycloak
+    gitea:
+      rule: "Host(`{{ service_domains.gitea | default('git.example.com') }}`)"
+      entryPoints:
+        - websecure
+      tls: true
+      service: gitea
+    harbor:
+      rule: "Host(`{{ service_domains.harbor }}`)"
+      entryPoints:
+        - websecure
+      tls: true
+      service: harbor
+{% if traefik.dashboard_enabled | default(false) | bool %}
+    dashboard:
+      rule: "Host(`{{ service_domains.traefik }}`)"
+      entryPoints:
+        - websecure
+      tls: true
+      service: api@internal
+      middlewares:
+        - dashboard-auth
+{% endif %}
 {% for external_service in traefik_external_services | default([]) %}
     {{ external_service.name }}:
       rule: "Host(`{{ external_service.hostname }}`)"
@@ -10,6 +43,22 @@ http:
       service: {{ external_service.name }}
 {% endfor %}
   services:
+    openbao:
+      loadBalancer:
+        servers:
+          - url: "http://openbao:8200"
+    keycloak:
+      loadBalancer:
+        servers:
+          - url: "http://keycloak:8080"
+    gitea:
+      loadBalancer:
+        servers:
+          - url: "http://gitea:3000"
+    harbor:
+      loadBalancer:
+        servers:
+          - url: "http://harbor-nginx:8080"
 {% for external_service in traefik_external_services | default([]) %}
     {{ external_service.name }}:
       loadBalancer:
@@ -36,7 +85,6 @@ http:
         - /certs/traefik-external-services/{{ external_service.name }}-ca.pem
 {% endif %}
 {% endfor %}
-{% endif %}
 {% endif %}
 {% if traefik.dashboard_enabled | default(false) | bool %}
   middlewares:

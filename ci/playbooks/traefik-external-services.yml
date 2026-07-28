@@ -14,6 +14,7 @@
       traefik_dashboard_basic_auth: "admin:$$apr1$$ci$$fakehash"
     TRAEFIK_DASHBOARD_BASIC_AUTH: "admin:$$apr1$$ci$$fakehash"
     traefik:
+      dashboard_enabled: true
       external_services:
         - name: "insecure-app"
           hostname: "insecure.example.com"
@@ -64,6 +65,16 @@
     - name: Assert Traefik external service rendering
       ansible.builtin.assert:
         that:
+          - "'rule: \"Host(`bao.example.com`)\"' in traefik_dynamic_config"
+          - "'url: \"http://openbao:8200\"' in traefik_dynamic_config"
+          - "'rule: \"Host(`keycloak.example.com`)\"' in traefik_dynamic_config"
+          - "'url: \"http://keycloak:8080\"' in traefik_dynamic_config"
+          - "'rule: \"Host(`git.example.com`)\"' in traefik_dynamic_config"
+          - "'url: \"http://gitea:3000\"' in traefik_dynamic_config"
+          - "'rule: \"Host(`harbor.example.com`)\"' in traefik_dynamic_config"
+          - "'url: \"http://harbor-nginx:8080\"' in traefik_dynamic_config"
+          - "'rule: \"Host(`traefik.example.com`)\"' in traefik_dynamic_config"
+          - "'service: api@internal' in traefik_dynamic_config"
           - "'insecure-app:' in traefik_dynamic_config"
           - "'rule: \"Host(`insecure.example.com`)\"' in traefik_dynamic_config"
           - "'serversTransport: insecure-app' in traefik_dynamic_config"

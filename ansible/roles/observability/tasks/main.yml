@@ -36,7 +36,7 @@
     mode: "0644"
 
 - name: Start observability collector
-  ansible.builtin.command: docker compose -f compose.yaml up --wait --wait-timeout 300
+  ansible.builtin.command: docker compose -f compose.yaml up --remove-orphans --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/observability"
   register: observability_compose_up
@@ -44,6 +44,11 @@
   retries: 5
   delay: 10
   changed_when: true
+
+- name: Remove obsolete OpenTelemetry Docker API network
+  community.docker.docker_network:
+    name: otel-docker
+    state: absent
 
 - name: Enable observability stack at boot
   ansible.builtin.systemd:

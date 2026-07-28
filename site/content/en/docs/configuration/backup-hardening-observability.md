@@ -145,7 +145,6 @@ observability:
 | `observability.metrics_endpoint` | example VictoriaMetrics OTLP URL | Required when enabled. OTLP HTTP metrics destination. |
 | `observability.logs_endpoint` | example VictoriaLogs OTLP URL | Required when enabled. OTLP HTTP logs destination. |
 | `observability.collection_interval` | `30s` | Collector scrape/collection interval. |
-| `observability.docker_api_version` | `1.40` | Docker API version used by the collector configuration. |
 | `observability.expose_host_ports` | `false` | Exposes collector ports on the host when enabled. |
 
 ### Grafana dashboards
@@ -161,14 +160,15 @@ Available dashboards:
 
 | Dashboard | Purpose |
 | --- | --- |
-| `admin-node-overview.json` | Global health, host saturation, application request rate, and top containers. |
-| `admin-node-host-docker.json` | Hostmetrics and Docker runtime metrics. |
+| `admin-node-overview.json` | Global health, host saturation, and application request rate. |
+| `admin-node-host-docker.json` | Hostmetrics; legacy Docker panels are retained but no longer receive data. |
 | `admin-node-traefik.json` | Traefik request rate, status codes, latency, and errors. |
 | `admin-node-harbor.json` | Harbor core/exporter inventory, API traffic, latency, and tasks. |
 | `admin-node-openbao.json` | OpenBao scrape health, seal status, request latency, leases, and Raft storage. |
 | `admin-node-gitea.json` | Gitea scrape health, process/runtime metrics, HTTP traffic, and optional Gitea counters. |
 
 Some panels may show `No data` when a service version does not expose the
-corresponding metric. The dashboards target the metrics already collected by the
-OpenTelemetry Collector: `hostmetrics`, `docker_stats`, Gitea, Harbor
+corresponding metric. Legacy Docker panels intentionally show `No data`: the
+`docker_stats` receiver was removed so no container has direct or proxied access
+to the Docker API. The dashboards otherwise target `hostmetrics`, Gitea, Harbor
 core/exporter, OpenBao, and Traefik.

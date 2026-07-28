@@ -20,10 +20,6 @@ providers:
   file:
     directory: /etc/traefik/dynamic
     watch: true
-  docker:
-    endpoint: "tcp://traefik-socket-proxy:2375"
-    network: "admin-edge"
-    exposedByDefault: false
 {% if traefik_letsencrypt_enabled %}
 certificatesResolvers:
   letsencrypt:

@@ -14,10 +14,6 @@ providers:
   file:
     directory: /etc/traefik/dynamic
     watch: true
-  docker:
-    endpoint: "tcp://traefik-socket-proxy:2375"
-    network: "admin-edge"
-    exposedByDefault: false
 log:
   level: INFO
 accessLog: {}

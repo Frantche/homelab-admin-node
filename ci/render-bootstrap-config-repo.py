@@ -55,7 +55,6 @@ def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
             "otlp_encoding": "json",
             "collection_interval": "5s",
             "service_metrics_interval": "5s",
-            "docker_api_version": "1.40",
             "mock_backend_enabled": True,
             "mock_state_dir": "/tmp/admin-node-otel-mock-bootstrap-user-journey",
         },

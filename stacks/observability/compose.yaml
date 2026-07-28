@@ -1,20 +1,4 @@
 services:
-  otel-socket-proxy:
-    image: ghcr.io/tecnativa/docker-socket-proxy:v0.4.2@sha256:bd2241b3bec83abcff25927a0a7ae518e0c5bef624b3cc247dcb31e68b53f417
-    container_name: otel-socket-proxy
-    restart: "no"
-    environment:
-      CONTAINERS: "1"
-      INFO: "1"
-      VERSION: "1"
-      POST: "0"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      - otel-docker
-
 {% if observability.mock_backend_enabled | default(false) | bool %}
   otel-mock-backend:
     image: python:3.14-alpine@sha256:47f36929d95852c8aa959380eeeea761ba7411ebe793d090da4cd518ac3af237
@@ -44,7 +28,6 @@ services:
     networks:
       - admin-edge
       - harbor-internal
-      - otel-docker
 
 {% endif %}
   otel-collector:
@@ -86,13 +69,10 @@ services:
     networks:
       - admin-edge
       - harbor-internal
-      - otel-docker
 {% endif %}
 
 networks:
   admin-edge:
     external: true
   harbor-internal:
-    external: true
-  otel-docker:
     external: true

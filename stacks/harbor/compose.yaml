@@ -474,13 +474,6 @@ services:
       options:
         syslog-address: "tcp://127.0.0.1:1514"
         tag: "proxy"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=admin-edge"
-      - "traefik.http.routers.harbor.rule=Host(`{{ service_domains.harbor }}`)"
-      - "traefik.http.routers.harbor.entrypoints=websecure"
-      - "traefik.http.routers.harbor.tls=true"
-      - "traefik.http.services.harbor.loadbalancer.server.port=8080"
     networks:
       - admin-edge
       - harbor-internal

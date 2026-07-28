@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "Host and Docker runtime metrics from OpenTelemetry hostmetrics and docker_stats receivers.",
+  "description": "Host metrics from the OpenTelemetry hostmetrics receiver. Legacy Docker panels are retained without a Docker API data source.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
