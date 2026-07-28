@@ -20,7 +20,15 @@
     - { path: "{{ admin_node_root }}/data" }
     - { path: "{{ admin_node_root }}/backups" }
 
-- name: Sync repository into /opt
+- name: Resolve admin repository source
+  ansible.builtin.command:
+    argv:
+      - realpath
+      - "{{ playbook_dir }}/.."
+  register: admin_node_repo_source
+  changed_when: false
+
+- name: Sync repository into /opt when source and target differ
   ansible.posix.synchronize:
     src: "{{ playbook_dir }}/../"
     dest: /opt/homelab-admin-node/
@@ -29,6 +37,16 @@
       - "--chown={{ admin_node_repo_owner }}:{{ admin_node_repo_group }}"
       - "--exclude=secrets/*.sops.yaml"
       - "--exclude=ansible/group_vars/secrets.sops.yaml"
+  when: admin_node_repo_source.stdout != "/opt/homelab-admin-node"
+
+- name: Normalize tracked admin repository permissions
+  ansible.builtin.command:
+    argv:
+      - /opt/homelab-admin-node/scripts/normalize-repo-permissions.sh
+      - /opt/homelab-admin-node
+      - "{{ admin_node_repo_owner }}"
+      - "{{ admin_node_repo_group }}"
+  changed_when: false
 
 - name: Ensure root Go cache directories
   ansible.builtin.file:
@@ -75,10 +93,6 @@
     append: true
   loop: "{{ admin_node_repo_operator_user_checks.results }}"
   when: item.rc == 0
-
-- name: Keep admin repository directories group-sticky
-  ansible.builtin.command: find /opt/homelab-admin-node -type d -exec chmod g+s {} +
-  changed_when: false
 
 - name: Configure admin repository for shared Git access
   ansible.builtin.command:

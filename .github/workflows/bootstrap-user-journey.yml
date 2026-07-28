@@ -69,6 +69,7 @@ jobs:
           go vet ./...
           govulncheck ./...
           ./ci/test-build-admin-node-cache.sh
+          ./ci/test-repo-permissions.sh
           ./ci/test-secret-rotation.sh
           ./ci/test-docker-api-isolation.sh
           shellcheck -e SC1091 scripts/*.sh ci/*.sh ci/lib/*.sh ci/scenarios/*.sh
