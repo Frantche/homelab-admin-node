@@ -42,7 +42,9 @@
   ansible.builtin.file:
     path: "{{ admin_node_root }}/data/harbor/core"
     state: directory
-    mode: "0755"
+    owner: root
+    group: "10000"
+    mode: "0750"
   when: not (harbor_test_mode | default(false))
 
 - name: Ensure Harbor runtime data directories
@@ -126,16 +128,25 @@
   when: not (harbor_test_mode | default(false))
   no_log: true
 
-- name: Set Harbor token material permissions
+- name: Restrict Harbor private token material
   ansible.builtin.file:
     path: "{{ item }}"
-    mode: "0644"
+    owner: root
+    group: "10000"
+    mode: "0640"
   loop:
     - "{{ admin_node_root }}/data/harbor/core/token.key"
-    - "{{ admin_node_root }}/data/harbor/core/token.crt"
     - "{{ admin_node_root }}/data/harbor/core/secretkey"
   when: not (harbor_test_mode | default(false))
   no_log: true
+
+- name: Keep Harbor public token certificate readable
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/data/harbor/core/token.crt"
+    owner: root
+    group: root
+    mode: "0644"
+  when: not (harbor_test_mode | default(false))
 
 - name: Verify Harbor registry password file
   ansible.builtin.shell: |
