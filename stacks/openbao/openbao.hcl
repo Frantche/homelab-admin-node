@@ -5,7 +5,9 @@ storage "raft" {
 
 listener "tcp" {
   address = "0.0.0.0:8200"
-  tls_disable = 1
+  cluster_address = "0.0.0.0:8201"
+  tls_cert_file = "/openbao/tls/tls.crt"
+  tls_key_file = "/openbao/tls/tls.key"
   telemetry {
     unauthenticated_metrics_access = true
   }
@@ -16,6 +18,6 @@ telemetry {
   disable_hostname = true
 }
 
-api_addr = "http://openbao:8200"
-cluster_addr = "http://openbao:8201"
+api_addr = "https://openbao:8200"
+cluster_addr = "https://openbao:8201"
 ui = true

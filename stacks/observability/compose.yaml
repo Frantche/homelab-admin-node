@@ -28,6 +28,7 @@ services:
     networks:
       - admin-edge
       - harbor-internal
+      - openbao-metrics
 
 {% endif %}
   otel-collector:
@@ -52,6 +53,7 @@ services:
       start_period: 10s
     volumes:
       - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+      - /srv/admin/certs/openbao-internal-ca.pem:/etc/otelcol/openbao-ca.pem:ro
       - /proc:/hostfs/proc:ro
       - /sys:/hostfs/sys:ro
       - /var/log/admin-node-security-exceptions.log:/var/log/admin-node-security-exceptions.log:ro
@@ -69,10 +71,13 @@ services:
     networks:
       - admin-edge
       - harbor-internal
+      - openbao-metrics
 {% endif %}
 
 networks:
   admin-edge:
     external: true
   harbor-internal:
+    external: true
+  openbao-metrics:
     external: true

@@ -121,7 +121,7 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	}
 
 	if token := openBaoToken(cfg); stackscope.Contains(activeStacks, "openbao") && token != "" {
-		if err := runWithEnv(ctx, []string{"VAULT_TOKEN=" + token}, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN", "openbao", "bao", "operator", "raft", "snapshot", "save", "/tmp/openbao.snap"); err != nil {
+		if err := runWithEnv(ctx, []string{"VAULT_TOKEN=" + token}, "docker", "exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem", "-e", "VAULT_TOKEN", "openbao", "bao", "operator", "raft", "snapshot", "save", "/tmp/openbao.snap"); err != nil {
 			return Info{}, fmt.Errorf("openbao snapshot save: %w", err)
 		}
 		if err := run(ctx, "docker", "cp", "openbao:/tmp/openbao.snap", filepath.Join(partial, "openbao.snap")); err != nil {

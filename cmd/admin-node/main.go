@@ -794,7 +794,7 @@ func restoreValidation(ctx context.Context, run runner.Runner) []validate.CheckR
 		restoreDockerHealth(ctx, run, "Harbor", "harbor-core"),
 		restoreDockerHealth(ctx, run, "Gitea", "gitea"),
 		restoreDockerHealth(ctx, run, "Traefik", "traefik"),
-		restoreCommandCheck(ctx, run, "OpenBao", 90*time.Second, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "openbao", "sh", "-c", "bao status -format=json | grep '\"sealed\": false' >/dev/null"),
+		restoreCommandCheck(ctx, run, "OpenBao", 90*time.Second, "docker", "exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem", "openbao", "sh", "-c", "bao status -format=json | grep '\"sealed\": false' >/dev/null"),
 		restoreCommandCheck(ctx, run, "Keycloak", 120*time.Second, "docker", "exec", "keycloak", "bash", "-lc", "timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000; printf \"GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3; head -1 <&3 | grep -q \"200\"'"),
 		restoreCommandCheck(ctx, run, "Harbor", 120*time.Second, "docker", "exec", "harbor-core", "curl", "-fsS", "http://127.0.0.1:8080/api/v2.0/health"),
 		restoreCommandCheck(ctx, run, "Gitea", 120*time.Second, "docker", "exec", "gitea", "curl", "-fsS", "http://127.0.0.1:3000/api/v1/version"),

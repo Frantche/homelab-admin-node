@@ -66,7 +66,9 @@
       ansible.builtin.assert:
         that:
           - "'rule: \"Host(`bao.example.com`)\"' in traefik_dynamic_config"
-          - "'url: \"http://openbao:8200\"' in traefik_dynamic_config"
+          - "'url: \"https://openbao:8200\"' in traefik_dynamic_config"
+          - "'serversTransport: openbao-internal' in traefik_dynamic_config"
+          - "'/certs/openbao-internal-ca.pem' in traefik_dynamic_config"
           - "'rule: \"Host(`keycloak.example.com`)\"' in traefik_dynamic_config"
           - "'url: \"http://keycloak:8080\"' in traefik_dynamic_config"
           - "'rule: \"Host(`git.example.com`)\"' in traefik_dynamic_config"

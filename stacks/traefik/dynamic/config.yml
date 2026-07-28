@@ -45,8 +45,9 @@ http:
   services:
     openbao:
       loadBalancer:
+        serversTransport: openbao-internal
         servers:
-          - url: "http://openbao:8200"
+          - url: "https://openbao:8200"
     keycloak:
       loadBalancer:
         servers:
@@ -74,8 +75,12 @@ http:
 {% set _ = external_services_with_transport.append(external_service) %}
 {% endif %}
 {% endfor %}
-{% if external_services_with_transport | length > 0 %}
   serversTransports:
+    openbao-internal:
+      serverName: openbao
+      rootCAs:
+        - /certs/openbao-internal-ca.pem
+{% if external_services_with_transport | length > 0 %}
 {% for external_service in external_services_with_transport %}
     {{ external_service.name }}:
 {% if (external_service.tls | default({})).verify | default(true) | bool == false %}

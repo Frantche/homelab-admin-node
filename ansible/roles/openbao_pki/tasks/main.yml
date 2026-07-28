@@ -1,0 +1,107 @@
+---
+- name: Ensure OpenBao internal PKI directory exists
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/certs"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Check OpenBao internal PKI files
+  ansible.builtin.stat:
+    path: "{{ admin_node_root }}/certs/{{ item }}"
+  loop:
+    - openbao-internal-ca-key.pem
+    - openbao-internal-ca.pem
+    - openbao-internal-key.pem
+    - openbao-internal-cert.pem
+  register: openbao_internal_pki_files
+
+- name: Inspect OpenBao internal server certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -in
+      - "{{ admin_node_root }}/certs/openbao-internal-cert.pem"
+      - -noout
+      - -checkend
+      - "2592000"
+      - -ext
+      - subjectAltName
+  register: openbao_internal_certificate
+  changed_when: false
+  failed_when: false
+  when: openbao_internal_pki_files.results | selectattr('stat.exists', 'equalto', false) | list | length == 0
+
+- name: Compute OpenBao internal certificate renewal need
+  ansible.builtin.set_fact:
+    openbao_internal_tls_renewal_needed: >-
+      {{
+        (openbao_internal_pki_files.results | selectattr('stat.exists', 'equalto', false) | list | length > 0)
+        or (openbao_internal_certificate.rc | default(1) != 0)
+        or ('DNS:openbao' not in (openbao_internal_certificate.stdout | default('')))
+        or ('IP Address:127.0.0.1' not in (openbao_internal_certificate.stdout | default('')))
+      }}
+
+- name: Generate OpenBao internal CA and server certificate
+  ansible.builtin.shell: |
+    set -euo pipefail
+    work_dir="$(mktemp -d)"
+    trap 'rm -rf "$work_dir"' EXIT
+    cert_dir="{{ admin_node_root }}/certs"
+
+    if [[ -s "$cert_dir/openbao-internal-ca-key.pem" && -s "$cert_dir/openbao-internal-ca.pem" ]]; then
+      cp "$cert_dir/openbao-internal-ca-key.pem" "$work_dir/ca-key.pem"
+      cp "$cert_dir/openbao-internal-ca.pem" "$work_dir/ca.pem"
+    else
+      openssl genrsa -out "$work_dir/ca-key.pem" 4096
+      openssl req -x509 -new -sha256 -days 3650 \
+        -key "$work_dir/ca-key.pem" \
+        -out "$work_dir/ca.pem" \
+        -subj "/CN=Admin Node OpenBao Internal CA"
+    fi
+
+    openssl genrsa -out "$work_dir/server-key.pem" 2048
+    openssl req -new -sha256 \
+      -key "$work_dir/server-key.pem" \
+      -out "$work_dir/server.csr" \
+      -subj "/CN=openbao"
+    cat > "$work_dir/server.ext" <<'EOF'
+    basicConstraints=critical,CA:FALSE
+    keyUsage=critical,digitalSignature,keyEncipherment
+    extendedKeyUsage=serverAuth
+    subjectAltName=DNS:openbao,DNS:localhost,IP:127.0.0.1
+    EOF
+    openssl x509 -req -sha256 -days 825 \
+      -in "$work_dir/server.csr" \
+      -CA "$work_dir/ca.pem" \
+      -CAkey "$work_dir/ca-key.pem" \
+      -CAcreateserial \
+      -out "$work_dir/server-cert.pem" \
+      -extfile "$work_dir/server.ext"
+
+    install -m 0600 -o root -g root "$work_dir/ca-key.pem" "$cert_dir/openbao-internal-ca-key.pem"
+    install -m 0644 -o root -g root "$work_dir/ca.pem" "$cert_dir/openbao-internal-ca.pem"
+    install -m 0640 -o root -g 1000 "$work_dir/server-key.pem" "$cert_dir/openbao-internal-key.pem"
+    install -m 0644 -o root -g root "$work_dir/server-cert.pem" "$cert_dir/openbao-internal-cert.pem"
+  args:
+    executable: /bin/bash
+  register: openbao_internal_certificate_generation
+  when: openbao_internal_tls_renewal_needed | bool
+
+- name: Record OpenBao internal TLS change
+  ansible.builtin.set_fact:
+    openbao_internal_tls_changed: "{{ openbao_internal_certificate_generation is changed }}"
+
+- name: Enforce OpenBao internal PKI permissions
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/certs/{{ item.name }}"
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: openbao-internal-ca-key.pem, group: root, mode: "0600" }
+    - { name: openbao-internal-ca.pem, group: root, mode: "0644" }
+    - { name: openbao-internal-key.pem, group: "1000", mode: "0640" }
+    - { name: openbao-internal-cert.pem, group: root, mode: "0644" }

@@ -1,7 +1,7 @@
 # Traefik
 Routes:
 - keycloak.example.com -> keycloak:8080
-- bao.example.com -> openbao:8200
+- bao.example.com -> openbao:8200 en HTTPS vérifié par la CA interne dédiée
 - harbor.example.com -> harbor
 - traefik.example.com -> dashboard (basic auth)
 - external services declared in `traefik.external_services` -> configured URL

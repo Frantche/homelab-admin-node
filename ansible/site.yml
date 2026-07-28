@@ -116,6 +116,8 @@
       when: admin_mode == 'locked'
     - role: init
       when: admin_mode == 'init'
+    - role: openbao_pki
+      when: admin_mode in ['init', 'normal', 'restore']
     - role: observability
       when: admin_mode in ['init', 'normal'] and (observability.enabled | default(false))
     - role: traefik

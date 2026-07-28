@@ -910,7 +910,7 @@ func restoreOpenBao(ctx context.Context, cfg config.Config, compose string, snap
 	if err := run(ctx, nil, "docker", "exec", "--user", "root", "openbao", "chown", "openbao:openbao", "/tmp/openbao.snap"); err != nil {
 		return err
 	}
-	if err := runWithEnv(ctx, nil, []string{"VAULT_TOKEN=" + restoreToken}, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "VAULT_TOKEN", "openbao", "bao", "operator", "raft", "snapshot", "restore", "-force", "/tmp/openbao.snap"); err != nil {
+	if err := runWithEnv(ctx, nil, []string{"VAULT_TOKEN=" + restoreToken}, "docker", "exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem", "-e", "VAULT_TOKEN", "openbao", "bao", "operator", "raft", "snapshot", "restore", "-force", "/tmp/openbao.snap"); err != nil {
 		return err
 	}
 	_ = dockerCompose(ctx, stackCommand{Compose: compose}, "down")
@@ -925,7 +925,7 @@ type openBaoStatus struct {
 func waitOpenBaoStatus(ctx context.Context) (openBaoStatus, error) {
 	var lastOutput []byte
 	for range 30 {
-		cmd := exec.CommandContext(ctx, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "openbao", "bao", "status", "-format=json")
+		cmd := exec.CommandContext(ctx, "docker", "exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem", "openbao", "bao", "status", "-format=json")
 		out, err := cmd.CombinedOutput()
 		lastOutput = out
 		if err == nil || (json.Valid(out) && strings.Contains(string(out), `"initialized"`)) {
@@ -961,7 +961,7 @@ func bootstrapOpenBaoForSnapshotRestore(ctx context.Context) (string, error) {
 }
 
 func openBaoRecoveryOutput(ctx context.Context, args ...string) ([]byte, error) {
-	base := []string{"exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "openbao"}
+	base := []string{"exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem", "openbao"}
 	cmd := exec.CommandContext(ctx, "docker", append(base, args...)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

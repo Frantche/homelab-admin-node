@@ -196,6 +196,17 @@ for svc in traefik keycloak openbao harbor-core gitea; do
   echo "Service ${svc} is running"
 done
 
+openbao_networks="$(docker inspect -f '{{json .NetworkSettings.Networks}}' openbao)"
+if [[ "$(jq -r 'keys | sort | join(",")' <<<"$openbao_networks")" != "openbao-metrics,traefik-openbao" ]]; then
+  echo "ERROR: OpenBao is not isolated on its two dedicated networks" >&2
+  jq . <<<"$openbao_networks" >&2
+  exit 1
+fi
+docker exec \
+  -e BAO_ADDR=https://127.0.0.1:8200 \
+  -e BAO_CACERT=/openbao/tls/ca.pem \
+  openbao bao status -format=json >/dev/null
+
 # --- Verify Harbor private token material permissions ---
 if [[ "$(stat -c '%a:%U:%g' /srv/admin/data/harbor/core)" != "750:root:10000" ]]; then
   echo "ERROR: Harbor core directory permissions are not 0750 root:10000" >&2

@@ -301,12 +301,12 @@ func renderSecrets(keyset string, keys []string, rootToken string) []byte {
 }
 
 func dockerOutput(ctx context.Context, container string, args ...string) ([]byte, error) {
-	base := []string{"exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", container}
+	base := []string{"exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem", container}
 	return commandOutput(ctx, "", "docker", append(base, args...)...)
 }
 
 func dockerStatusOutput(ctx context.Context, container string) ([]byte, error) {
-	args := []string{"exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", container, "bao", "status", "-format=json"}
+	args := []string{"exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem", container, "bao", "status", "-format=json"}
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -319,7 +319,7 @@ func dockerStatusOutput(ctx context.Context, container string) ([]byte, error) {
 }
 
 func dockerOutputEnv(ctx context.Context, container string, env []string, args ...string) ([]byte, error) {
-	base := []string{"exec", "-e", "BAO_ADDR=http://127.0.0.1:8200"}
+	base := []string{"exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem"}
 	for _, item := range env {
 		base = append(base, "-e", item)
 	}

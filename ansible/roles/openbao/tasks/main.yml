@@ -50,7 +50,10 @@
     recurse: true
 
 - name: Start openbao stack
-  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/openbao.env -f compose.yaml up --wait --wait-timeout 300
+  ansible.builtin.command: >-
+    docker compose --env-file {{ admin_node_root }}/env/openbao.env -f compose.yaml up
+    {{ '--force-recreate' if (openbao_internal_tls_changed | default(false) | bool) else '' }}
+    --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/openbao"
   register: openbao_stack_start
@@ -92,7 +95,7 @@
     - admin_mode != 'init' or not (ci_mode | default(false))
 
 - name: Wait for openbao initialized state before unseal
-  ansible.builtin.command: docker exec -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json
+  ansible.builtin.command: docker exec -e BAO_ADDR=https://127.0.0.1:8200 -e BAO_CACERT=/openbao/tls/ca.pem openbao bao status -format=json
   register: openbao_initialized_status
   changed_when: false
   failed_when: openbao_initialized_status.rc not in [0, 2]
