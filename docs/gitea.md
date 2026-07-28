@@ -44,7 +44,7 @@ https://git.example.com/user/oauth2/keycloak/callback
 
 ## Validation
 
-`bin/admin-node validate gitea` valide l'API Gitea, crée si besoin le dépôt `admin-node-validation`, puis crée si besoin l'issue `Backup restore sentinel`.
+`bin/admin-node validate gitea` lit l'API Gitea et vérifie la présence du dépôt privé `admin-node-validation` et de l'issue `Backup restore sentinel`. La validation est strictement passive. Leur création relève du rôle Ansible `gitea_config`.
 
 Cette validation est appelée par `bin/admin-node backup run` et après restore.
 

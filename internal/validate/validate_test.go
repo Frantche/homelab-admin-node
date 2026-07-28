@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -108,7 +107,13 @@ func TestHarborOK(t *testing.T) {
 
 func TestHarborAdminCheckWhenPasswordAvailable(t *testing.T) {
 	t.Setenv("HARBOR_ADMIN_PASSWORD", "password")
+	var mutation string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			mutation = r.Method + " " + r.URL.Path
+			http.Error(w, "passive validation attempted a mutation", http.StatusMethodNotAllowed)
+			return
+		}
 		if r.URL.Path == "/api/v2.0/health" {
 			writeHealthyHarborHealth(w)
 			return
@@ -131,6 +136,9 @@ func TestHarborAdminCheckWhenPasswordAvailable(t *testing.T) {
 	}
 	if !strings.Contains(result.Message, "Trivy report access healthy") {
 		t.Fatalf("message = %q, want complete Harbor validation", result.Message)
+	}
+	if mutation != "" {
+		t.Fatalf("passive Harbor validation sent mutation %s", mutation)
 	}
 }
 
@@ -160,7 +168,7 @@ func TestHarborAdminCheckFailsWhenTrivyReportIsUnavailable(t *testing.T) {
 	defer server.Close()
 
 	v := Validator{Config: config.Config{HarborDomain: server.URL}, Client: server.Client()}
-	err := v.validateHarborScannerReport(ctx, "admin", "password")
+	err := v.runHarborScannerTest(ctx, "admin", "password")
 	if err == nil || !strings.Contains(err.Error(), "Trivy vulnerability report is not accessible") {
 		t.Fatalf("error = %v, want inaccessible Trivy report failure", err)
 	}
@@ -203,7 +211,7 @@ func TestHarborScannerReportFallsBackToDiscoveredArtifact(t *testing.T) {
 	defer server.Close()
 
 	v := Validator{Config: config.Config{HarborDomain: server.URL}, Client: server.Client()}
-	if err := v.validateHarborScannerReport(context.Background(), "admin", "password"); err != nil {
+	if err := v.runHarborScannerTest(context.Background(), "admin", "password"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !firstScanNotFound {
@@ -250,7 +258,7 @@ func TestHarborScannerReportAcceptsDiscoveredArtifactWithExistingScan(t *testing
 	defer server.Close()
 
 	v := Validator{Config: config.Config{HarborDomain: server.URL}, Client: server.Client()}
-	if err := v.validateHarborScannerReport(context.Background(), "admin", "password"); err != nil {
+	if err := v.runHarborScannerTest(context.Background(), "admin", "password"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !firstScanNotFound {
@@ -538,7 +546,6 @@ func TestOpenBaoOKWithSentinel(t *testing.T) {
 
 func TestGiteaOK(t *testing.T) {
 	t.Setenv("GITEA_ADMIN_PASSWORD", "password")
-	t.Setenv("GITEA_VALIDATION_CREATE", "false")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/version":
@@ -572,11 +579,15 @@ func TestGiteaOK(t *testing.T) {
 	}
 }
 
-func TestGiteaCreatesThenRereadsSentinel(t *testing.T) {
+func TestGiteaPassiveValidationDoesNotCreateMissingResources(t *testing.T) {
 	t.Setenv("GITEA_ADMIN_PASSWORD", "password")
-	repoCreated := false
-	var issues []string
+	var mutation string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			mutation = r.Method + " " + r.URL.Path
+			http.Error(w, "mutation rejected", http.StatusMethodNotAllowed)
+			return
+		}
 		switch r.URL.Path {
 		case "/api/v1/version":
 			_ = json.NewEncoder(w).Encode(map[string]string{"version": "test"})
@@ -586,36 +597,8 @@ func TestGiteaCreatesThenRereadsSentinel(t *testing.T) {
 				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]string{"login": "admin"})
-		case "/api/v1/user/repos":
-			if r.Method != http.MethodPost {
-				http.NotFound(w, r)
-				return
-			}
-			repoCreated = true
-			w.WriteHeader(http.StatusCreated)
 		case "/api/v1/repos/admin/admin-node-validation":
-			if !repoCreated {
-				http.NotFound(w, r)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"name":    "admin-node-validation",
-				"private": true,
-				"owner": map[string]string{
-					"login": "admin",
-				},
-			})
-		case "/api/v1/repos/admin/admin-node-validation/issues":
-			if r.Method == http.MethodPost {
-				issues = append(issues, "Backup restore sentinel")
-				w.WriteHeader(http.StatusCreated)
-				return
-			}
-			payload := make([]map[string]string, 0, len(issues))
-			for _, title := range issues {
-				payload = append(payload, map[string]string{"title": title})
-			}
-			_ = json.NewEncoder(w).Encode(payload)
+			http.NotFound(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -624,20 +607,16 @@ func TestGiteaCreatesThenRereadsSentinel(t *testing.T) {
 
 	v := Validator{Config: config.Config{GiteaDomain: server.URL}, Client: server.Client()}
 	result := v.Gitea(context.Background())
-	if result.Status != StatusOK {
-		t.Fatalf("status = %s, want %s (%s)", result.Status, StatusOK, result.Message)
+	if result.Status != StatusFail || !strings.Contains(result.Message, "repository not found") {
+		t.Fatalf("result = %#v, want missing repository failure", result)
 	}
-	if !repoCreated {
-		t.Fatal("expected repository to be created")
-	}
-	if !slices.Contains(issues, "Backup restore sentinel") {
-		t.Fatal("expected sentinel issue to be created")
+	if mutation != "" {
+		t.Fatalf("passive Gitea validation sent mutation %s", mutation)
 	}
 }
 
 func TestGiteaFailsWhenRepoIsPublic(t *testing.T) {
 	t.Setenv("GITEA_ADMIN_PASSWORD", "password")
-	t.Setenv("GITEA_VALIDATION_CREATE", "false")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/version":
@@ -672,7 +651,6 @@ func TestGiteaFailsWhenRepoIsPublic(t *testing.T) {
 
 func TestGiteaFailsWhenCreateDisabledAndIssueMissing(t *testing.T) {
 	t.Setenv("GITEA_ADMIN_PASSWORD", "password")
-	t.Setenv("GITEA_VALIDATION_CREATE", "false")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/version":

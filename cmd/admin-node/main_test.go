@@ -66,6 +66,7 @@ func TestSubcommandsExist(t *testing.T) {
 		{"backup", "list"},
 		{"validate", "harbor"},
 		{"validate", "openbao"},
+		{"test", "harbor-scanner"},
 		{"ci", "create-sentinel"},
 	}
 

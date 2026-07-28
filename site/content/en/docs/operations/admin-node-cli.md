@@ -42,4 +42,5 @@ Validation supports text and JSON:
 
 ```bash
 sudo ./bin/admin-node validate apis --output json
+sudo ./bin/admin-node test harbor-scanner
 ```

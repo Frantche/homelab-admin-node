@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/Frantche/homelab-admin-node/internal/config"
-	"github.com/Frantche/homelab-admin-node/internal/openbao"
 	"github.com/Frantche/homelab-admin-node/internal/runner"
 )
 
@@ -183,10 +182,10 @@ func (v Validator) Harbor(ctx context.Context) CheckResult {
 				if err := v.validateHarborRegistryRuntime(ctx); err != nil {
 					return StatusFail, err.Error()
 				}
-				if err := v.validateHarborScannerReport(ctx, adminUser, adminPassword); err != nil {
+				if err := v.validateHarborScannerReportPassive(ctx, adminUser, adminPassword); err != nil {
 					return StatusFail, err.Error()
 				}
-				return StatusOK, "components, admin APIs, scanner, registries, replication adapters, internal registry, and Trivy report access healthy"
+				return StatusOK, "components, admin APIs, scanner, registries, replication adapters, internal registry, and existing Trivy report access healthy"
 			}
 			if ctx.Err() != nil {
 				return StatusFail, "core health check failed"
@@ -303,7 +302,49 @@ func (v Validator) harborGetJSON(ctx context.Context, path, user, password strin
 	return getJSON(ctx, v.Client, serviceURL(v.Config.HarborDomain, path), user, password, target)
 }
 
-func (v Validator) validateHarborScannerReport(ctx context.Context, user, password string) error {
+func (v Validator) validateHarborScannerReportPassive(ctx context.Context, user, password string) error {
+	project := getenv("HARBOR_VALIDATION_SCAN_PROJECT", "dockerhub")
+	repository := getenv("HARBOR_VALIDATION_SCAN_REPOSITORY", "library/busybox")
+	reference := getenv("HARBOR_VALIDATION_SCAN_REFERENCE", "latest")
+	artifactPath := harborArtifactPath(project, repository, reference)
+	artifactLabel := fmt.Sprintf("%s/%s:%s", project, repository, reference)
+	var report any
+	if err := v.harborGetVulnerabilityReport(ctx, artifactPath+"/additions/vulnerabilities", user, password, &report); err == nil {
+		return nil
+	}
+
+	discoveredPath, discoveredLabel, err := v.discoverHarborScanArtifact(ctx, project, repository, user, password)
+	if err != nil {
+		return fmt.Errorf("existing Trivy report is unavailable for %s and no fallback artifact was found: %w", artifactLabel, err)
+	}
+	if err := v.harborGetVulnerabilityReport(ctx, discoveredPath+"/additions/vulnerabilities", user, password, &report); err != nil {
+		return fmt.Errorf("existing Trivy report is unavailable for %s: %w", discoveredLabel, err)
+	}
+	return nil
+}
+
+func (v Validator) HarborScanner(ctx context.Context) CheckResult {
+	return timed("Harbor scanner active test", func() (Status, string) {
+		if v.Config.ValidateMockAll {
+			return StatusSkipped, "ADMIN_NODE_VALIDATE_MOCK_ALL=true"
+		}
+		adminPassword := getenv("HARBOR_ADMIN_PASSWORD", "")
+		if adminPassword == "" {
+			adminPassword = readEnvFileValue(filepath.Join(v.Config.AdminRoot, "env/harbor.env"), "HARBOR_ADMIN_PASSWORD")
+		}
+		if adminPassword == "" {
+			return StatusFail, "HARBOR_ADMIN_PASSWORD is required"
+		}
+		ctx, cancel := context.WithTimeout(ctx, 240*time.Second)
+		defer cancel()
+		if err := v.runHarborScannerTest(ctx, getenv("HARBOR_ADMIN_USER", "admin"), adminPassword); err != nil {
+			return StatusFail, err.Error()
+		}
+		return StatusOK, "scan triggered and Trivy vulnerability report accessible"
+	})
+}
+
+func (v Validator) runHarborScannerTest(ctx context.Context, user, password string) error {
 	project := getenv("HARBOR_VALIDATION_SCAN_PROJECT", "dockerhub")
 	repository := getenv("HARBOR_VALIDATION_SCAN_REPOSITORY", "library/busybox")
 	reference := getenv("HARBOR_VALIDATION_SCAN_REFERENCE", "latest")
@@ -311,17 +352,17 @@ func (v Validator) validateHarborScannerReport(ctx context.Context, user, passwo
 	artifactLabel := fmt.Sprintf("%s/%s:%s", project, repository, reference)
 	if err := v.harborPost(ctx, artifactPath+"/scan", user, password); err != nil {
 		if !harborStatus(err, http.StatusNotFound) {
-			return fmt.Errorf("Trivy validation scan trigger failed for %s: %w", artifactLabel, err)
+			return fmt.Errorf("Trivy active scan trigger failed for %s: %w", artifactLabel, err)
 		}
 		discoveredPath, discoveredLabel, discoverErr := v.discoverHarborScanArtifact(ctx, project, repository, user, password)
 		if discoverErr != nil {
-			return fmt.Errorf("Trivy validation scan trigger failed for %s: %w", artifactLabel, err)
+			return fmt.Errorf("Trivy active scan trigger failed for %s: %w", artifactLabel, err)
 		}
 		artifactPath = discoveredPath
 		artifactLabel = discoveredLabel
 		if err := v.harborPost(ctx, artifactPath+"/scan", user, password); err != nil {
 			if !harborStatus(err, http.StatusBadRequest) {
-				return fmt.Errorf("Trivy validation scan trigger failed for %s: %w", discoveredLabel, err)
+				return fmt.Errorf("Trivy active scan trigger failed for %s: %w", discoveredLabel, err)
 			}
 		}
 	}
@@ -482,7 +523,7 @@ func (v Validator) OpenBao(ctx context.Context) CheckResult {
 					return StatusOK, "initialized=true sealed=false"
 				}
 				if status.Initialized && status.Sealed {
-					_ = openbao.Unseal(ctx, openbao.Options{})
+					return StatusFail, "initialized=true sealed=true; run the explicit OpenBao unseal operation"
 				}
 			}
 			time.Sleep(2 * time.Second)
@@ -686,28 +727,17 @@ func (v Validator) Gitea(ctx context.Context) CheckResult {
 			}
 			time.Sleep(3 * time.Second)
 		}
-		if err := v.ensureGiteaAdminAuth(ctx, adminUser, adminPassword); err != nil {
+		if err := v.validateGiteaAdminAuth(ctx, adminUser, adminPassword); err != nil {
 			return StatusFail, err.Error()
 		}
 
 		repo := getenv("GITEA_VALIDATION_REPO", "admin-node-validation")
 		issueTitle := getenv("GITEA_VALIDATION_ISSUE_TITLE", "Backup restore sentinel")
-		create := getenv("GITEA_VALIDATION_CREATE", "true") == "true"
 		repoPath := fmt.Sprintf("/api/v1/repos/%s/%s", adminUser, repo)
 		repoURL := serviceURL(v.Config.GiteaDomain, repoPath)
-		if err := getJSON(ctx, v.Client, repoURL, adminUser, adminPassword, &giteaRepo{}); err != nil {
-			if !create {
-				return StatusFail, "validation repository not found"
-			}
-			createURL := serviceURL(v.Config.GiteaDomain, "/api/v1/user/repos")
-			body := map[string]any{"name": repo, "private": true, "auto_init": true, "description": "Admin node backup/restore validation repository"}
-			if err := postJSON(ctx, v.Client, createURL, adminUser, adminPassword, body, nil); err != nil {
-				return StatusFail, "validation repository create failed: " + err.Error()
-			}
-		}
 		repoPayload, err := readGiteaRepo(ctx, v.Client, repoURL, adminUser, adminPassword)
 		if err != nil {
-			return StatusFail, "validation repository read failed after ensure: " + err.Error()
+			return StatusFail, "validation repository not found: " + err.Error()
 		}
 		if repoPayload.Name != repo {
 			return StatusFail, "validation repository name mismatch"
@@ -725,20 +755,7 @@ func (v Validator) Gitea(ctx context.Context) CheckResult {
 			return StatusFail, "validation issues read failed: " + err.Error()
 		}
 		if !hasGiteaIssue(issues, issueTitle) {
-			if !create {
-				return StatusFail, "validation issue not found"
-			}
-			body := map[string]any{"title": issueTitle, "body": "Sentinel issue used to validate Gitea backup and restore."}
-			if err := postJSON(ctx, v.Client, serviceURL(v.Config.GiteaDomain, repoPath+"/issues"), adminUser, adminPassword, body, nil); err != nil {
-				return StatusFail, "validation issue create failed: " + err.Error()
-			}
-		}
-		issues, err = readGiteaIssues(ctx, v.Client, issuesURL, adminUser, adminPassword)
-		if err != nil {
-			return StatusFail, "validation issues reread failed: " + err.Error()
-		}
-		if !hasGiteaIssue(issues, issueTitle) {
-			return StatusFail, "validation issue not found after create/read"
+			return StatusFail, "validation issue not found"
 		}
 		return StatusOK, "validation repo and issue present"
 	})
@@ -777,7 +794,7 @@ func hasGiteaIssue(issues []giteaIssue, title string) bool {
 	return false
 }
 
-func (v Validator) ensureGiteaAdminAuth(ctx context.Context, adminUser string, adminPassword string) error {
+func (v Validator) validateGiteaAdminAuth(ctx context.Context, adminUser string, adminPassword string) error {
 	userURL := serviceURL(v.Config.GiteaDomain, "/api/v1/user")
 	status, err := statusCode(ctx, v.Client, http.MethodGet, userURL, adminUser, adminPassword)
 	if err != nil {
@@ -786,41 +803,7 @@ func (v Validator) ensureGiteaAdminAuth(ctx context.Context, adminUser string, a
 	if status == http.StatusOK {
 		return nil
 	}
-	if status != http.StatusUnauthorized && status != http.StatusForbidden {
-		return fmt.Errorf("Gitea admin API check returned HTTP %d", status)
-	}
-
-	containers := v.Runner.Run(ctx, "docker", "ps", "--format", "{{.Names}}")
-	if containers.Code != 0 || !strings.Contains(containers.Stdout, "gitea") {
-		return fmt.Errorf("Gitea admin API auth failed and container is unavailable")
-	}
-
-	v.Runner.Run(ctx, "docker", "exec", "--user", "git", "gitea", "gitea", "admin", "user", "create",
-		"--admin",
-		"--must-change-password=false",
-		"--username", adminUser,
-		"--password", adminPassword,
-		"--email", getenv("GITEA_ADMIN_EMAIL", "admin@example.com"),
-		"--config", "/data/gitea/conf/app.ini",
-	)
-	change := v.Runner.Run(ctx, "docker", "exec", "--user", "git", "gitea", "gitea", "admin", "user", "change-password",
-		"--username", adminUser,
-		"--password", adminPassword,
-		"--must-change-password=false",
-		"--config", "/data/gitea/conf/app.ini",
-	)
-	if change.Code != 0 {
-		return fmt.Errorf("Gitea admin password reset failed: %s", strings.TrimSpace(change.Stderr))
-	}
-
-	status, err = statusCode(ctx, v.Client, http.MethodGet, userURL, adminUser, adminPassword)
-	if err != nil {
-		return fmt.Errorf("Gitea admin API recheck failed: %w", err)
-	}
-	if status != http.StatusOK {
-		return fmt.Errorf("Gitea admin API auth still failed after CLI reset: HTTP %d", status)
-	}
-	return nil
+	return fmt.Errorf("Gitea admin API authentication failed with HTTP %d", status)
 }
 
 func (v Validator) Traefik(ctx context.Context) CheckResult {

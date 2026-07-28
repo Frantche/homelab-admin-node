@@ -4,9 +4,6 @@
   environment:
     ADMIN_NODE_LAN_IP: "{{ admin_node_lan_ip }}"
     HARBOR_DOMAIN: "{{ service_domains.harbor }}"
-    HARBOR_VALIDATION_SCAN_PROJECT: "{{ harbor_validation_scan_project | default('dockerhub') }}"
-    HARBOR_VALIDATION_SCAN_REPOSITORY: "{{ harbor_validation_scan_repository | default('library/busybox') }}"
-    HARBOR_VALIDATION_SCAN_REFERENCE: "{{ harbor_validation_scan_reference | default('latest') }}"
     OPENBAO_DOMAIN: "{{ service_domains.openbao }}"
     KEYCLOAK_DOMAIN: "{{ service_domains.keycloak }}"
     GITEA_DOMAIN: "{{ service_domains.gitea }}"
@@ -17,6 +14,16 @@
     PIHOLE_ENABLED: "{{ 'true' if ((pihole.enabled | default(true)) | bool) else 'false' }}"
     CLOUDFLARE_ENABLED: "{{ 'true' if ((cloudflare.enabled | default(true)) | bool) else 'false' }}"
   changed_when: false
+
+- name: Run active Harbor scanner test in CI
+  ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node test harbor-scanner
+  environment:
+    HARBOR_DOMAIN: "{{ service_domains.harbor }}"
+    HARBOR_VALIDATION_SCAN_PROJECT: "{{ harbor_validation_scan_project | default('dockerhub') }}"
+    HARBOR_VALIDATION_SCAN_REPOSITORY: "{{ harbor_validation_scan_repository | default('library/busybox') }}"
+    HARBOR_VALIDATION_SCAN_REFERENCE: "{{ harbor_validation_scan_reference | default('latest') }}"
+  changed_when: true
+  when: ci_mode | default(false) | bool
 
 - name: Validate local DNS
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node validate dns

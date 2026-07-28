@@ -1,7 +1,6 @@
 package validate
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -72,32 +71,4 @@ func statusCode(ctx context.Context, client HTTPDoer, method string, rawURL stri
 	}
 	defer resp.Body.Close()
 	return resp.StatusCode, nil
-}
-
-func postJSON(ctx context.Context, client HTTPDoer, rawURL string, username string, password string, body any, target any) error {
-	encoded, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, bytes.NewReader(encoded))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if username != "" || password != "" {
-		req.SetBasicAuth(username, password)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("POST %s returned HTTP %d: %s", rawURL, resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	if target == nil {
-		return nil
-	}
-	return json.NewDecoder(resp.Body).Decode(target)
 }

@@ -23,6 +23,7 @@ Le remplacement du binaire est atomique: le nouveau binaire est compile dans un 
 ```bash
 bin/admin-node validate apis
 bin/admin-node validate harbor
+bin/admin-node test harbor-scanner
 bin/admin-node validate openbao
 bin/admin-node validate gitea
 bin/admin-node validate dns
@@ -34,7 +35,9 @@ bin/admin-node validate all --output json
 
 Les statuts possibles sont `ok`, `warn`, `fail` et `skipped`. Le code de sortie vaut `1` si au moins un check est en `fail`.
 
-`validate apis` regroupe OpenBao, Keycloak, Harbor, Gitea et Traefik. Les sous-commandes `harbor`, `openbao`, `gitea` et `observability` permettent de lancer ces validations individuellement. Les pulls de validation des registry mirrors Harbor restent portes par le role Ansible `harbor_config`, car ils utilisent la configuration `harbor_config.registry_mirrors`.
+`validate apis` regroupe OpenBao, Keycloak, Harbor, Gitea et Traefik. Toutes les commandes `validate` sont passives: elles utilisent uniquement des lectures HTTP et des inspections locales. Les sous-commandes `harbor`, `openbao`, `gitea` et `observability` permettent de lancer ces validations individuellement.
+
+`test harbor-scanner` est un test actif explicite: il demande un scan d'artefact a Harbor puis attend le rapport Trivy. Il modifie donc l'etat de Harbor et reste reserve aux parcours CI ou aux executions operateur intentionnelles. Les pulls de validation des registry mirrors Harbor restent portes par le role Ansible `harbor_config`, car ils utilisent la configuration `harbor_config.registry_mirrors`.
 
 `validate observability` verifie le conteneur OpenTelemetry Collector et son endpoint de sante. En CI, il confirme aussi que le mock OTLP a recu les metriques dediees Gitea, Harbor, OpenBao et Traefik, ainsi que le log sentinel emis pendant le test.
 
