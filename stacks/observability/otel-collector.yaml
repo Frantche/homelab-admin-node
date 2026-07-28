@@ -55,6 +55,10 @@ receivers:
         - job_name: openbao
           scrape_interval: {{ observability.service_metrics_interval | default(observability.collection_interval | default('30s')) }}
           metrics_path: /v1/sys/metrics
+          scheme: https
+          tls_config:
+            ca_file: /etc/otelcol/openbao-ca.pem
+            server_name: openbao
           params:
             format:
               - prometheus

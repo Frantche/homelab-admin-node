@@ -472,7 +472,7 @@ func (v Validator) OpenBao(ctx context.Context) CheckResult {
 			return StatusSkipped, "ADMIN_NODE_VALIDATE_MOCK_ALL=true"
 		}
 		for range 60 {
-			result := v.Runner.Run(ctx, "docker", "exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "openbao", "bao", "status", "-format=json")
+			result := v.Runner.Run(ctx, "docker", "exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem", "openbao", "bao", "status", "-format=json")
 			if result.Code == 0 || result.Code == 2 {
 				var status struct {
 					Initialized bool `json:"initialized"`

@@ -5,26 +5,33 @@ services:
     restart: "no"
     cap_add:
       - IPC_LOCK
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
 {% if (hardening.apparmor.enabled | default(true) | bool) and (admin_apparmor_runtime_active | default(false) | bool) and ((hardening.apparmor.profiles | default({})).openbao | default(true) | bool) %}
     security_opt:
       - "apparmor=admin-node-openbao"
 {% endif %}
-    environment:
-      BAO_LOCAL_CONFIG: |
-        disable_mlock = true
     command: server -config=/etc/openbao/openbao.hcl
     volumes:
       - ./openbao.hcl:/etc/openbao/openbao.hcl:ro
       - /srv/admin/data/openbao:/openbao/file
+      - /srv/admin/certs/openbao-internal-ca.pem:/openbao/tls/ca.pem:ro
+      - /srv/admin/certs/openbao-internal-cert.pem:/openbao/tls/tls.crt:ro
+      - /srv/admin/certs/openbao-internal-key.pem:/openbao/tls/tls.key:ro
     healthcheck:
-      test: ["CMD-SHELL", "BAO_ADDR=http://127.0.0.1:8200 bao status -format=json >/dev/null; rc=$$?; [ $$rc -eq 0 ] || [ $$rc -eq 2 ]"]
+      test: ["CMD-SHELL", "BAO_ADDR=https://127.0.0.1:8200 BAO_CACERT=/openbao/tls/ca.pem bao status -format=json >/dev/null; rc=$$?; [ $$rc -eq 0 ] || [ $$rc -eq 2 ]"]
       interval: 5s
       timeout: 3s
       retries: 30
       start_period: 10s
     networks:
-      - admin-edge
+      - traefik-openbao
+      - openbao-metrics
 
 networks:
-  admin-edge:
+  traefik-openbao:
+    external: true
+  openbao-metrics:
     external: true

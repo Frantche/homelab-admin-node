@@ -36,6 +36,8 @@
     - { name: admin-edge, bridge: br-admin-edge, internal: false }
     - { name: gitea-db, bridge: br-gitea-db, internal: true }
     - { name: keycloak-db, bridge: br-keycloak-db, internal: true }
+    - { name: traefik-openbao, bridge: br-traefik-bao, internal: true }
+    - { name: openbao-metrics, bridge: br-bao-metrics, internal: true }
     - { name: harbor-internal, bridge: br-harbor, internal: true }
     - { name: harbor-egress, bridge: br-hbr-egress, internal: false }
     - { name: harbor-host, bridge: br-hbr-host, internal: false }
