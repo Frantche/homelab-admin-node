@@ -66,10 +66,11 @@ bin/admin-node mode set init
 bin/admin-node mode set normal
 bin/admin-node converge run
 bin/admin-node converge run --skip-git-pull --extra-vars "-e admin_ci_disable_auto_converge=true"
+bin/admin-node converge approve --repository /var/lib/admin-node/runtime <sha-complet>
 bin/admin-node secret install-age-key /path/to/age-key.txt
 ```
 
-`converge run` prend le lock `/run/admin-converge.lock`, vérifie les commits distants puis exécute `git pull --ff-only` si nécessaire sur le dépôt applicatif et sur le dépôt Git contenant l'inventaire, sauf option contraire. Il lance ensuite `ansible-playbook`.
+`converge run` prend le lock `/run/admin-converge.lock`. En exécution automatique, il récupère les objets distants sans merge, exige des SHA approuvés et signés pour le code et l'inventaire, puis lance `ansible-playbook` depuis le checkout root scellé. En cas d'échec, il restaure et rejoue la dernière release fonctionnelle. Le mode historique avec `git pull --ff-only` reste disponible uniquement pour une exécution manuelle sans `ADMIN_CONVERGE_REQUIRE_APPROVAL`.
 
 ## OpenBao
 

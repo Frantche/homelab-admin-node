@@ -7,11 +7,13 @@ weight: 20
 
 It:
 
-1. Updates `/opt/homelab-admin-node` with `git pull --ff-only` unless disabled.
-2. Reads the inventory from the private config repo.
-3. Runs `ansible-playbook` against `ansible/site.yml`.
-4. Builds `bin/admin-node` when Go sources changed.
-5. Applies roles according to `/etc/admin-node/mode`.
+1. Fetches remote objects without merging them.
+2. Requires explicitly approved, trusted signatures for both code and inventory.
+3. Checks out the exact approved revisions in root-owned runtime repositories.
+4. Reads the inventory from the private config repo.
+5. Runs `ansible-playbook` against `ansible/site.yml`.
+6. Builds `bin/admin-node` when Go sources changed.
+7. Applies roles according to `/etc/admin-node/mode`.
 
 Run:
 
@@ -30,6 +32,19 @@ Pass extra Ansible arguments:
 ```bash
 sudo /opt/homelab-admin-node/bin/admin-node converge run --extra-vars "--check"
 ```
+
+Automatic timer runs execute `/var/lib/admin-node/runtime/bin/admin-node`.
+Approve a signed revision only after its review and required checks:
+
+```bash
+sudo /var/lib/admin-node/runtime/bin/admin-node converge approve \
+  --repository /var/lib/admin-node/runtime \
+  --approval-file /etc/admin-node/approved-code-revision \
+  <full-commit-sha>
+```
+
+If the candidate convergence fails, the CLI checks out the recorded last-known
+good code and inventory revisions and reapplies their playbook.
 
 The built-in legacy inventory path is:
 

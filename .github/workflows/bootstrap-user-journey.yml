@@ -72,6 +72,7 @@ jobs:
           ./ci/test-repo-permissions.sh
           ./ci/test-secret-rotation.sh
           ./ci/test-docker-api-isolation.sh
+          ./ci/test-gitops-trust.sh
           shellcheck -e SC1091 scripts/*.sh ci/*.sh ci/lib/*.sh ci/scenarios/*.sh
           actionlint -shellcheck=
           ansible-lint ansible/site.yml

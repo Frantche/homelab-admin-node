@@ -240,6 +240,28 @@ func (a app) runMode(_ context.Context, args []string) int {
 
 func (a app) runConverge(ctx context.Context, args []string) int {
 	subcommand, rest := splitSubcommand(args, "run")
+	if subcommand == "approve" {
+		fs := flag.NewFlagSet("converge approve", flag.ContinueOnError)
+		fs.SetOutput(a.errOut)
+		repository := fs.String("repository", a.cfg.RepoRoot, "root-owned Git repository to approve")
+		approvalFile := fs.String("approval-file", getenv("ADMIN_CONVERGE_APPROVAL_FILE", "/etc/admin-node/approved-code-revision"), "root-owned approval file")
+		upstream := fs.String("upstream", getenv("ADMIN_CONVERGE_UPSTREAM", "origin/main"), "trusted upstream ref")
+		gnupgHome := fs.String("gnupg-home", getenv("ADMIN_CONVERGE_GNUPG_HOME", "/var/lib/admin-node/gnupg"), "trusted GnuPG home")
+		if err := fs.Parse(rest); err != nil {
+			return 2
+		}
+		if fs.NArg() != 1 {
+			fmt.Fprintln(a.errOut, "usage: admin-node converge approve [options] <commit>")
+			return 2
+		}
+		revision, err := converge.Approve(ctx, *repository, fs.Arg(0), *approvalFile, *upstream, *gnupgHome)
+		if err != nil {
+			fmt.Fprintf(a.errOut, "converge approve: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(a.out, "Approved signed revision %s for %s\n", revision, *repository)
+		return 0
+	}
 	if subcommand != "run" {
 		fmt.Fprintf(a.errOut, "unknown converge command: %s\n", subcommand)
 		return 2
@@ -266,11 +288,19 @@ func (a app) runConverge(ctx context.Context, args []string) int {
 	inventory := getenv("INVENTORY_PATH", "/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini")
 	fmt.Fprintf(a.out, "[admin-converge] playbook=%s inventory=%s\n", playbook, inventory)
 	if err := converge.Run(ctx, converge.Options{
-		RepoDir:       a.cfg.RepoRoot,
-		InventoryPath: inventory,
-		PlaybookPath:  playbook,
-		SkipGitPull:   *skipGitPull,
-		ExtraArgs:     extraArgs,
+		RepoDir:               a.cfg.RepoRoot,
+		InventoryPath:         inventory,
+		PlaybookPath:          playbook,
+		SkipGitPull:           *skipGitPull,
+		ExtraArgs:             extraArgs,
+		RequireApproval:       envBool("ADMIN_CONVERGE_REQUIRE_APPROVAL"),
+		ApprovalFile:          getenv("ADMIN_CONVERGE_APPROVAL_FILE", "/etc/admin-node/approved-code-revision"),
+		InventoryApprovalFile: getenv("ADMIN_CONVERGE_INVENTORY_APPROVAL_FILE", "/etc/admin-node/approved-inventory-revision"),
+		TrustedGNUPGHome:      getenv("ADMIN_CONVERGE_GNUPG_HOME", "/var/lib/admin-node/gnupg"),
+		Upstream:              getenv("ADMIN_CONVERGE_UPSTREAM", "origin/main"),
+		InventoryUpstream:     getenv("ADMIN_CONVERGE_INVENTORY_UPSTREAM", "origin/main"),
+		LastGoodFile:          getenv("ADMIN_CONVERGE_LAST_GOOD_FILE", "/var/lib/admin-node/last-known-good"),
+		InventoryLastGoodFile: getenv("ADMIN_CONVERGE_INVENTORY_LAST_GOOD_FILE", "/var/lib/admin-node/inventory-last-known-good"),
 	}); err != nil {
 		fmt.Fprintf(a.errOut, "converge run: %v\n", err)
 		return 1

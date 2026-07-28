@@ -9,4 +9,12 @@ UMask=0027
 Environment=GOCACHE=/var/cache/admin-node/go-build
 Environment=GOMODCACHE=/var/cache/admin-node/go-mod
 Environment=GOPATH=/var/cache/admin-node/go-path
-ExecStart=/opt/homelab-admin-node/bin/admin-node converge run
+Environment=ADMIN_NODE_REPO_ROOT=/var/lib/admin-node/runtime
+Environment=PLAYBOOK_PATH=/var/lib/admin-node/runtime/ansible/site.yml
+Environment=ADMIN_CONVERGE_REQUIRE_APPROVAL=true
+Environment=ADMIN_CONVERGE_APPROVAL_FILE=/etc/admin-node/approved-code-revision
+Environment=ADMIN_CONVERGE_INVENTORY_APPROVAL_FILE=/etc/admin-node/approved-inventory-revision
+Environment=ADMIN_CONVERGE_GNUPG_HOME=/var/lib/admin-node/gnupg
+Environment=ADMIN_CONVERGE_LAST_GOOD_FILE=/var/lib/admin-node/last-known-good
+Environment=ADMIN_CONVERGE_INVENTORY_LAST_GOOD_FILE=/var/lib/admin-node/inventory-last-known-good
+ExecStart=/var/lib/admin-node/runtime/bin/admin-node converge run

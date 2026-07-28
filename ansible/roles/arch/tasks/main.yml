@@ -11,6 +11,7 @@
       - rsync
       - sops
       - age
+      - gnupg
       - python
       - sudo
       - openssh

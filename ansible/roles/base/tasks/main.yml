@@ -37,7 +37,9 @@
       - "--chown={{ admin_node_repo_owner }}:{{ admin_node_repo_group }}"
       - "--exclude=secrets/*.sops.yaml"
       - "--exclude=ansible/group_vars/secrets.sops.yaml"
-  when: admin_node_repo_source.stdout != "/opt/homelab-admin-node"
+  when:
+    - admin_node_repo_source.stdout != "/opt/homelab-admin-node"
+    - admin_node_repo_source.stdout != "/var/lib/admin-node/runtime"
 
 - name: Normalize tracked admin repository permissions
   ansible.builtin.command:
@@ -63,13 +65,144 @@
 - name: Build admin-node Go CLI
   ansible.builtin.command: ./scripts/build-admin-node.sh
   args:
-    chdir: /opt/homelab-admin-node
+    chdir: "{{ admin_node_repo_source.stdout }}"
   environment:
     GOCACHE: /var/cache/admin-node/go-build
     GOMODCACHE: /var/cache/admin-node/go-mod
     GOPATH: /var/cache/admin-node/go-path
   register: admin_node_build
   changed_when: "'changed=true' in admin_node_build.stdout"
+
+- name: Ensure trusted convergence state directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /var/lib/admin-node, mode: "0755" }
+    - { path: /var/lib/admin-node/gnupg, mode: "0700" }
+    - { path: /etc/admin-node, mode: "0755" }
+
+- name: Install GitHub web-flow signing keys
+  ansible.builtin.copy:
+    src: github-web-flow.asc
+    dest: /etc/admin-node/github-web-flow.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Import trusted convergence signing keys
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --homedir
+      - /var/lib/admin-node/gnupg
+      - --batch
+      - --import
+      - /etc/admin-node/github-web-flow.asc
+  register: admin_node_trusted_key_import
+  changed_when: "'imported: 1' in admin_node_trusted_key_import.stderr"
+
+- name: Check root-owned runtime checkout
+  ansible.builtin.stat:
+    path: /var/lib/admin-node/runtime/.git
+  register: admin_node_runtime_git
+
+- name: Bootstrap root-owned runtime checkout
+  ansible.posix.synchronize:
+    src: "{{ admin_node_repo_source.stdout }}/"
+    dest: /var/lib/admin-node/runtime/
+    rsync_opts:
+      - "--delete"
+      - "--chown=root:root"
+      - "--exclude=secrets/*.sops.yaml"
+      - "--exclude=ansible/group_vars/secrets.sops.yaml"
+  when: not admin_node_runtime_git.stat.exists
+
+- name: Seal root-owned runtime checkout
+  ansible.builtin.command:
+    argv:
+      - /var/lib/admin-node/runtime/scripts/seal-git-checkout.sh
+      - /var/lib/admin-node/runtime
+  changed_when: false
+
+- name: Read initial trusted code revision
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - /var/lib/admin-node/runtime
+      - rev-parse
+      - HEAD
+  register: admin_node_initial_code_revision
+  changed_when: false
+
+- name: Bootstrap code approval file
+  ansible.builtin.copy:
+    dest: /etc/admin-node/approved-code-revision
+    content: "{{ admin_node_initial_code_revision.stdout }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+
+- name: Bootstrap last known good code revision
+  ansible.builtin.copy:
+    dest: /var/lib/admin-node/last-known-good
+    content: "{{ admin_node_initial_code_revision.stdout }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+
+- name: Resolve inventory repository
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ inventory_dir }}"
+      - rev-parse
+      - --show-toplevel
+  register: admin_node_inventory_repository
+  changed_when: false
+
+- name: Seal root-owned inventory checkout
+  ansible.builtin.command:
+    argv:
+      - /var/lib/admin-node/runtime/scripts/seal-git-checkout.sh
+      - "{{ admin_node_inventory_repository.stdout }}"
+  changed_when: false
+
+- name: Read initial trusted inventory revision
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ admin_node_inventory_repository.stdout }}"
+      - rev-parse
+      - HEAD
+  register: admin_node_initial_inventory_revision
+  changed_when: false
+
+- name: Bootstrap inventory approval file
+  ansible.builtin.copy:
+    dest: /etc/admin-node/approved-inventory-revision
+    content: "{{ admin_node_initial_inventory_revision.stdout }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+
+- name: Bootstrap last known good inventory revision
+  ansible.builtin.copy:
+    dest: /var/lib/admin-node/inventory-last-known-good
+    content: "{{ admin_node_initial_inventory_revision.stdout }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
 
 - name: Compute admin repository operator users
   ansible.builtin.set_fact:
