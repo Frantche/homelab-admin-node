@@ -14,6 +14,8 @@ Le build passe par `scripts/build-admin-node.sh`. Le script calcule un fingerpri
 
 Pour fonctionner sans `HOME` dans systemd, le build root utilise des repertoires dedies sous `/var/cache/admin-node` pour `GOCACHE`, `GOMODCACHE` et `GOPATH`. Ils sont crees en `0700 root:root`.
 
+Le service de convergence utilise `UMask=0027` pour garder les fichiers runtime restrictifs. Avant le build, Ansible normalise uniquement les chemins suivis par Git en `root:homelab`: fichiers ordinaires en `0664`, executables en `0775` et repertoires en `2775`. Les fichiers runtime non suivis, notamment les secrets, ne sont pas modifies.
+
 Le remplacement du binaire est atomique: le nouveau binaire est compile dans un fichier temporaire, verifie avec `--help`, puis deplace vers `bin/admin-node`. Toute future dependance Go doit etre verrouillee par `go.sum`; les artefacts CI signes restent une evolution possible mais ne sont pas utilises dans cette version.
 
 ## Validation
