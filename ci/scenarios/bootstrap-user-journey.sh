@@ -196,6 +196,30 @@ for svc in traefik keycloak openbao harbor-core gitea; do
   echo "Service ${svc} is running"
 done
 
+# --- Verify Harbor private token material permissions ---
+if [[ "$(stat -c '%a:%U:%g' /srv/admin/data/harbor/core)" != "750:root:10000" ]]; then
+  echo "ERROR: Harbor core directory permissions are not 0750 root:10000" >&2
+  stat -c '%a %U:%G %n' /srv/admin/data/harbor/core >&2
+  exit 1
+fi
+for path in \
+  /srv/admin/data/harbor/core/token.key \
+  /srv/admin/data/harbor/core/secretkey
+do
+  if [[ "$(stat -c '%a:%U:%g' "$path")" != "640:root:10000" ]]; then
+    echo "ERROR: Harbor private token material permissions are not 0640 root:10000" >&2
+    stat -c '%a %U:%G %n' "$path" >&2
+    exit 1
+  fi
+done
+if [[ "$(stat -c '%a:%U:%G' /srv/admin/data/harbor/core/token.crt)" != "644:root:root" ]]; then
+  echo "ERROR: Harbor public token certificate permissions are not 0644 root:root" >&2
+  stat -c '%a %U:%G %n' /srv/admin/data/harbor/core/token.crt >&2
+  exit 1
+fi
+docker exec harbor-core test -r /etc/core/private_key.pem
+docker exec harbor-core test -r /etc/core/key
+
 # --- Validate real OIDC browser login ---
 "$REPO_ROOT/ci/run-oidc-user-journey.sh"
 
