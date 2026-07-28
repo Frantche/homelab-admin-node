@@ -12,6 +12,8 @@ Le binaire est genere dans `bin/admin-node`. Le repertoire `bin/` n'est pas vers
 
 Le build passe par `scripts/build-admin-node.sh`. Le script calcule un fingerprint des sources Go (`cmd`, `internal`, `go.mod`, et `go.sum` si present) et ne recompile que si ce fingerprint change. Ansible appelle le meme script pendant le converge, juste apres la synchronisation du depot dans `/opt/homelab-admin-node`.
 
+Pour fonctionner sans `HOME` dans systemd, le build root utilise des repertoires dedies sous `/var/cache/admin-node` pour `GOCACHE`, `GOMODCACHE` et `GOPATH`. Ils sont crees en `0700 root:root`.
+
 Le remplacement du binaire est atomique: le nouveau binaire est compile dans un fichier temporaire, verifie avec `--help`, puis deplace vers `bin/admin-node`. Toute future dependance Go doit etre verrouillee par `go.sum`; les artefacts CI signes restent une evolution possible mais ne sont pas utilises dans cette version.
 
 ## Validation

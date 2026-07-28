@@ -30,10 +30,26 @@
       - "--exclude=secrets/*.sops.yaml"
       - "--exclude=ansible/group_vars/secrets.sops.yaml"
 
+- name: Ensure root Go cache directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop:
+    - /var/cache/admin-node/go-build
+    - /var/cache/admin-node/go-mod
+    - /var/cache/admin-node/go-path
+
 - name: Build admin-node Go CLI
   ansible.builtin.command: ./scripts/build-admin-node.sh
   args:
     chdir: /opt/homelab-admin-node
+  environment:
+    GOCACHE: /var/cache/admin-node/go-build
+    GOMODCACHE: /var/cache/admin-node/go-mod
+    GOPATH: /var/cache/admin-node/go-path
   register: admin_node_build
   changed_when: "'changed=true' in admin_node_build.stdout"
 

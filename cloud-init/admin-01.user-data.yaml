@@ -67,6 +67,8 @@ write_files:
       [Service]
       Type=oneshot
       Environment=GOCACHE=/var/cache/admin-node/go-build
+      Environment=GOMODCACHE=/var/cache/admin-node/go-mod
+      Environment=GOPATH=/var/cache/admin-node/go-path
       ExecStart=/usr/local/bin/admin-node-converge
   - path: /etc/systemd/system/admin-converge.timer
     owner: root:root

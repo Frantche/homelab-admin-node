@@ -13,14 +13,22 @@ if ! command -v "$GO_BIN" >/dev/null 2>&1; then
   exit 127
 fi
 
-if [[ -z "${GOCACHE:-}" ]] && [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
   admin_node_go_cache_default="/var/cache/admin-node/go-build"
-  export GOCACHE="${ADMIN_NODE_GO_CACHE:-$admin_node_go_cache_default}"
-  mkdir -p "$GOCACHE"
-elif [[ -z "${GOCACHE:-}" && -z "${XDG_CACHE_HOME:-}" && -z "${HOME:-}" ]]; then
+  admin_node_go_mod_cache_default="/var/cache/admin-node/go-mod"
+  admin_node_go_path_default="/var/cache/admin-node/go-path"
+  export GOCACHE="${GOCACHE:-${ADMIN_NODE_GO_CACHE:-$admin_node_go_cache_default}}"
+  export GOMODCACHE="${GOMODCACHE:-${ADMIN_NODE_GO_MOD_CACHE:-$admin_node_go_mod_cache_default}}"
+  export GOPATH="${GOPATH:-${ADMIN_NODE_GO_PATH:-$admin_node_go_path_default}}"
+  install -d -m 0700 "$GOCACHE" "$GOMODCACHE" "$GOPATH"
+elif [[ -z "${XDG_CACHE_HOME:-}" && -z "${HOME:-}" ]]; then
   admin_node_go_cache_default="${TMPDIR:-/tmp}/admin-node-go-build-${UID:-$(id -u)}"
-  export GOCACHE="${ADMIN_NODE_GO_CACHE:-$admin_node_go_cache_default}"
-  mkdir -p "$GOCACHE"
+  admin_node_go_mod_cache_default="${TMPDIR:-/tmp}/admin-node-go-mod-${UID:-$(id -u)}"
+  admin_node_go_path_default="${TMPDIR:-/tmp}/admin-node-go-path-${UID:-$(id -u)}"
+  export GOCACHE="${GOCACHE:-${ADMIN_NODE_GO_CACHE:-$admin_node_go_cache_default}}"
+  export GOMODCACHE="${GOMODCACHE:-${ADMIN_NODE_GO_MOD_CACHE:-$admin_node_go_mod_cache_default}}"
+  export GOPATH="${GOPATH:-${ADMIN_NODE_GO_PATH:-$admin_node_go_path_default}}"
+  install -d -m 0700 "$GOCACHE" "$GOMODCACHE" "$GOPATH"
 fi
 
 cd "$REPO_DIR"
