@@ -4,6 +4,13 @@ entryPoints:
     address: ":8082"
   websecure:
     address: ":443"
+{% if (traefik.forwarded_headers_trusted_ips | default([])) | length > 0 %}
+    forwardedHeaders:
+      trustedIPs:
+{% for cidr in traefik.forwarded_headers_trusted_ips %}
+        - "{{ cidr }}"
+{% endfor %}
+{% endif %}
 {% if traefik_letsencrypt_enabled %}
     http:
       tls:

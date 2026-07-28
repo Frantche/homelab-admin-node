@@ -15,6 +15,14 @@
     TRAEFIK_DASHBOARD_BASIC_AUTH: "admin:$$apr1$$ci$$fakehash"
     traefik:
       dashboard_enabled: true
+      forwarded_headers_trusted_ips:
+        - "192.0.2.0/24"
+      security:
+        interactive_rate_limit:
+          average: 100
+          burst: 200
+        interactive_max_in_flight: 100
+        transfer_max_in_flight: 200
       external_services:
         - name: "insecure-app"
           hostname: "insecure.example.com"
@@ -47,6 +55,10 @@
     - name: Render Traefik dynamic config for external services
       ansible.builtin.set_fact:
         traefik_dynamic_config: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/dynamic/config.yml') }}"
+
+    - name: Render Traefik static config
+      ansible.builtin.set_fact:
+        traefik_static_config: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/traefik.yml') }}"
 
     - name: Render Cloudflared local ingress config for external services
       ansible.builtin.set_fact:
@@ -85,6 +97,18 @@
           - "'serversTransport: ca-app' in traefik_dynamic_config"
           - "'rootCAs:' in traefik_dynamic_config"
           - "'/certs/traefik-external-services/ca-app-ca.pem' in traefik_dynamic_config"
+          - "'security-headers:' in traefik_dynamic_config"
+          - "'contentTypeNosniff: true' in traefik_dynamic_config"
+          - "'stsSeconds: 31536000' in traefik_dynamic_config"
+          - "'interactive-rate-limit:' in traefik_dynamic_config"
+          - "'interactive-concurrency:' in traefik_dynamic_config"
+          - "'transfer-concurrency:' in traefik_dynamic_config"
+          - "traefik_dynamic_config.count('middlewares:\\n        - interactive-protection') == 2"
+          - "traefik_dynamic_config.count('middlewares:\\n        - transfer-protection') == 2"
+          - "'middlewares:\\n        - security-headers' in traefik_dynamic_config"
+          - "'buffering:' not in traefik_dynamic_config"
+          - "'trustedIPs:' in traefik_static_config"
+          - "'192.0.2.0/24' in traefik_static_config"
 
     - name: Assert Cloudflared only renders enabled external services
       ansible.builtin.assert:

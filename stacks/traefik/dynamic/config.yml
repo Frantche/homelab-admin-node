@@ -6,24 +6,36 @@ http:
         - websecure
       tls: true
       service: openbao
+      middlewares:
+        - interactive-protection
     keycloak:
       rule: "Host(`{{ service_domains.keycloak }}`)"
       entryPoints:
         - websecure
       tls: true
       service: keycloak
+      middlewares:
+        - interactive-protection
     gitea:
       rule: "Host(`{{ service_domains.gitea | default('git.example.com') }}`)"
       entryPoints:
         - websecure
       tls: true
       service: gitea
+      # Git LFS uploads are intentionally not subject to request rate or body
+      # limits. Concurrency still protects the backend from exhaustion.
+      middlewares:
+        - transfer-protection
     harbor:
       rule: "Host(`{{ service_domains.harbor }}`)"
       entryPoints:
         - websecure
       tls: true
       service: harbor
+      # Registry pushes can be large and long-lived: do not add buffering or a
+      # request rate limit to this router.
+      middlewares:
+        - transfer-protection
 {% if traefik.dashboard_enabled | default(false) | bool %}
     dashboard:
       rule: "Host(`{{ service_domains.traefik }}`)"
@@ -33,6 +45,7 @@ http:
       service: api@internal
       middlewares:
         - dashboard-auth
+        - interactive-protection
 {% endif %}
 {% for external_service in traefik_external_services | default([]) %}
     {{ external_service.name }}:
@@ -41,6 +54,8 @@ http:
         - websecure
       tls: true
       service: {{ external_service.name }}
+      middlewares:
+        - security-headers
 {% endfor %}
   services:
     openbao:
@@ -91,8 +106,44 @@ http:
 {% endif %}
 {% endfor %}
 {% endif %}
-{% if traefik.dashboard_enabled | default(false) | bool %}
   middlewares:
+    security-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        customFrameOptionsValue: "SAMEORIGIN"
+        forceSTSHeader: true
+        frameDeny: false
+        hostsProxyHeaders:
+          - X-Forwarded-Host
+        permissionsPolicy: "camera=(), geolocation=(), microphone=()"
+        referrerPolicy: "strict-origin-when-cross-origin"
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 31536000
+    interactive-rate-limit:
+      rateLimit:
+        average: {{ traefik.security.interactive_rate_limit.average | default(100) }}
+        burst: {{ traefik.security.interactive_rate_limit.burst | default(200) }}
+        period: "1s"
+    interactive-concurrency:
+      inFlightReq:
+        amount: {{ traefik.security.interactive_max_in_flight | default(100) }}
+    transfer-concurrency:
+      inFlightReq:
+        amount: {{ traefik.security.transfer_max_in_flight | default(200) }}
+    interactive-protection:
+      chain:
+        middlewares:
+          - security-headers
+          - interactive-rate-limit
+          - interactive-concurrency
+    transfer-protection:
+      chain:
+        middlewares:
+          - security-headers
+          - transfer-concurrency
+{% if traefik.dashboard_enabled | default(false) | bool %}
     dashboard-auth:
       basicAuth:
         users:

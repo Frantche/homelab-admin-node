@@ -47,6 +47,9 @@ test-oidc-contracts:
 test-traefik-external-services:
 	@./ci/test-traefik-external-services.sh
 
+test-traefik-security:
+	@./ci/test-traefik-security-runtime.sh
+
 test-docker-api-isolation:
 	@./ci/test-docker-api-isolation.sh
 
@@ -55,6 +58,12 @@ test-restic-config:
 
 test-offline-images:
 	@./ci/test-offline-images.sh
+
+test-image-security-policy:
+	@python3 ./ci/test-image-security-policy.py
+
+scan-container-images:
+	@./ci/scan-container-images.sh
 
 test-ci-fast:
 	@./ci/scenarios/bootstrap-user-journey.sh

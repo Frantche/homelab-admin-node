@@ -21,6 +21,16 @@ traefik:
   log_level: "INFO"
   access_logs: true
   local_tls_enabled: false
+  # Only list the CIDRs of reverse proxies that directly connect to Traefik.
+  # Keep empty when clients connect directly; never trust forwarded headers
+  # globally.
+  forwarded_headers_trusted_ips: []
+  security:
+    interactive_rate_limit:
+      average: 100
+      burst: 200
+    interactive_max_in_flight: 100
+    transfer_max_in_flight: 200
   external_services: []
 
 service_domains:
