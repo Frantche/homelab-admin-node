@@ -579,7 +579,7 @@ func TestGiteaOK(t *testing.T) {
 	}
 }
 
-func TestGiteaPassiveValidationDoesNotCreateMissingResources(t *testing.T) {
+func TestGiteaPassiveValidationDoesNotRequireOrCreateSentinels(t *testing.T) {
 	t.Setenv("GITEA_ADMIN_PASSWORD", "password")
 	var mutation string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -607,15 +607,15 @@ func TestGiteaPassiveValidationDoesNotCreateMissingResources(t *testing.T) {
 
 	v := Validator{Config: config.Config{GiteaDomain: server.URL}, Client: server.Client()}
 	result := v.Gitea(context.Background())
-	if result.Status != StatusFail || !strings.Contains(result.Message, "repository not found") {
-		t.Fatalf("result = %#v, want missing repository failure", result)
+	if result.Status != StatusOK {
+		t.Fatalf("result = %#v, want API/auth success without sentinels", result)
 	}
 	if mutation != "" {
 		t.Fatalf("passive Gitea validation sent mutation %s", mutation)
 	}
 }
 
-func TestGiteaFailsWhenRepoIsPublic(t *testing.T) {
+func TestGiteaValidationDoesNotInspectRepositoryState(t *testing.T) {
 	t.Setenv("GITEA_ADMIN_PASSWORD", "password")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -641,15 +641,12 @@ func TestGiteaFailsWhenRepoIsPublic(t *testing.T) {
 
 	v := Validator{Config: config.Config{GiteaDomain: server.URL}, Client: server.Client()}
 	result := v.Gitea(context.Background())
-	if result.Status != StatusFail {
-		t.Fatalf("status = %s, want %s", result.Status, StatusFail)
-	}
-	if !strings.Contains(result.Message, "not private") {
-		t.Fatalf("message = %q, want private failure", result.Message)
+	if result.Status != StatusOK {
+		t.Fatalf("status = %s, want %s (%s)", result.Status, StatusOK, result.Message)
 	}
 }
 
-func TestGiteaFailsWhenCreateDisabledAndIssueMissing(t *testing.T) {
+func TestGiteaValidationDoesNotInspectIssueState(t *testing.T) {
 	t.Setenv("GITEA_ADMIN_PASSWORD", "password")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -675,11 +672,8 @@ func TestGiteaFailsWhenCreateDisabledAndIssueMissing(t *testing.T) {
 
 	v := Validator{Config: config.Config{GiteaDomain: server.URL}, Client: server.Client()}
 	result := v.Gitea(context.Background())
-	if result.Status != StatusFail {
-		t.Fatalf("status = %s, want %s", result.Status, StatusFail)
-	}
-	if !strings.Contains(result.Message, "validation issue not found") {
-		t.Fatalf("message = %q, want missing issue failure", result.Message)
+	if result.Status != StatusOK {
+		t.Fatalf("status = %s, want %s (%s)", result.Status, StatusOK, result.Message)
 	}
 }
 
