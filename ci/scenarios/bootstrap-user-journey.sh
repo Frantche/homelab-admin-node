@@ -197,7 +197,7 @@ for svc in traefik keycloak openbao harbor-core gitea; do
 done
 
 openbao_networks="$(docker inspect -f '{{json .NetworkSettings.Networks}}' openbao)"
-if [[ "$(jq -r 'keys | sort | join(\",\")' <<<"$openbao_networks")" != "openbao-metrics,traefik-openbao" ]]; then
+if [[ "$(jq -r 'keys | sort | join(",")' <<<"$openbao_networks")" != "openbao-metrics,traefik-openbao" ]]; then
   echo "ERROR: OpenBao is not isolated on its two dedicated networks" >&2
   jq . <<<"$openbao_networks" >&2
   exit 1
