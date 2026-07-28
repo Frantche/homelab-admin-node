@@ -1,22 +1,4 @@
 services:
-  traefik-socket-proxy:
-    image: ghcr.io/tecnativa/docker-socket-proxy:v0.4.2@sha256:bd2241b3bec83abcff25927a0a7ae518e0c5bef624b3cc247dcb31e68b53f417
-    container_name: traefik-socket-proxy
-    restart: "no"
-    environment:
-      CONTAINERS: "1"
-      EVENTS: "1"
-      NETWORKS: "1"
-      SERVICES: "1"
-      TASKS: "1"
-      POST: "0"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      - traefik-docker
-
   traefik:
     image: traefik:v3.7@sha256:66b901df20c5b92a43ac79d92d14bd0a1fda50fdb3cae8f77d562aa8f279f748
     container_name: traefik
@@ -42,16 +24,6 @@ services:
       timeout: 3s
       retries: 30
       start_period: 10s
-    labels:
-      - "traefik.enable={{ traefik.dashboard_enabled | default(false) | bool | lower }}"
-{% if traefik.dashboard_enabled | default(false) | bool %}
-      - "traefik.docker.network=admin-edge"
-      - "traefik.http.routers.dashboard.rule=Host(`{{ service_domains.traefik }}`)"
-      - "traefik.http.routers.dashboard.entrypoints=websecure"
-      - "traefik.http.routers.dashboard.tls=true"
-      - "traefik.http.routers.dashboard.service=api@internal"
-      - "traefik.http.routers.dashboard.middlewares=dashboard-auth@file"
-{% endif %}
     networks:
       admin-edge:
         aliases:
@@ -60,10 +32,7 @@ services:
           - "{{ service_domains.harbor }}"
           - "{{ service_domains.gitea | default('git.example.com') }}"
           - "{{ service_domains.traefik }}"
-      traefik-docker:
 
 networks:
   admin-edge:
-    external: true
-  traefik-docker:
     external: true

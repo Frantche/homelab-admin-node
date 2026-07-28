@@ -127,7 +127,6 @@ observability:
   otlp_encoding: "json"
   collection_interval: "5s"
   service_metrics_interval: "5s"
-  docker_api_version: "1.40"
   mock_backend_enabled: true
   mock_state_dir: "/tmp/admin-node-otel-mock"
 

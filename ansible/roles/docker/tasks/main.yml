@@ -39,8 +39,6 @@
     - { name: harbor-internal, bridge: br-harbor, internal: true }
     - { name: harbor-egress, bridge: br-hbr-egress, internal: false }
     - { name: harbor-host, bridge: br-hbr-host, internal: false }
-    - { name: traefik-docker, bridge: br-traefik-api, internal: true }
-    - { name: otel-docker, bridge: br-otel-api, internal: true }
 
 - name: Probe Docker bridge networking support
   ansible.builtin.command: >-

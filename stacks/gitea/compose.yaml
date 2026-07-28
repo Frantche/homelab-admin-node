@@ -74,13 +74,6 @@ services:
     depends_on:
       gitea-db:
         condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=admin-edge"
-      - "traefik.http.routers.gitea.rule=Host(`{{ service_domains.gitea | default('git.example.com') }}`)"
-      - "traefik.http.routers.gitea.entrypoints=websecure"
-      - "traefik.http.routers.gitea.tls=true"
-      - "traefik.http.services.gitea.loadbalancer.server.port=3000"
     networks:
       - admin-edge
       - gitea-db

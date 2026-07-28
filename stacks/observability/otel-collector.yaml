@@ -23,12 +23,6 @@ receivers:
       paging:
       processes:
 
-  docker_stats:
-    endpoint: tcp://otel-socket-proxy:2375
-    api_version: "{{ observability.docker_api_version | default('1.40') }}"
-    initial_delay: {{ observability.docker_stats_initial_delay | default('30s') }}
-    collection_interval: {{ observability.collection_interval | default('30s') }}
-
   prometheus/gitea:
     config:
       scrape_configs:
@@ -122,7 +116,6 @@ service:
       receivers:
         - otlp
         - hostmetrics
-        - docker_stats
         - prometheus/gitea
         - prometheus/harbor
         - prometheus/openbao
