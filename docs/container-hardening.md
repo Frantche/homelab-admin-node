@@ -27,7 +27,7 @@ persistantes attendues.
 | `harbor-nginx` | entrypoint Harbor | `CHOWN`, `SETGID`, `SETUID`, `NET_BIND_SERVICE` | rootfs RW fournisseur |
 | `otel-mock-backend` | root, CI uniquement | aucune | rootfs RO, état mock monté et `/tmp` tmpfs |
 | `otel-collector` | `10001:10001` | aucune | rootfs RO et `/tmp` tmpfs |
-| `openbao` | entrypoint root puis utilisateur OpenBao | `CHOWN`, `IPC_LOCK`, `SETGID`, `SETUID` | rootfs RO, stockage Raft/fichier |
+| `openbao` | utilisateur OpenBao de l'image fournisseur | aucune | rootfs RO, stockage Raft/fichier et certificats internes en lecture seule |
 | `traefik` | entrypoint fournisseur | `NET_BIND_SERVICE` | rootfs RO, ACME persistant et `/tmp` tmpfs |
 
 Les exceptions sont contrôlées à deux niveaux :
