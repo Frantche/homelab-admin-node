@@ -17,9 +17,11 @@ La clé de CA reste `0600 root:root`. La clé serveur est `0640 root:1000`, ce q
 permet uniquement au processus OpenBao de la lire. Le certificat est renouvelé
 à moins de trente jours de son expiration.
 
-`disable_mlock=false`, la capacité `IPC_LOCK` et une limite memlock illimitée
-sont appliqués ensemble. La convergence en mode normal échoue si `VmLck` du
-processus OpenBao reste nul après l'unseal.
+OpenBao 2.6 a supprimé le support de `mlock` et refuse de démarrer si
+`disable_mlock` est encore configuré. La capacité `IPC_LOCK` et la limite
+`memlock` ont donc été retirées au lieu de donner une fausse garantie. Le nœud
+doit désactiver le swap ou utiliser un swap chiffré, conformément au
+durcissement post-installation OpenBao.
 
 Les métriques sans token ne sont accessibles que sur le bridge interne
 `openbao-metrics`; elles ne sont pas routées séparément par Traefik.

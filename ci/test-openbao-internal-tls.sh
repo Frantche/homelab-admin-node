@@ -3,17 +3,16 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if rg -n 'BAO_ADDR=http://|http://openbao:8200|tls_disable[[:space:]]*=[[:space:]]*1|disable_mlock[[:space:]]*=[[:space:]]*true' \
+if rg -n 'BAO_ADDR=http://|http://openbao:8200|tls_disable[[:space:]]*=[[:space:]]*1|disable_mlock|IPC_LOCK|memlock' \
   "$REPO_ROOT/cmd" \
   "$REPO_ROOT/internal" \
   "$REPO_ROOT/ansible" \
   "$REPO_ROOT/stacks"; then
-  echo "OpenBao still has an unencrypted or mlock-disabled runtime path" >&2
+  echo "OpenBao still has an unencrypted path or obsolete mlock configuration" >&2
   exit 1
 fi
 
 grep -qF 'tls_cert_file = "/openbao/tls/tls.crt"' "$REPO_ROOT/stacks/openbao/openbao.hcl"
-grep -qF 'disable_mlock = false' "$REPO_ROOT/stacks/openbao/openbao.hcl"
 grep -qF -- '- traefik-openbao' "$REPO_ROOT/stacks/openbao/compose.yaml"
 grep -qF -- '- openbao-metrics' "$REPO_ROOT/stacks/openbao/compose.yaml"
 

@@ -20,5 +20,4 @@ telemetry {
 
 api_addr = "https://openbao:8200"
 cluster_addr = "https://openbao:8201"
-disable_mlock = false
 ui = true

@@ -113,15 +113,3 @@
   when:
     - admin_mode != 'restore'
     - admin_mode != 'init' or not (ci_mode | default(false))
-
-- name: Verify OpenBao locks sensitive memory
-  ansible.builtin.command:
-    argv:
-      - docker
-      - exec
-      - openbao
-      - awk
-      - "/^VmLck:/ { exit ($2 > 0 ? 0 : 1) }"
-      - /proc/1/status
-  changed_when: false
-  when: admin_mode == 'normal'
