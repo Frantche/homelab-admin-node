@@ -6,6 +6,10 @@ uniquement deux bridges internes :
 - `traefik-openbao`, limité à Traefik et OpenBao pour l'UI et l'API ;
 - `openbao-metrics`, limité à OpenBao et au collecteur OpenTelemetry.
 
+Sur `traefik-openbao`, Traefik porte aussi l'alias DNS du domaine Keycloak.
+OpenBao peut ainsi lire la découverte OIDC en HTTPS via Traefik, sans rejoindre
+le réseau généraliste `admin-edge`.
+
 Toutes les connexions utilisent TLS. Le rôle `openbao_pki` maintient une CA
 interne dédiée et un certificat serveur avec les SAN `openbao`, `localhost` et
 `127.0.0.1`. Traefik et OpenTelemetry montent uniquement la CA publique et

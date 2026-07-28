@@ -15,6 +15,7 @@ fi
 grep -qF 'tls_cert_file = "/openbao/tls/tls.crt"' "$REPO_ROOT/stacks/openbao/openbao.hcl"
 grep -qF -- '- traefik-openbao' "$REPO_ROOT/stacks/openbao/compose.yaml"
 grep -qF -- '- openbao-metrics' "$REPO_ROOT/stacks/openbao/compose.yaml"
+grep -qF -- '- "{{ service_domains.keycloak }}"' "$REPO_ROOT/stacks/traefik/compose.yaml"
 
 if grep -qF -- '- admin-edge' "$REPO_ROOT/stacks/openbao/compose.yaml"; then
   echo "OpenBao still shares the general admin-edge network" >&2

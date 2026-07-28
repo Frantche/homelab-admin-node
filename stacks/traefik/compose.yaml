@@ -32,6 +32,9 @@ services:
           - "{{ service_domains.gitea | default('git.example.com') }}"
           - "{{ service_domains.traefik }}"
       traefik-openbao:
+        aliases:
+          # OpenBao reaches Keycloak through Traefik without joining admin-edge.
+          - "{{ service_domains.keycloak }}"
 
 networks:
   admin-edge:
