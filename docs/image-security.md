@@ -2,7 +2,7 @@
 
 `security/container-images.txt` is the exhaustive inventory of runtime stack images and production utility images. Every entry is pinned by tag and SHA-256 digest. The inventory contract checks that every image declared under `stacks/*/compose.yaml` remains listed.
 
-The `image-security` workflow runs every Monday, on demand, and for Renovate pull requests that modify the inventory. It scans each digest with Trivy and publishes:
+The `image-security` workflow runs every Monday, on demand, and for every pull request that changes one of its monitored image-security paths. It scans each digest with Trivy and publishes:
 
 - the complete vulnerability report in Trivy JSON format;
 - a CycloneDX JSON SBOM for each image.
