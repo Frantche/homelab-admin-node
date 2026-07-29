@@ -27,6 +27,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Validate inventory, policy, and exception expiry
         run: python3 ci/test-image-security-policy.py
+      - name: Verify the scanner evaluates every image before failing
+        run: ./ci/test-scan-container-images.sh
 
   scan:
     runs-on: ubuntu-24.04
