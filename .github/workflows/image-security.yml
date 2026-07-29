@@ -1,0 +1,62 @@
+name: image-security
+
+on:
+  pull_request:
+    paths:
+      - "stacks/**/compose.yaml"
+      - "security/**"
+      - "scripts/image_security_policy.py"
+      - "ci/scan-container-images.sh"
+      - "ci/test-image-security-policy.py"
+      - "renovate.json"
+  schedule:
+    - cron: "30 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Validate inventory, policy, and exception expiry
+        run: python3 ci/test-image-security-policy.py
+      - name: Verify the scanner evaluates every image before failing
+        run: ./ci/test-scan-container-images.sh
+
+  scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Install from an immutable release asset. The checksum manifest hash is
+      # pinned as well, avoiding mutable third-party action tags.
+      - name: Install Trivy 0.72.0
+        run: |
+          set -euo pipefail
+          version=0.72.0
+          base_url="https://github.com/aquasecurity/trivy/releases/download/v${version}"
+          curl -fsSLO "${base_url}/trivy_${version}_checksums.txt"
+          echo "ebe9d19a774b950e240b1017a038e9b5a002ea068e02023369ff6d241c10c580  trivy_${version}_checksums.txt" | sha256sum -c -
+          curl -fsSLO "${base_url}/trivy_${version}_Linux-64bit.tar.gz"
+          grep " trivy_${version}_Linux-64bit.tar.gz$" "trivy_${version}_checksums.txt" | sha256sum -c -
+          sudo tar -xzf "trivy_${version}_Linux-64bit.tar.gz" -C /usr/local/bin trivy
+
+      - name: Scan pinned runtime images and generate CycloneDX SBOMs
+        run: ./ci/scan-container-images.sh
+
+      - name: Upload reports and SBOMs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: image-security-reports
+          path: .ci/artifacts/image-security
+          if-no-files-found: warn
+          retention-days: 30
