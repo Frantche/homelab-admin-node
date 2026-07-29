@@ -56,6 +56,12 @@ test-restic-config:
 test-offline-images:
 	@./ci/test-offline-images.sh
 
+test-image-security-policy:
+	@python3 ./ci/test-image-security-policy.py
+
+scan-container-images:
+	@./ci/scan-container-images.sh
+
 test-ci-fast:
 	@./ci/scenarios/bootstrap-user-journey.sh
 
