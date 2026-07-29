@@ -180,3 +180,58 @@ exit 1
 		t.Fatalf("status attempts = %s, want 2", content)
 	}
 }
+
+func TestDockerOutputRedactsUnsealKeyFromCommandAndOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	binDir := t.TempDir()
+	fakeDocker := filepath.Join(binDir, "docker")
+	if err := os.WriteFile(fakeDocker, []byte("#!/usr/bin/env bash\necho \"failed with $*\" >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	const sentinel = "unseal-sentinel-never-log"
+	_, err := dockerOutput(context.Background(), "openbao", "bao", "operator", "unseal", sentinel)
+	if err == nil {
+		t.Fatal("dockerOutput succeeded, want failure")
+	}
+	if strings.Contains(err.Error(), sentinel) {
+		t.Fatalf("error leaked unseal key: %s", err)
+	}
+	if !strings.Contains(err.Error(), "bao operator unseal "+redactedValue) {
+		t.Fatalf("error lost non-sensitive command context: %s", err)
+	}
+}
+
+func TestDockerOutputEnvPassesTokenWithoutPuttingItInDockerArguments(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	binDir := t.TempDir()
+	fakeDocker := filepath.Join(binDir, "docker")
+	if err := os.WriteFile(fakeDocker, []byte(`#!/usr/bin/env bash
+if [[ "${VAULT_TOKEN:-}" != "token-sentinel-never-log" ]]; then
+  echo "token was not passed through the process environment" >&2
+  exit 2
+fi
+echo "args=$* token=$VAULT_TOKEN" >&2
+exit 1
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	const sentinel = "token-sentinel-never-log"
+	_, err := dockerOutputEnv(context.Background(), "openbao", []string{"VAULT_TOKEN=" + sentinel}, "bao", "secrets", "list")
+	if err == nil {
+		t.Fatal("dockerOutputEnv succeeded, want failure")
+	}
+	if strings.Contains(err.Error(), sentinel) {
+		t.Fatalf("error leaked token: %s", err)
+	}
+	if !strings.Contains(err.Error(), "-e VAULT_TOKEN openbao bao secrets list") {
+		t.Fatalf("docker invocation did not use pass-through environment syntax: %s", err)
+	}
+}

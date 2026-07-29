@@ -7,9 +7,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
+
+const redactedValue = "[REDACTED]"
+
+var secretAssignment = regexp.MustCompile(`(?i)\b([A-Z0-9_]*(?:TOKEN|PASSWORD|SECRET|KEY)[A-Z0-9_]*)=([^\s]+)`)
 
 type Options struct {
 	AgeKey        string
@@ -315,16 +320,17 @@ func dockerStatusOutput(ctx context.Context, container string) ([]byte, error) {
 	if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 2 && json.Valid(out) {
 		return out, nil
 	}
-	return nil, fmt.Errorf("docker %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	return nil, commandError("docker", args, err, out, nil, false)
 }
 
 func dockerOutputEnv(ctx context.Context, container string, env []string, args ...string) ([]byte, error) {
 	base := []string{"exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem"}
 	for _, item := range env {
-		base = append(base, "-e", item)
+		name, _, _ := strings.Cut(item, "=")
+		base = append(base, "-e", name)
 	}
 	base = append(base, container)
-	return commandOutput(ctx, "", "docker", append(base, args...)...)
+	return commandEnvOutput(ctx, env, "docker", append(base, args...)...)
 }
 
 func commandOutput(ctx context.Context, dir string, name string, args ...string) ([]byte, error) {
@@ -332,7 +338,7 @@ func commandOutput(ctx context.Context, dir string, name string, args ...string)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		return nil, commandError(name, args, err, out, nil, commandHasSensitiveOutput(args))
 	}
 	return out, nil
 }
@@ -342,7 +348,7 @@ func commandEnvOutput(ctx context.Context, env []string, name string, args ...st
 	cmd.Env = append(os.Environ(), env...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		return nil, commandError(name, args, err, out, secretEnvValues(env), commandHasSensitiveOutput(args))
 	}
 	return out, nil
 }
@@ -352,7 +358,75 @@ func commandInputOutput(ctx context.Context, input []byte, name string, args ...
 	cmd.Stdin = strings.NewReader(string(input))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		// Commands receiving secret material on stdin must not be allowed to echo
+		// that material back into an error.
+		return nil, commandError(name, args, err, out, nil, len(input) > 0)
 	}
 	return out, nil
+}
+
+func commandError(name string, args []string, err error, out []byte, secrets []string, suppressOutput bool) error {
+	safeArgs, argSecrets := redactCommandArgs(args)
+	secrets = append(secrets, argSecrets...)
+	safeOutput := strings.TrimSpace(string(out))
+	if suppressOutput && safeOutput != "" {
+		safeOutput = redactedValue
+	} else {
+		for _, secret := range secrets {
+			if secret != "" {
+				safeOutput = strings.ReplaceAll(safeOutput, secret, redactedValue)
+			}
+		}
+		safeOutput = secretAssignment.ReplaceAllString(safeOutput, "${1}="+redactedValue)
+	}
+	if safeOutput == "" {
+		return fmt.Errorf("%s %s: %w", name, strings.Join(safeArgs, " "), err)
+	}
+	return fmt.Errorf("%s %s: %w: %s", name, strings.Join(safeArgs, " "), err, safeOutput)
+}
+
+func redactCommandArgs(args []string) ([]string, []string) {
+	safe := append([]string(nil), args...)
+	var secrets []string
+	for i, arg := range safe {
+		if i >= 2 && safe[i-2] == "operator" && safe[i-1] == "unseal" {
+			secrets = append(secrets, arg)
+			safe[i] = redactedValue
+			continue
+		}
+		name, value, found := strings.Cut(arg, "=")
+		if found && sensitiveName(name) {
+			secrets = append(secrets, value)
+			safe[i] = name + "=" + redactedValue
+		}
+	}
+	return safe, secrets
+}
+
+func secretEnvValues(env []string) []string {
+	var secrets []string
+	for _, item := range env {
+		name, value, found := strings.Cut(item, "=")
+		if found && sensitiveName(name) {
+			secrets = append(secrets, value)
+		}
+	}
+	return secrets
+}
+
+func sensitiveName(name string) bool {
+	upper := strings.ToUpper(name)
+	return strings.Contains(upper, "TOKEN") ||
+		strings.Contains(upper, "PASSWORD") ||
+		strings.Contains(upper, "SECRET") ||
+		strings.HasSuffix(upper, "_KEY")
+}
+
+func commandHasSensitiveOutput(args []string) bool {
+	for i := range args {
+		if i >= 2 && args[i-2] == "bao" && args[i-1] == "operator" && args[i] == "init" {
+			return true
+		}
+	}
+	return false
 }
