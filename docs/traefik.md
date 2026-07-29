@@ -11,6 +11,25 @@ TLS:
 - Otherwise, the Traefik role creates a local root CA and a server certificate signed by that CA.
 - Import `/srv/admin/certs/root-ca.pem` in your browser to trust the local fallback certificate. The same CA is also available at `/srv/admin/certs/ca.pem` for services.
 
+HTTP protections:
+
+- All public routers add HSTS, MIME sniffing protection, a restrictive referrer policy, a permissions policy, and `SAMEORIGIN` framing.
+- OpenBao and Keycloak use a shared request-rate and concurrency limit. The dashboard combines these protections with basic authentication.
+- Harbor and Gitea use concurrency protection only. Request-rate and body buffering limits are deliberately omitted so registry pushes and Git LFS transfers remain supported.
+- External services receive the security headers without an application-specific traffic limit.
+
+The defaults can be adjusted under `traefik.security`. The same policy applies over LAN and public ingress: administrative access remains protected by each application's strong authentication (OIDC where configured), and the Traefik dashboard additionally requires basic authentication. The runtime contract test verifies both anonymous refusal and authenticated access.
+
+Forwarded client addresses are accepted only from explicitly trusted reverse proxies:
+
+```yaml
+traefik:
+  forwarded_headers_trusted_ips:
+    - "192.0.2.0/24"
+```
+
+Leave this list empty for direct client access. When using a CDN or another proxy, configure only its current egress CIDRs; do not trust forwarded headers from every source.
+
 External services:
 
 ```yaml
