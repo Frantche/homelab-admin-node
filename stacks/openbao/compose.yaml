@@ -21,6 +21,7 @@ services:
     volumes:
       - ./openbao.hcl:/etc/openbao/openbao.hcl:ro
       - /srv/admin/data/openbao:/openbao/file
+      - "{{ admin_node_root }}/backups/openbao-scratch:/openbao/snapshot"
       - /srv/admin/certs/openbao-internal-ca.pem:/openbao/tls/ca.pem:ro
       - /srv/admin/certs/openbao-internal-cert.pem:/openbao/tls/tls.crt:ro
       - /srv/admin/certs/openbao-internal-key.pem:/openbao/tls/tls.key:ro

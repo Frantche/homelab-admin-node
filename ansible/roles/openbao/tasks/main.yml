@@ -5,6 +5,14 @@
     state: directory
     mode: "0755"
 
+- name: Ensure OpenBao snapshot scratch directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/backups/openbao-scratch"
+    state: directory
+    owner: "100"
+    group: "1000"
+    mode: "0700"
+
 - name: Copy openbao stack files
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../stacks/openbao/openbao.hcl"

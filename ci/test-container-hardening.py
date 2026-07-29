@@ -92,6 +92,20 @@ if unknown_user_exceptions:
 if unknown_write_exceptions:
     errors.append(f"unknown write exceptions: {sorted(unknown_write_exceptions)}")
 
+openbao_compose = (ROOT / "stacks/openbao/compose.yaml").read_text(encoding="utf-8")
+if '"{{ admin_node_root }}/backups/openbao-scratch:/openbao/snapshot"' not in openbao_compose:
+    errors.append("stacks/openbao/compose.yaml: missing dedicated snapshot scratch bind mount")
+
+openbao_tasks = (ROOT / "ansible/roles/openbao/tasks/main.yml").read_text(encoding="utf-8")
+for expected in (
+    'path: "{{ admin_node_root }}/backups/openbao-scratch"',
+    'owner: "100"',
+    'group: "1000"',
+    'mode: "0700"',
+):
+    if expected not in openbao_tasks:
+        errors.append(f"ansible/roles/openbao/tasks/main.yml: snapshot scratch missing {expected}")
+
 if errors:
     print("\n".join(errors), file=sys.stderr)
     raise SystemExit(1)

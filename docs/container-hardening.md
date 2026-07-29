@@ -27,7 +27,7 @@ persistantes attendues.
 | `harbor-nginx` | entrypoint Harbor | `CHOWN`, `SETGID`, `SETUID`, `NET_BIND_SERVICE` | rootfs RW fournisseur |
 | `otel-mock-backend` | root, CI uniquement | aucune | rootfs RO, état mock monté et `/tmp` tmpfs |
 | `otel-collector` | `10001:10001` | aucune | rootfs RO et `/tmp` tmpfs |
-| `openbao` | `100:1000` (`openbao`) | aucune | rootfs RO, `/tmp` en tmpfs détenu par OpenBao pour les snapshots, stockage Raft/fichier et certificats internes en lecture seule |
+| `openbao` | `100:1000` (`openbao`) | aucune | rootfs RO, `/tmp` en tmpfs et scratch snapshot dédié en `0700`, stockage Raft/fichier et certificats internes en lecture seule |
 | `traefik` | entrypoint fournisseur | `NET_BIND_SERVICE` | rootfs RO, ACME persistant et `/tmp` tmpfs |
 
 Les exceptions sont contrôlées à deux niveaux :
@@ -35,3 +35,10 @@ Les exceptions sont contrôlées à deux niveaux :
 - `ci/test-container-hardening.py` vérifie toutes les définitions Compose ;
 - `scripts/validate-container-hardening.sh` inspecte la configuration Docker
   effective pendant le scénario bootstrap.
+
+Les snapshots OpenBao transitent par
+`/srv/admin/backups/openbao-scratch`, monté uniquement dans le conteneur sous
+`/openbao/snapshot`. Le fichier est créé avec un umask restrictif, copié dans
+l'artefact de sauvegarde en `0600`, puis supprimé après chaque sauvegarde ou
+restauration. Ce scratch n'est pas une donnée applicative et n'est pas inclus
+séparément dans Restic.

@@ -229,14 +229,15 @@ func TestRestoreOpenBaoUnsealsBeforeSnapshotRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	restoreMarker := filepath.Join(root, "openbao-snapshot-restored")
-	chownMarker := filepath.Join(root, "openbao-snapshot-chowned")
+	scratchDir := filepath.Join(root, "backups/openbao-scratch")
+	if err := os.MkdirAll(scratchDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	scratchPath := filepath.Join(scratchDir, "openbao.snap")
 	fakeDocker := filepath.Join(binDir, "docker")
 	fakeDockerScript := `#!/usr/bin/env bash
 set -euo pipefail
 if [[ "${1:-}" == "compose" ]]; then
-  exit 0
-fi
-if [[ "${1:-}" == "cp" ]]; then
   exit 0
 fi
 if [[ "${1:-}" == "exec" && "$*" == *"bao status"* ]]; then
@@ -248,11 +249,8 @@ if [[ "${1:-}" == "exec" && "$*" == *"bao status"* ]]; then
   echo "Sealed false"
   exit 0
 fi
-if [[ "${1:-}" == "exec" && "$*" == *"chown openbao:openbao /tmp/openbao.snap"* ]]; then
-  touch "` + chownMarker + `"
-  exit 0
-fi
-if [[ "${1:-}" == "exec" && "$*" == *"snapshot restore"* ]]; then
+if [[ "${1:-}" == "exec" && "$*" == *"snapshot restore -force /openbao/snapshot/openbao.snap"* ]]; then
+  [[ "$(cat "$OPENBAO_SCRATCH_TEST_PATH")" == "snapshot" ]]
   touch "` + restoreMarker + `"
   exit 0
 fi
@@ -264,6 +262,7 @@ exit 1
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("OPENBAO_TOKEN", "token")
+	t.Setenv("OPENBAO_SCRATCH_TEST_PATH", scratchPath)
 
 	repoRoot := filepath.Join(root, "repo")
 	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
@@ -274,15 +273,15 @@ exit 1
 		t.Fatal(err)
 	}
 
-	err := restoreOpenBao(context.Background(), config.Config{RepoRoot: repoRoot}, filepath.Join(root, "compose.yaml"), snapPath)
+	err := restoreOpenBao(context.Background(), config.Config{AdminRoot: root, RepoRoot: repoRoot}, filepath.Join(root, "compose.yaml"), snapPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(chownMarker); err != nil {
-		t.Fatal("openbao snapshot ownership was not fixed")
-	}
 	if _, err := os.Stat(restoreMarker); err != nil {
 		t.Fatal("openbao snapshot restore was not called")
+	}
+	if _, err := os.Stat(scratchPath); !os.IsNotExist(err) {
+		t.Fatalf("openbao scratch was not removed: %v", err)
 	}
 }
 
@@ -296,13 +295,13 @@ func TestRestoreOpenBaoReadsTokenFromSecretFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	restoreMarker := filepath.Join(root, "openbao-snapshot-restored")
+	if err := os.MkdirAll(filepath.Join(root, "backups/openbao-scratch"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	fakeDocker := filepath.Join(binDir, "docker")
 	fakeDockerScript := `#!/usr/bin/env bash
 set -euo pipefail
 if [[ "${1:-}" == "compose" ]]; then
-  exit 0
-fi
-if [[ "${1:-}" == "cp" ]]; then
   exit 0
 fi
 if [[ "${1:-}" == "exec" && "$*" == *"bao status"* ]]; then
@@ -314,10 +313,7 @@ if [[ "${1:-}" == "exec" && "$*" == *"bao status"* ]]; then
   echo "Sealed false"
   exit 0
 fi
-if [[ "${1:-}" == "exec" && "$*" == *"chown openbao:openbao /tmp/openbao.snap"* ]]; then
-  exit 0
-fi
-if [[ "${1:-}" == "exec" && "${VAULT_TOKEN:-}" == "file-token" && "$*" == *"snapshot restore"* ]]; then
+if [[ "${1:-}" == "exec" && "${VAULT_TOKEN:-}" == "file-token" && "$*" == *"snapshot restore -force /openbao/snapshot/openbao.snap"* ]]; then
   touch "` + restoreMarker + `"
   exit 0
 fi
@@ -342,7 +338,7 @@ exit 1
 		t.Fatal(err)
 	}
 
-	err := restoreOpenBao(context.Background(), config.Config{RepoRoot: repoRoot}, filepath.Join(root, "compose.yaml"), snapPath)
+	err := restoreOpenBao(context.Background(), config.Config{AdminRoot: root, RepoRoot: repoRoot}, filepath.Join(root, "compose.yaml"), snapPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,10 +358,13 @@ func TestRestoreOpenBaoBootstrapsEmptyRaftBeforeSnapshotRestore(t *testing.T) {
 	}
 	initMarker := filepath.Join(root, "openbao-initialized")
 	restoreMarker := filepath.Join(root, "openbao-snapshot-restored")
+	if err := os.MkdirAll(filepath.Join(root, "backups/openbao-scratch"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	fakeDocker := filepath.Join(binDir, "docker")
 	fakeDockerScript := `#!/usr/bin/env bash
 set -euo pipefail
-if [[ "${1:-}" == "compose" || "${1:-}" == "cp" ]]; then
+if [[ "${1:-}" == "compose" ]]; then
   exit 0
 fi
 if [[ "${1:-}" == "exec" && "$*" == *"bao status -format=json"* ]]; then
@@ -384,10 +383,7 @@ fi
 if [[ "${1:-}" == "exec" && "$*" == *"operator unseal temporary-key"* ]]; then
   exit 0
 fi
-if [[ "${1:-}" == "exec" && "$*" == *"chown openbao:openbao /tmp/openbao.snap"* ]]; then
-  exit 0
-fi
-if [[ "${1:-}" == "exec" && "${VAULT_TOKEN:-}" == "temporary-token" && "$*" == *"snapshot restore"* ]]; then
+if [[ "${1:-}" == "exec" && "${VAULT_TOKEN:-}" == "temporary-token" && "$*" == *"snapshot restore -force /openbao/snapshot/openbao.snap"* ]]; then
   touch "` + restoreMarker + `"
   exit 0
 fi
@@ -427,6 +423,22 @@ func TestFixOpenBaoDataPermissionsSetsRootMode(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o750 {
 		t.Fatalf("mode=%#o, want 0750", info.Mode().Perm())
+	}
+}
+
+func TestCopyOpenBaoSnapshotToScratchRejectsEmptySnapshot(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "empty.snap")
+	if err := os.WriteFile(source, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	targetDir := filepath.Join(root, "backups/openbao-scratch")
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err := copyOpenBaoSnapshotToScratch(source, filepath.Join(targetDir, "openbao.snap"))
+	if err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("error = %v, want empty snapshot rejection", err)
 	}
 }
 

@@ -26,6 +26,8 @@ type RunOptions struct {
 	Now           func() time.Time
 }
 
+const openBaoSnapshotContainerPath = "/openbao/snapshot/openbao.snap"
+
 func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) {
 	currentMode, err := mode.Read(cfg.ModeFile)
 	if err != nil || currentMode != "normal" {
@@ -121,11 +123,32 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	}
 
 	if token := openBaoToken(cfg); stackscope.Contains(activeStacks, "openbao") && token != "" {
-		if err := runWithEnv(ctx, []string{"VAULT_TOKEN=" + token}, "docker", "exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem", "-e", "VAULT_TOKEN", "openbao", "bao", "operator", "raft", "snapshot", "save", "/tmp/openbao.snap"); err != nil {
+		scratchPath, err := openBaoSnapshotScratchPath(cfg.AdminRoot)
+		if err != nil {
+			return Info{}, err
+		}
+		if err := os.Remove(scratchPath); err != nil && !os.IsNotExist(err) {
+			return Info{}, fmt.Errorf("remove stale openbao snapshot scratch: %w", err)
+		}
+		defer os.Remove(scratchPath)
+		if err := runWithEnv(ctx, []string{"VAULT_TOKEN=" + token}, "docker", "exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem", "-e", "VAULT_TOKEN", "openbao", "sh", "-c", "umask 077; exec bao operator raft snapshot save "+openBaoSnapshotContainerPath); err != nil {
 			return Info{}, fmt.Errorf("openbao snapshot save: %w", err)
 		}
-		if err := run(ctx, "docker", "cp", "openbao:/tmp/openbao.snap", filepath.Join(partial, "openbao.snap")); err != nil {
-			return Info{}, fmt.Errorf("openbao snapshot copy: %w", err)
+		info, err := os.Stat(scratchPath)
+		if err != nil {
+			return Info{}, fmt.Errorf("inspect openbao snapshot scratch: %w", err)
+		}
+		if info.Size() == 0 {
+			return Info{}, fmt.Errorf("openbao snapshot scratch is empty")
+		}
+		if err := os.Chmod(scratchPath, 0o600); err != nil {
+			return Info{}, fmt.Errorf("restrict openbao snapshot scratch permissions: %w", err)
+		}
+		if err := copyFile(scratchPath, filepath.Join(partial, "openbao.snap"), 0o600); err != nil {
+			return Info{}, fmt.Errorf("copy openbao snapshot scratch: %w", err)
+		}
+		if err := os.Remove(scratchPath); err != nil {
+			return Info{}, fmt.Errorf("remove openbao snapshot scratch: %w", err)
 		}
 	}
 
@@ -330,6 +353,13 @@ func runToFile(ctx context.Context, path string, name string, args ...string) er
 		return fmt.Errorf("%s failed: %w: %s", name, err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
+}
+
+func openBaoSnapshotScratchPath(adminRoot string) (string, error) {
+	if strings.TrimSpace(adminRoot) == "" {
+		return "", fmt.Errorf("openbao snapshot scratch requires admin root")
+	}
+	return filepath.Join(adminRoot, "backups/openbao-scratch/openbao.snap"), nil
 }
 
 func dumpPostgres(ctx context.Context, target string, filename string, container string, user string, db string) error {

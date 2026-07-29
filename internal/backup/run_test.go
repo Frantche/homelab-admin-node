@@ -55,10 +55,7 @@ if [[ "${1:-} ${2:-} ${3:-} ${4:-}" == "exec harbor-db pg_dump -Fc" ]]; then
   exit 0
 fi
 if [[ "${1:-}" == "exec" && "$*" == *"operator raft snapshot save"* ]]; then
-  exit 0
-fi
-if [[ "${1:-}" == "cp" ]]; then
-  echo "openbao-snap" > "$3"
+  printf 'openbao-snap' > "$OPENBAO_SCRATCH_TEST_PATH"
   exit 0
 fi
 if [[ "${1:-}" == "save" ]]; then
@@ -85,11 +82,13 @@ exit 1
 		t.Fatal(err)
 	}
 	adminRoot := filepath.Join(root, "admin")
-	for _, dir := range []string{"stacks", "env", "data/gitea"} {
+	for _, dir := range []string{"stacks", "env", "data/gitea", "backups/openbao-scratch"} {
 		if err := os.MkdirAll(filepath.Join(adminRoot, dir), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
+	scratchPath := filepath.Join(adminRoot, "backups/openbao-scratch/openbao.snap")
+	t.Setenv("OPENBAO_SCRATCH_TEST_PATH", scratchPath)
 	if err := os.WriteFile(filepath.Join(adminRoot, "stacks/compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -192,6 +191,23 @@ RESTIC_DEFAULT_FORGET_ARGS="--keep-last 2 --prune"
 		if !fileExists(filepath.Join(info.Path, name)) && !dirExists(filepath.Join(info.Path, name)) {
 			t.Fatalf("expected %s in backup", name)
 		}
+	}
+	snapshot, err := os.ReadFile(filepath.Join(info.Path, "openbao.snap"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(snapshot) != "openbao-snap" {
+		t.Fatalf("openbao snapshot = %q", snapshot)
+	}
+	snapshotInfo, err := os.Stat(filepath.Join(info.Path, "openbao.snap"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshotInfo.Mode().Perm() != 0o600 {
+		t.Fatalf("openbao snapshot mode = %#o, want 0600", snapshotInfo.Mode().Perm())
+	}
+	if _, err := os.Stat(scratchPath); !os.IsNotExist(err) {
+		t.Fatalf("openbao scratch was not removed: %v", err)
 	}
 	resticCalls, err := os.ReadFile(resticLog)
 	if err != nil {
