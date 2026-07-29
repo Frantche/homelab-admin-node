@@ -47,6 +47,9 @@ test-oidc-contracts:
 test-traefik-external-services:
 	@./ci/test-traefik-external-services.sh
 
+test-traefik-security:
+	@./ci/test-traefik-security-runtime.sh
+
 test-docker-api-isolation:
 	@./ci/test-docker-api-isolation.sh
 
