@@ -73,6 +73,7 @@ jobs:
           ./ci/test-secret-rotation.sh
           ./ci/test-docker-api-isolation.sh
           ./ci/test-openbao-internal-tls.sh
+          python3 ./ci/test-container-hardening.py
           shellcheck -e SC1091 scripts/*.sh ci/*.sh ci/lib/*.sh ci/scenarios/*.sh
           actionlint -shellcheck=
           ansible-lint ansible/site.yml

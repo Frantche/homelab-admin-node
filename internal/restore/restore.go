@@ -34,6 +34,8 @@ type Options struct {
 	SystemdTimers         []string
 }
 
+const openBaoSnapshotContainerPath = "/openbao/snapshot/openbao.snap"
+
 type offlineImagesContextKey struct{}
 
 func Run(ctx context.Context, cfg config.Config, opts Options) error {
@@ -878,6 +880,14 @@ func restoreOpenBao(ctx context.Context, cfg config.Config, compose string, snap
 	if err := fixOpenBaoDataPermissions(cfg.AdminRoot); err != nil {
 		return err
 	}
+	scratchPath, err := openBaoSnapshotScratchPath(cfg.AdminRoot)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(scratchPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove stale openbao snapshot scratch: %w", err)
+	}
+	defer os.Remove(scratchPath)
 	if err := dockerCompose(ctx, stackCommand{Compose: compose}, "up", "-d"); err != nil {
 		return err
 	}
@@ -904,16 +914,58 @@ func restoreOpenBao(ctx context.Context, cfg config.Config, compose string, snap
 			return err
 		}
 	}
-	if err := run(ctx, nil, "docker", "cp", snapPath, "openbao:/tmp/openbao.snap"); err != nil {
+	if err := copyOpenBaoSnapshotToScratch(snapPath, scratchPath); err != nil {
+		return fmt.Errorf("prepare openbao snapshot scratch: %w", err)
+	}
+	if err := runWithEnv(ctx, nil, []string{"VAULT_TOKEN=" + restoreToken}, "docker", "exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem", "-e", "VAULT_TOKEN", "openbao", "bao", "operator", "raft", "snapshot", "restore", "-force", openBaoSnapshotContainerPath); err != nil {
 		return err
 	}
-	if err := run(ctx, nil, "docker", "exec", "--user", "root", "openbao", "chown", "openbao:openbao", "/tmp/openbao.snap"); err != nil {
-		return err
-	}
-	if err := runWithEnv(ctx, nil, []string{"VAULT_TOKEN=" + restoreToken}, "docker", "exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem", "-e", "VAULT_TOKEN", "openbao", "bao", "operator", "raft", "snapshot", "restore", "-force", "/tmp/openbao.snap"); err != nil {
-		return err
+	if err := os.Remove(scratchPath); err != nil {
+		return fmt.Errorf("remove openbao snapshot scratch: %w", err)
 	}
 	_ = dockerCompose(ctx, stackCommand{Compose: compose}, "down")
+	return nil
+}
+
+func openBaoSnapshotScratchPath(adminRoot string) (string, error) {
+	if strings.TrimSpace(adminRoot) == "" {
+		return "", fmt.Errorf("openbao snapshot scratch requires admin root")
+	}
+	return filepath.Join(adminRoot, "backups/openbao-scratch/openbao.snap"), nil
+}
+
+func copyOpenBaoSnapshotToScratch(source, target string) error {
+	input, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	output, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(output, input); err != nil {
+		_ = output.Close()
+		return err
+	}
+	if err := output.Close(); err != nil {
+		return err
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		return err
+	}
+	if info.Size() == 0 {
+		return fmt.Errorf("openbao snapshot scratch is empty")
+	}
+	if err := os.Chmod(target, 0o600); err != nil {
+		return err
+	}
+	if os.Geteuid() == 0 {
+		if err := os.Chown(target, 100, 1000); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

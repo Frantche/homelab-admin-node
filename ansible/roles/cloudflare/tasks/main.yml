@@ -85,6 +85,15 @@
 - name: Start cloudflared mock container (CI mode)
   ansible.builtin.command: >-
     docker run -d --name cloudflared --network admin-edge --restart no
+    --user 65532:65532
+    --read-only
+    --tmpfs /tmp:size=32m,mode=0700
+    --cap-drop ALL
+    --security-opt no-new-privileges:true
+    --pids-limit 256
+    --memory 256m
+    --cpus 1.0
+    --health-cmd 'kill -0 1'
     {% if (hardening.apparmor.enabled | default(true) | bool) and (admin_apparmor_runtime_active | default(false) | bool) and ((hardening.apparmor.profiles | default({})).cloudflared | default(true) | bool) %}
     --security-opt apparmor=admin-node-cloudflared
     {% endif %}
