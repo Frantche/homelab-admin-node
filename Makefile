@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: go-coverage
+.PHONY: go-coverage validate-compose validate-systemd
 
 build-admin-node:
 	@./scripts/build-admin-node.sh
@@ -81,6 +81,12 @@ test-ci-full:
 	 MAIN_REPO_URL="$${MAIN_REPO_URL:-https://github.com/Frantche/homelab-admin-node.git}" \
 	 CANDIDATE_REPO_URL="$${CANDIDATE_REPO_URL:-https://github.com/Frantche/homelab-admin-node.git}" \
 	 bash -c 'set -e; for action in create-source deploy-main reboot-hardening backup-main destroy-source create-target restore-main upgrade-candidate rotate-secrets backup-candidate destroy-target; do ./ci/scenarios/main-to-candidate-disaster-recovery.sh "$$action"; done'
+
+validate-compose:
+	@./ci/validate-compose-configs.sh
+
+validate-systemd:
+	@./ci/validate-systemd-units.sh
 
 render:
 	@echo "Render is managed by Ansible templates/tasks"

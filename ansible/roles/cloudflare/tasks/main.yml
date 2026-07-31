@@ -29,7 +29,7 @@
 
 - name: Render cloudflared compose
   ansible.builtin.template:
-    src: "{{ playbook_dir }}/../stacks/cloudflared/compose.yaml"
+    src: "{{ playbook_dir }}/../stacks/cloudflared/compose.yaml.j2"
     dest: "{{ admin_node_root }}/stacks/cloudflared/compose.yaml"
     owner: root
     group: root

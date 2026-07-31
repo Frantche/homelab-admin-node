@@ -52,7 +52,7 @@ When adding or renaming service domains, verify that the local certificate conta
 
 ```bash
 docker ps
-docker compose -f /opt/homelab-admin-node/stacks/traefik/compose.yaml ps
+docker compose -f /srv/admin/stacks/traefik/compose.yaml ps
 sudo /opt/homelab-admin-node/bin/admin-node validate all
 ```
 

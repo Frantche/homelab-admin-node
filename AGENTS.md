@@ -13,7 +13,7 @@ L'objectif d'un agent de developpement est de faire des changements petits, veri
 - `secrets/*.sops.yaml.example` et `ansible/group_vars/secrets.sops.yaml.example`: exemples uniquement, sans secrets reels.
 - `cmd/admin-node` et `internal/`: CLI Go d'exploitation, point d'entree runtime pour converge, backup, restore, validation et OpenBao.
 - `ci/scenarios/bootstrap-user-journey.sh` et `ci/scenarios/main-to-candidate-disaster-recovery.sh`: parcours d'integration utilisateur et reprise distante.
-- `stacks/*/compose.yaml`: definition des services Docker Compose.
+- `stacks/*/compose.yaml.j2` (et les rares `compose.yaml` statiques) : sources des services Docker Compose, rendues sous `/srv/admin/stacks/*/compose.yaml`.
 - `systemd/`: unites et timers deployes sur la VM.
 
 ## Invariants a preserver

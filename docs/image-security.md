@@ -1,6 +1,6 @@
 # Container image security
 
-`security/container-images.txt` is the exhaustive inventory of runtime stack images and production utility images. Every entry is pinned by tag and SHA-256 digest. The inventory contract checks that every image declared under `stacks/*/compose.yaml` remains listed.
+`security/container-images.txt` is the exhaustive inventory of runtime stack images and production utility images. Every entry is pinned by tag and SHA-256 digest. The inventory contract checks that every image declared under `stacks/*/compose.yaml` or `stacks/*/compose.yaml.j2` remains listed.
 
 The `image-security` workflow runs every Monday, on demand, and for every pull request that changes one of its monitored image-security paths. It scans each digest with Trivy and publishes:
 

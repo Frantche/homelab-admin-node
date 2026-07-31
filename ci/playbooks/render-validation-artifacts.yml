@@ -1,0 +1,89 @@
+---
+- name: Render configuration artifacts for static validation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    admin_node_root: /srv/admin
+    admin_repo_root: /opt/homelab-admin-node
+    admin_apparmor_runtime_active: false
+    admin_converge_timer_on_boot_sec: 5m
+    admin_converge_timer_on_unit_active_sec: 30m
+    ci_mode: true
+    traefik_local_ca_enabled: true
+    acme_email: admin@example.com
+    TRAEFIK_DASHBOARD_BASIC_AUTH: "admin:validation"
+    service_domains:
+      keycloak: auth.example.com
+      openbao: bao.example.com
+      harbor: registry.example.com
+      gitea: git.example.com
+      traefik: traefik.example.com
+    cloudflare:
+      dns_api_token: ""
+    cloudflare_local_ingress_enabled: false
+    hardening:
+      apparmor:
+        enabled: true
+        profiles: {}
+    observability:
+      enabled: true
+      mock_backend_enabled: true
+      metrics_endpoint: http://otel-mock:4318/v1/metrics
+      logs_endpoint: http://otel-mock:4318/v1/logs
+      headers: {}
+    traefik:
+      dashboard_enabled: false
+      local_tls_enabled: true
+      forwarded_headers_trusted_ips: []
+      security: {}
+    traefik_external_services: []
+    backup:
+      gitea_process:
+        on_calendar: "*-*-* 03:30:00"
+    compose_templates:
+      - cloudflared
+      - gitea
+      - harbor
+      - observability
+      - openbao
+      - traefik
+  tasks:
+    - name: Create validation output directories
+      ansible.builtin.file:
+        path: "{{ validation_output }}/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ compose_templates + ['keycloak', 'systemd'] }}"
+
+    - name: Render Compose templates
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../../stacks/{{ item }}/compose.yaml.j2"
+        dest: "{{ validation_output }}/{{ item }}/compose.yaml"
+        mode: "0644"
+      loop: "{{ compose_templates }}"
+
+    - name: Copy static Keycloak Compose configuration
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../stacks/keycloak/compose.yaml"
+        dest: "{{ validation_output }}/keycloak/compose.yaml"
+        mode: "0644"
+
+    - name: Copy static systemd units
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ validation_output }}/systemd/{{ item | basename }}"
+        mode: "0644"
+      with_fileglob:
+        - "{{ playbook_dir }}/../../systemd/*"
+
+    - name: Render systemd timer templates
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ validation_output }}/systemd/{{ item.dest }}"
+        mode: "0644"
+      loop:
+        - src: "{{ playbook_dir }}/../../ansible/roles/base/templates/admin-converge.timer.j2"
+          dest: admin-converge.timer
+        - src: "{{ playbook_dir }}/../../ansible/roles/base/templates/admin-gitea-process-backup.timer.j2"
+          dest: admin-gitea-process-backup.timer
