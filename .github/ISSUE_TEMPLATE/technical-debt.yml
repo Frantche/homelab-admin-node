@@ -1,0 +1,22 @@
+name: Technical debt
+description: Propose a maintainability or tooling improvement
+title: "maintenance: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Identify the affected files or workflow and the maintenance cost.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and lifecycle risks

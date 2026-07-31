@@ -93,9 +93,10 @@ Si une commande ne peut pas etre lancee localement faute de dependance ou de con
 ## Documentation attendue
 
 - Mettre a jour `README.md` pour les changements de parcours utilisateur ou de commande.
-- Mettre a jour `docs/*.md` pour les changements operationnels, secrets, restore, DNS, tunnel, OIDC ou CI.
+- Mettre a jour `site/content/en/docs/`, source canonique de la documentation utilisateur, pour les changements operationnels, secrets, restore, DNS, tunnel, OIDC ou CI.
+- Reserver `docs/*.md` aux notes de conception historiques ou techniques qui ne sont pas publiees.
 - Mettre a jour les exemples dans `examples/admin-config/` et `secrets/*.example` quand une variable utilisateur change.
-- Garder la documentation en francais, concise et executable.
+- Garder la documentation publiee en anglais et les notes techniques en francais, concises et executables.
 
 ## A eviter
 

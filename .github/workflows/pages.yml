@@ -62,13 +62,9 @@ jobs:
         run: npm ci
 
       - name: Build
-        working-directory: site
-        run: |
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            hugo --minify --baseURL "${{ steps.pages.outputs.base_url }}/"
-          else
-            hugo --minify
-          fi
+        env:
+          HUGO_BASEURL: "${{ steps.pages.outputs.base_url }}"
+        run: make docs-check HUGO_DESTINATION="$GITHUB_WORKSPACE/site/public"
 
       - name: Upload artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
