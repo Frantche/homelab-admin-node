@@ -31,7 +31,11 @@ def inventory(path: Path = DEFAULT_INVENTORY) -> list[str]:
     errors = []
     if len(images) != len(set(images)):
         errors.append("the image inventory must contain no duplicates")
-    errors.extend(f"image is not pinned by tag and sha256 digest: {image}" for image in images if not IMAGE_WITH_DIGEST.match(image))
+    errors.extend(
+        f"image is not pinned by tag and sha256 digest: {image}"
+        for image in images
+        if not IMAGE_WITH_DIGEST.match(image)
+    )
 
     declared = set()
     compose_files = list((REPO_ROOT / "stacks").glob("*/compose.yaml"))

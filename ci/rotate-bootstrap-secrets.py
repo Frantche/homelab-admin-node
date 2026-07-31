@@ -8,7 +8,6 @@ from pathlib import Path
 
 import yaml
 
-
 ALPHABET = string.ascii_letters + string.digits
 ROTATED_PATHS = (
     ("vault_oidc_harbor_client_secret",),

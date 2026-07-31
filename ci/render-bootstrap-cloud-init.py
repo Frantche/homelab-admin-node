@@ -5,7 +5,6 @@ from pathlib import Path
 
 import yaml
 
-
 PLACEHOLDER_KEY = "ssh-ed25519 AAAA_PLACEHOLDER_REPLACE_ME admin@example"
 
 
