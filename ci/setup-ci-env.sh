@@ -36,7 +36,7 @@ done
 # --- Install required Ansible collections ---
 if [[ -f "$REPO_ROOT/ansible/requirements.yml" ]]; then
   echo "[ci-setup] Installing required Ansible collections..."
-  ansible-galaxy collection install -r "$REPO_ROOT/ansible/requirements.yml" --force 2>/dev/null || true
+  ansible-galaxy collection install -r "$REPO_ROOT/ansible/requirements.yml" --force
 fi
 
 echo "[ci-setup] CI prerequisites ready"

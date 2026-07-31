@@ -76,7 +76,7 @@ jobs:
 
       - name: Install Ansible
         run: |
-          python3 -m pip install --user ansible-core
+          python3 -m pip install --user -r ci/requirements.txt
           ~/.local/bin/ansible-galaxy collection install -r ansible/requirements.yml
 
       - name: Run OIDC contract tests
@@ -134,10 +134,14 @@ jobs:
 
       - name: Download Arch cloud image
         run: |
+          set -euo pipefail
           mkdir -p .ci/vm
-          curl -L \
+          source ci/arch-image.env
+          image_name="Arch-Linux-x86_64-cloudimg-${ARCH_IMAGE_VERSION}.qcow2"
+          curl --fail --location --retry 3 \
             -o .ci/vm/arch.qcow2 \
-            https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2
+            "https://geo.mirror.pkgbuild.com/images/v${ARCH_IMAGE_VERSION}/${image_name}"
+          echo "${ARCH_IMAGE_SHA256}  .ci/vm/arch.qcow2" | sha256sum -c -
           qemu-img resize .ci/vm/arch.qcow2 20G
 
       - name: Generate SSH key

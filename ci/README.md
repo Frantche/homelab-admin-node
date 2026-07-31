@@ -52,6 +52,10 @@ Le parcours complet exige Docker, QEMU, cloud-localds, socat et un acces Interne
 make test-ci-full
 ```
 
+La version et l'empreinte de l'image cloud Arch utilisee par les deux parcours
+sont centralisees dans `ci/arch-image.env`. Toute mise a jour doit verifier
+l'empreinte publiee par Arch Linux.
+
 Les SHA et URLs peuvent etre imposes avec `MAIN_SHA`, `CANDIDATE_SHA`,
 `MAIN_REPO_URL` et `CANDIDATE_REPO_URL`.
 
