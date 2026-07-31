@@ -43,6 +43,18 @@
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the Grafana image used by the dashboard import test.",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/grafana-dashboard-import\\.yml$/"
+      ],
+      "matchStrings": [
+        "GRAFANA_IMAGE:\\s+(?<depName>grafana/grafana):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
     }
   ],
   "ignorePaths": [

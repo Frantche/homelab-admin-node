@@ -22,6 +22,7 @@ jobs:
       GRAFANA_URL: http://127.0.0.1:3000
       GRAFANA_USER: admin
       GRAFANA_PASSWORD: admin
+      GRAFANA_IMAGE: grafana/grafana:11.6.0@sha256:b739cda4b61ba3b90707578b643a22cd851fecf4498e6c6ec2d8f9d622a5d0b2
 
     steps:
       - name: Checkout
@@ -44,7 +45,7 @@ jobs:
             -e GF_SECURITY_ADMIN_USER="${GRAFANA_USER}" \
             -e GF_SECURITY_ADMIN_PASSWORD="${GRAFANA_PASSWORD}" \
             -e GF_AUTH_ANONYMOUS_ENABLED=false \
-            grafana/grafana:11.6.0
+            "${GRAFANA_IMAGE}"
 
       - name: Import dashboards
         run: ./ci/test-grafana-dashboard-import.sh

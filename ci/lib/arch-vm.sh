@@ -2,15 +2,20 @@
 set -euo pipefail
 
 CI_ARCH_IMAGE="${CI_ARCH_IMAGE:-$PWD/.ci/cache/arch.qcow2}"
+arch_image_metadata="${BASH_SOURCE[0]%/*}/../arch-image.env"
+# shellcheck source=ci/arch-image.env
+source "$arch_image_metadata"
 CI_SSH_KEY="${CI_SSH_KEY:-$PWD/.ci/ssh/id_ed25519}"
 
 ci_vm_download_image() {
   install -d -m 0755 "$(dirname "$CI_ARCH_IMAGE")"
   if [[ ! -s "$CI_ARCH_IMAGE" ]]; then
+    image_name="Arch-Linux-x86_64-cloudimg-${ARCH_IMAGE_VERSION}.qcow2"
     curl --fail --location --retry 3 \
       --output "$CI_ARCH_IMAGE" \
-      https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2
+      "https://geo.mirror.pkgbuild.com/images/v${ARCH_IMAGE_VERSION}/${image_name}"
   fi
+  echo "${ARCH_IMAGE_SHA256}  ${CI_ARCH_IMAGE}" | sha256sum -c -
 }
 
 ci_vm_generate_ssh_key() {
