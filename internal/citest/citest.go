@@ -60,7 +60,7 @@ func CreateSentinel(cfg config.Config, path string) error {
 	return os.WriteFile(path, []byte(value), 0o644)
 }
 
-func InstallMockConfigRepo(cfg config.Config, source string, dest string) error {
+func InstallMockConfigRepo(ctx context.Context, cfg config.Config, source string, dest string) error {
 	if source == "" {
 		source = filepath.Join(cfg.RepoRoot, "ci/mock-config-repo")
 	}
@@ -93,7 +93,7 @@ func InstallMockConfigRepo(cfg config.Config, source string, dest string) error 
 		{"git", "-C", dest, "-c", "user.name=CI Admin", "-c", "user.email=ci@example.com", "commit", "-m", "Initial CI admin config"},
 	}
 	for _, command := range commands {
-		cmd := exec.CommandContext(context.Background(), command[0], command[1:]...)
+		cmd := exec.CommandContext(ctx, command[0], command[1:]...)
 		if out, err := cmd.CombinedOutput(); err != nil && !strings.Contains(string(out), "nothing to commit") {
 			return fmt.Errorf("%s failed: %w: %s", strings.Join(command, " "), err, strings.TrimSpace(string(out)))
 		}

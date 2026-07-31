@@ -1,6 +1,7 @@
 package citest
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,7 +40,7 @@ func TestInstallMockConfigRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := InstallMockConfigRepo(config.Config{}, source, dest); err != nil {
+	if err := InstallMockConfigRepo(context.Background(), config.Config{}, source, dest); err != nil {
 		t.Fatal(err)
 	}
 	if content, err := os.ReadFile(filepath.Join(dest, "hosts/inventory.ini")); err != nil || string(content) != "localhost\n" {

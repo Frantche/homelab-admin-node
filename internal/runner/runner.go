@@ -39,6 +39,9 @@ func (r ExecRunner) Run(ctx context.Context, name string, args ...string) Result
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		result.Stderr = string(exitErr.Stderr)
 		result.Code = exitErr.ExitCode()
+		if result.Stderr == "" && ctx.Err() != nil {
+			result.Stderr = ctx.Err().Error()
+		}
 		return result
 	}
 	result.Stderr = err.Error()
