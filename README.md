@@ -90,3 +90,5 @@ make test-ci-fast
 ```
 
 Some targets require local tools such as Ansible, ShellCheck, SOPS, Docker, QEMU, or Hugo.
+Contribution conventions and the validation matrix are documented in
+[`CONTRIBUTING.md`](CONTRIBUTING.md).

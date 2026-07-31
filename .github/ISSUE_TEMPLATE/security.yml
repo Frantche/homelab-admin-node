@@ -1,0 +1,20 @@
+name: Security hardening
+description: Propose a non-confidential security improvement
+title: "security: "
+labels: ["security"]
+body:
+  - type: markdown
+    attributes:
+      value: Do not disclose exploitable secrets or private infrastructure data here.
+  - type: textarea
+    id: risk
+    attributes:
+      label: Risk or missing control
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true

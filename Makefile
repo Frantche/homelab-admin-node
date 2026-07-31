@@ -100,7 +100,11 @@ docs-build: docs-deps
 
 docs-check: docs-deps
 	@if command -v hugo >/dev/null 2>&1; then \
-		cd site && hugo --minify --panicOnWarning --printPathWarnings; \
+		output="$${HUGO_DESTINATION:-$$(mktemp -d /tmp/admin-node-docs.XXXXXX)}"; \
+		if [[ -z "$${HUGO_DESTINATION:-}" ]]; then trap 'rm -rf "$$output"' EXIT; fi; \
+		args=(--minify --panicOnWarning --printPathWarnings --destination "$$output"); \
+		if [[ -n "$${HUGO_BASEURL:-}" ]]; then args+=(--baseURL "$$HUGO_BASEURL/"); fi; \
+		cd site && hugo "$${args[@]}"; \
 	else \
 		echo "hugo not installed"; \
 		exit 1; \

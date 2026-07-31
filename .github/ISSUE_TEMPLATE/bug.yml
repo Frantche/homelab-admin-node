@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a reproducible admin-node failure
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Lifecycle mode
+      options: [locked, init, normal, restore, restore_failed, CI]
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: Include the command, sanitized logs, and exit status.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: checkboxes
+    id: secrets
+    attributes:
+      label: Secret handling
+      options:
+        - label: Logs and configuration have been sanitized.
+          required: true
