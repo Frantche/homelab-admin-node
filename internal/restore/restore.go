@@ -692,8 +692,10 @@ func suspendSystemdTimers(ctx context.Context, timers []string) (func(), error) 
 		return nil, fmt.Errorf("stop restore timers: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
 		args := append([]string{"start"}, active...)
-		_ = exec.CommandContext(context.Background(), "systemctl", args...).Run()
+		_ = exec.CommandContext(cleanupCtx, "systemctl", args...).Run()
 	}, nil
 }
 

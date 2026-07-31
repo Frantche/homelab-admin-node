@@ -1,7 +1,12 @@
 SHELL := /usr/bin/env bash
 
+.PHONY: go-coverage
+
 build-admin-node:
 	@./scripts/build-admin-node.sh
+
+go-coverage:
+	@./ci/check-go-coverage.sh
 
 lint: shellcheck ansible-syntax sops-check
 

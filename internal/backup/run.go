@@ -192,7 +192,9 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 					return Info{}, fmt.Errorf("tag docker image %s for offline archive: %w", image, err)
 				}
 				defer func(tag string) {
-					_ = run(context.Background(), "docker", "image", "rm", tag)
+					cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+					defer cancel()
+					_ = run(cleanupCtx, "docker", "image", "rm", tag)
 				}(archiveTag)
 				archiveTags = append(archiveTags, archiveTag)
 				offlineImageArchives = append(offlineImageArchives, OfflineImageArchive{
@@ -537,7 +539,9 @@ func backupHarbor(ctx context.Context, cfg config.Config, target, id string) (er
 			return fmt.Errorf("enable harbor read-only mode: %w", err)
 		}
 		defer func() {
-			if resetErr := SetHarborReadOnly(context.Background(), cfg.HarborDomain, user, password, false); resetErr != nil && err == nil {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			if resetErr := SetHarborReadOnly(cleanupCtx, cfg.HarborDomain, user, password, false); resetErr != nil && err == nil {
 				err = fmt.Errorf("disable harbor read-only mode: %w", resetErr)
 			}
 		}()

@@ -8,9 +8,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -35,13 +37,16 @@ type app struct {
 }
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	a := app{
 		out:    os.Stdout,
 		errOut: os.Stderr,
 		cfg:    config.FromEnv(),
 		runner: runner.ExecRunner{},
 	}
-	os.Exit(a.run(context.Background(), os.Args[1:]))
+	os.Exit(a.run(ctx, os.Args[1:]))
 }
 
 func (a app) run(ctx context.Context, args []string) int {
@@ -127,7 +132,7 @@ func (a app) runCI(ctx context.Context, args []string) int {
 			fmt.Fprintln(a.out, "CI sentinel data created")
 		}
 	case "install-mock-config-repo":
-		err = citest.InstallMockConfigRepo(a.cfg, *mockSource, *mockDest)
+		err = citest.InstallMockConfigRepo(ctx, a.cfg, *mockSource, *mockDest)
 		if err == nil {
 			fmt.Fprintln(a.out, "CI mock config repo installed")
 		}
@@ -142,99 +147,6 @@ func (a app) runCI(ctx context.Context, args []string) int {
 	}
 	if err != nil {
 		fmt.Fprintf(a.errOut, "ci %s: %v\n", subcommand, err)
-		return 1
-	}
-	return 0
-}
-
-func (a app) runValidate(_ context.Context, args []string) int {
-	subcommand, rest := splitSubcommand(args, "all")
-	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
-	fs.SetOutput(a.errOut)
-	output := fs.String("output", "text", "output format: text or json")
-	if err := fs.Parse(rest); err != nil {
-		return 2
-	}
-
-	validator := validate.NewValidator(a.cfg, a.runner)
-	ctx := context.Background()
-	var results []validate.CheckResult
-	switch subcommand {
-	case "all":
-		results = validator.All(ctx)
-	case "apis":
-		results = validator.APIS(ctx)
-	case "harbor":
-		results = []validate.CheckResult{validator.Harbor(ctx)}
-	case "openbao":
-		results = []validate.CheckResult{validator.OpenBao(ctx)}
-	case "gitea":
-		results = []validate.CheckResult{validator.Gitea(ctx)}
-	case "dns":
-		results = []validate.CheckResult{validator.DNS(ctx)}
-	case "tunnel":
-		results = []validate.CheckResult{validator.Tunnel(ctx)}
-	case "hardening":
-		results = []validate.CheckResult{validator.Hardening(ctx)}
-	case "observability":
-		results = []validate.CheckResult{validator.Observability(ctx)}
-	default:
-		fmt.Fprintf(a.errOut, "unknown validate command: %s\n", subcommand)
-		return 2
-	}
-
-	switch *output {
-	case "text":
-		validate.WriteText(a.out, results)
-	case "json":
-		if err := validate.WriteJSON(a.out, results); err != nil {
-			fmt.Fprintf(a.errOut, "write json output: %v\n", err)
-			return 1
-		}
-	default:
-		fmt.Fprintf(a.errOut, "unknown output format: %s\n", *output)
-		return 2
-	}
-
-	if validate.HasFailure(results) {
-		return 1
-	}
-	return 0
-}
-
-func (a app) runTest(_ context.Context, args []string) int {
-	subcommand, rest := splitSubcommand(args, "")
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	fs.SetOutput(a.errOut)
-	output := fs.String("output", "text", "output format: text or json")
-	if err := fs.Parse(rest); err != nil {
-		return 2
-	}
-
-	validator := validate.NewValidator(a.cfg, a.runner)
-	ctx := context.Background()
-	var results []validate.CheckResult
-	switch subcommand {
-	case "harbor-scanner":
-		results = []validate.CheckResult{validator.HarborScanner(ctx)}
-	default:
-		fmt.Fprintf(a.errOut, "unknown test command: %s\n", subcommand)
-		return 2
-	}
-
-	switch *output {
-	case "text":
-		validate.WriteText(a.out, results)
-	case "json":
-		if err := validate.WriteJSON(a.out, results); err != nil {
-			fmt.Fprintf(a.errOut, "write json output: %v\n", err)
-			return 1
-		}
-	default:
-		fmt.Fprintf(a.errOut, "unknown output format: %s\n", *output)
-		return 2
-	}
-	if validate.HasFailure(results) {
 		return 1
 	}
 	return 0
@@ -621,7 +533,7 @@ func (a app) runBackup(ctx context.Context, args []string) int {
 
 	switch subcommand {
 	case "run":
-		info, err := backup.Run(context.Background(), a.cfg, backup.RunOptions{
+		info, err := backup.Run(ctx, a.cfg, backup.RunOptions{
 			IncludeImages: *includeImages,
 			Validate: func(ctx context.Context) error {
 				validator := validate.NewValidator(a.cfg, a.runner)
@@ -717,7 +629,7 @@ func formatDumps(item backup.Info) string {
 	return strings.Join(names, ",")
 }
 
-func (a app) runRestore(_ context.Context, args []string) int {
+func (a app) runRestore(ctx context.Context, args []string) int {
 	subcommand, rest := splitSubcommand(args, "run")
 	fs := flag.NewFlagSet("restore", flag.ContinueOnError)
 	fs.SetOutput(a.errOut)
@@ -735,13 +647,13 @@ func (a app) runRestore(_ context.Context, args []string) int {
 				return 2
 			}
 			if _, err := os.Stat(filepath.Join(a.cfg.BackupRoot, *restoreID)); os.IsNotExist(err) {
-				if err := backup.RestoreFromRestic(context.Background(), a.cfg.BackupEnvFile, *repositoryID, a.cfg.BackupRoot, *restoreID); err != nil {
+				if err := backup.RestoreFromRestic(ctx, a.cfg.BackupEnvFile, *repositoryID, a.cfg.BackupRoot, *restoreID); err != nil {
 					fmt.Fprintf(a.errOut, "restore fetch: %v\n", err)
 					return 1
 				}
 			}
 		}
-		err := restore.Run(context.Background(), a.cfg, restore.Options{
+		err := restore.Run(ctx, a.cfg, restore.Options{
 			ID:                    *restoreID,
 			Out:                   a.out,
 			LockFile:              a.cfg.OperationLock,
@@ -785,76 +697,6 @@ func (a app) runRestore(_ context.Context, args []string) int {
 		fmt.Fprintf(a.errOut, "unknown restore command: %s\n", subcommand)
 		return 2
 	}
-}
-
-func restoreValidation(ctx context.Context, run runner.Runner) []validate.CheckResult {
-	return []validate.CheckResult{
-		restoreDockerHealth(ctx, run, "OpenBao", "openbao"),
-		restoreDockerHealth(ctx, run, "Keycloak", "keycloak"),
-		restoreDockerHealth(ctx, run, "Harbor", "harbor-core"),
-		restoreDockerHealth(ctx, run, "Gitea", "gitea"),
-		restoreDockerHealth(ctx, run, "Traefik", "traefik"),
-		restoreCommandCheck(ctx, run, "OpenBao", 90*time.Second, "docker", "exec", "-e", "BAO_ADDR=https://127.0.0.1:8200", "-e", "BAO_CACERT=/openbao/tls/ca.pem", "openbao", "sh", "-c", "bao status -format=json | grep '\"sealed\": false' >/dev/null"),
-		restoreCommandCheck(ctx, run, "Keycloak", 120*time.Second, "docker", "exec", "keycloak", "bash", "-lc", "timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000; printf \"GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3; head -1 <&3 | grep -q \"200\"'"),
-		restoreCommandCheck(ctx, run, "Harbor", 120*time.Second, "docker", "exec", "harbor-core", "curl", "-fsS", "http://127.0.0.1:8080/api/v2.0/health"),
-		restoreCommandCheck(ctx, run, "Gitea", 120*time.Second, "docker", "exec", "gitea", "curl", "-fsS", "http://127.0.0.1:3000/api/v1/version"),
-		restoreCommandCheck(ctx, run, "Gitea data", 120*time.Second, "docker", "exec", "gitea-db", "psql", "-U", "gitea", "-d", "gitea", "-Atqc", `SELECT 1 FROM "user" LIMIT 1`),
-		restoreCommandCheck(ctx, run, "Traefik", 90*time.Second, "docker", "exec", "traefik", "traefik", "healthcheck", "--ping"),
-	}
-}
-
-func restoreDockerHealth(ctx context.Context, run runner.Runner, name, container string) validate.CheckResult {
-	return restoreWait(ctx, name, 120*time.Second, func(ctx context.Context) (validate.Status, string, bool) {
-		result := run.Run(ctx, "docker", "inspect", "-f", "{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}", container)
-		if result.Code != 0 {
-			return validate.StatusFail, container + " is unavailable", false
-		}
-		fields := strings.Fields(result.Stdout)
-		if len(fields) < 2 || fields[0] != "true" {
-			return validate.StatusFail, container + " is not running", false
-		}
-		if fields[1] == "healthy" || fields[1] == "none" {
-			return validate.StatusOK, container + " running " + fields[1], true
-		}
-		return validate.StatusFail, container + " health is " + fields[1], false
-	})
-}
-
-func restoreCommandCheck(ctx context.Context, run runner.Runner, name string, timeout time.Duration, command string, args ...string) validate.CheckResult {
-	return restoreWait(ctx, name, timeout, func(ctx context.Context) (validate.Status, string, bool) {
-		result := run.Run(ctx, command, args...)
-		if result.Code == 0 {
-			return validate.StatusOK, "internal endpoint reachable", true
-		}
-		message := strings.TrimSpace(result.Stderr)
-		if message == "" {
-			message = strings.TrimSpace(result.Stdout)
-		}
-		if message == "" {
-			message = "internal endpoint unavailable"
-		}
-		return validate.StatusFail, message, false
-	})
-}
-
-func restoreWait(ctx context.Context, name string, timeout time.Duration, check func(context.Context) (validate.Status, string, bool)) validate.CheckResult {
-	start := time.Now()
-	waitCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	var status validate.Status
-	var message string
-	var ok bool
-	for {
-		status, message, ok = check(waitCtx)
-		if ok {
-			break
-		}
-		if waitCtx.Err() != nil {
-			break
-		}
-		time.Sleep(3 * time.Second)
-	}
-	return validate.CheckResult{Name: name, Status: status, Message: message, Duration: time.Since(start)}
 }
 
 func splitSubcommand(args []string, fallback string) (string, []string) {
