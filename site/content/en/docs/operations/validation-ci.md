@@ -46,4 +46,7 @@ make test-ci-fast
 make test-ci-full
 ```
 
+`test-ci-full` runs both `standard` and `offline-images`. Set
+`DR_VARIANTS=standard` to run only the standard recovery path.
+
 CI can use mock Pi-hole and Cloudflare Tunnel services when real external infrastructure is not available.

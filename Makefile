@@ -1,6 +1,7 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: go-coverage validate-compose validate-systemd
+.PHONY: go-coverage validate-compose validate-systemd \
+	test-disaster-recovery-actions test-ci-full
 
 build-admin-node:
 	@./scripts/build-admin-node.sh
@@ -74,13 +75,15 @@ scan-container-images:
 test-ci-fast:
 	@./ci/scenarios/bootstrap-user-journey.sh
 
+test-disaster-recovery-actions:
+	@./ci/test-disaster-recovery-actions.sh
+
 test-ci-full:
-	@./ci/setup-garage.sh
 	@MAIN_SHA="$${MAIN_SHA:-$$(git rev-parse origin/main)}" \
 	 CANDIDATE_SHA="$${CANDIDATE_SHA:-$$(git rev-parse HEAD)}" \
 	 MAIN_REPO_URL="$${MAIN_REPO_URL:-https://github.com/Frantche/homelab-admin-node.git}" \
 	 CANDIDATE_REPO_URL="$${CANDIDATE_REPO_URL:-https://github.com/Frantche/homelab-admin-node.git}" \
-	 bash -c 'set -e; for action in create-source deploy-main reboot-hardening backup-main destroy-source create-target restore-main upgrade-candidate rotate-secrets backup-candidate destroy-target; do ./ci/scenarios/main-to-candidate-disaster-recovery.sh "$$action"; done'
+	 ./ci/run-disaster-recovery.sh $${DR_VARIANTS:-standard offline-images}
 
 validate-compose:
 	@./ci/validate-compose-configs.sh

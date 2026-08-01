@@ -11,7 +11,7 @@ make test-oidc-contracts
 
 La CI d'integration contient deux parcours bloquants.
 
-`bootstrap-candidate` installe le SHA candidat depuis une image Arch vierge et
+`bootstrap` installe le SHA candidat depuis une image Arch vierge et
 valide le bootstrap, les exemples, les API, l'OIDC navigateur, l'observabilite,
 le reboot et le durcissement.
 
@@ -37,6 +37,13 @@ Execution locale complete :
 
 ```bash
 make test-ci-full
+```
+
+La cible execute les variantes `standard` et `offline-images`. Pour n'en lancer
+qu'une :
+
+```bash
+DR_VARIANTS=standard make test-ci-full
 ```
 
 Ce test necessite Docker, QEMU, `cloud-localds`, `socat`, `curl`, `jq` et un
