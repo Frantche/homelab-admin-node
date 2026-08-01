@@ -11,6 +11,7 @@ users:
       - "ssh-ed25519 AAAA_PLACEHOLDER_REPLACE_ME admin@example"
 
 package_update: true
+package_upgrade: true
 packages:
   - ansible
   - git
