@@ -21,7 +21,7 @@
 
 - name: Render OpenTelemetry collector config
   ansible.builtin.template:
-    src: "{{ playbook_dir }}/../stacks/observability/otel-collector.yaml"
+    src: "{{ playbook_dir }}/../stacks/observability/otel-collector.yaml.j2"
     dest: "{{ admin_node_root }}/stacks/observability/otel-collector.yaml"
     owner: root
     group: root
@@ -29,7 +29,7 @@
 
 - name: Render observability compose
   ansible.builtin.template:
-    src: "{{ playbook_dir }}/../stacks/observability/compose.yaml"
+    src: "{{ playbook_dir }}/../stacks/observability/compose.yaml.j2"
     dest: "{{ admin_node_root }}/stacks/observability/compose.yaml"
     owner: root
     group: root

@@ -54,11 +54,11 @@
 
     - name: Render Traefik dynamic config for external services
       ansible.builtin.set_fact:
-        traefik_dynamic_config: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/dynamic/config.yml') }}"
+        traefik_dynamic_config: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/dynamic/config.yml.j2') }}"
 
     - name: Render Traefik static config
       ansible.builtin.set_fact:
-        traefik_static_config: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/traefik.yml') }}"
+        traefik_static_config: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/traefik.yml.j2') }}"
 
     - name: Render Cloudflared local ingress config for external services
       ansible.builtin.set_fact:

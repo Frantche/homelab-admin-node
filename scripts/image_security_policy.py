@@ -34,7 +34,9 @@ def inventory(path: Path = DEFAULT_INVENTORY) -> list[str]:
     errors.extend(f"image is not pinned by tag and sha256 digest: {image}" for image in images if not IMAGE_WITH_DIGEST.match(image))
 
     declared = set()
-    for compose in sorted((REPO_ROOT / "stacks").glob("*/compose.yaml")):
+    compose_files = list((REPO_ROOT / "stacks").glob("*/compose.yaml"))
+    compose_files.extend((REPO_ROOT / "stacks").glob("*/compose.yaml.j2"))
+    for compose in sorted(compose_files):
         for line in compose.read_text(encoding="utf-8").splitlines():
             if not re.match(r"^\s*image:", line):
                 continue

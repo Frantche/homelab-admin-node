@@ -5,5 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
 EnvironmentFile=/srv/admin/env/gitea-process-backup.env
 ExecStart=/usr/bin/flock -n /run/admin-node-operation.lock /opt/homelab-admin-node/scripts/gitea-process-backup.sh

@@ -44,7 +44,7 @@
 
 - name: Render gitea compose
   ansible.builtin.template:
-    src: "{{ playbook_dir }}/../stacks/gitea/compose.yaml"
+    src: "{{ playbook_dir }}/../stacks/gitea/compose.yaml.j2"
     dest: "{{ admin_node_root }}/stacks/gitea/compose.yaml"
     mode: "0644"
   when: not (gitea_test_mode | default(false))

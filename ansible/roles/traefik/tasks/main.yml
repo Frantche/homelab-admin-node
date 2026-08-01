@@ -126,7 +126,7 @@
 
 - name: Render traefik compose
   ansible.builtin.template:
-    src: "{{ playbook_dir }}/../stacks/traefik/compose.yaml"
+    src: "{{ playbook_dir }}/../stacks/traefik/compose.yaml.j2"
     dest: "{{ admin_node_root }}/stacks/traefik/compose.yaml"
     owner: root
     group: root
@@ -324,7 +324,7 @@
 
 - name: Render traefik static config (production)
   ansible.builtin.template:
-    src: "{{ playbook_dir }}/../stacks/traefik/traefik.yml"
+    src: "{{ playbook_dir }}/../stacks/traefik/traefik.yml.j2"
     dest: "{{ admin_node_root }}/stacks/traefik/traefik.yml"
     owner: root
     group: root
@@ -342,7 +342,7 @@
 
 - name: Render traefik dynamic config
   ansible.builtin.template:
-    src: "{{ playbook_dir }}/../stacks/traefik/dynamic/config.yml"
+    src: "{{ playbook_dir }}/../stacks/traefik/dynamic/config.yml.j2"
     dest: "{{ admin_node_root }}/stacks/traefik/dynamic/config.yml"
     owner: root
     group: root

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TRAEFIK_IMAGE="$(awk '/^[[:space:]]*image: traefik:/{print $2; exit}' "$REPO_ROOT/stacks/traefik/compose.yaml")"
+TRAEFIK_IMAGE="$(awk '/^[[:space:]]*image: traefik:/{print $2; exit}' "$REPO_ROOT/stacks/traefik/compose.yaml.j2")"
 TEST_DIR="$(mktemp -d)"
 CONTAINER_NAME="traefik-security-test-$$"
 

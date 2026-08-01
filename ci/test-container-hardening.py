@@ -66,7 +66,9 @@ def services(path: Path) -> dict[str, str]:
 
 errors: list[str] = []
 seen: set[str] = set()
-for compose in sorted((ROOT / "stacks").glob("*/compose.yaml")):
+compose_files = list((ROOT / "stacks").glob("*/compose.yaml"))
+compose_files.extend((ROOT / "stacks").glob("*/compose.yaml.j2"))
+for compose in sorted(compose_files):
     for name, block in services(compose).items():
         seen.add(name)
         merged = "<<: *harbor-hardening" in block
@@ -92,9 +94,9 @@ if unknown_user_exceptions:
 if unknown_write_exceptions:
     errors.append(f"unknown write exceptions: {sorted(unknown_write_exceptions)}")
 
-openbao_compose = (ROOT / "stacks/openbao/compose.yaml").read_text(encoding="utf-8")
+openbao_compose = (ROOT / "stacks/openbao/compose.yaml.j2").read_text(encoding="utf-8")
 if '"{{ admin_node_root }}/backups/openbao-scratch:/openbao/snapshot"' not in openbao_compose:
-    errors.append("stacks/openbao/compose.yaml: missing dedicated snapshot scratch bind mount")
+    errors.append("stacks/openbao/compose.yaml.j2: missing dedicated snapshot scratch bind mount")
 
 openbao_tasks = (ROOT / "ansible/roles/openbao/tasks/main.yml").read_text(encoding="utf-8")
 for expected in (

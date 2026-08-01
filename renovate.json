@@ -45,6 +45,11 @@
       "versioningTemplate": "docker"
     }
   ],
+  "docker-compose": {
+    "managerFilePatterns": [
+      "/(^|/)(?:docker-)?compose[^/]*\\.ya?ml(?:\\.j2)?$/"
+    ]
+  },
   "ignorePaths": [
     "**/*.sops.yaml",
     "**/*.sops.yaml.example",

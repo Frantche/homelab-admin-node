@@ -92,7 +92,7 @@
 
     - name: Render Harbor compose in CI test mode
       ansible.builtin.set_fact:
-        harbor_compose_ci: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/harbor/compose.yaml') }}"
+        harbor_compose_ci: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/harbor/compose.yaml.j2') }}"
 
     - name: Capture Harbor CI Keycloak client
       ansible.builtin.set_fact:

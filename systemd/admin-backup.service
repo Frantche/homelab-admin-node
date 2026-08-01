@@ -5,6 +5,15 @@ ConditionPathExists=/etc/admin-node/mode
 
 [Service]
 Type=oneshot
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
 EnvironmentFile=-/srv/admin/env/backup.env
 ExecCondition=/opt/homelab-admin-node/bin/admin-node mode check --allow normal
 ExecStart=/opt/homelab-admin-node/bin/admin-node backup run

@@ -3,7 +3,7 @@ name: image-security
 on:
   pull_request:
     paths:
-      - "stacks/**/compose.yaml"
+      - "stacks/**/compose.yaml*"
       - "security/**"
       - "scripts/image_security_policy.py"
       - "ci/scan-container-images.sh"

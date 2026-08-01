@@ -12,10 +12,10 @@ fi
 if rg -n '^[[:space:]]+docker:$|docker_stats|traefik\.http\.' \
   "$REPO_ROOT/stacks/traefik" \
   "$REPO_ROOT/stacks/observability" \
-  "$REPO_ROOT/stacks/openbao/compose.yaml" \
+  "$REPO_ROOT/stacks/openbao/compose.yaml.j2" \
   "$REPO_ROOT/stacks/keycloak/compose.yaml" \
-  "$REPO_ROOT/stacks/gitea/compose.yaml" \
-  "$REPO_ROOT/stacks/harbor/compose.yaml"; then
+  "$REPO_ROOT/stacks/gitea/compose.yaml.j2" \
+  "$REPO_ROOT/stacks/harbor/compose.yaml.j2"; then
   echo "Docker discovery or Docker runtime collection is still configured" >&2
   exit 1
 fi
