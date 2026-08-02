@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Verify every Compose service has the common hardening baseline."""
 
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DOC = (ROOT / "docs/container-hardening.md").read_text(encoding="utf-8")

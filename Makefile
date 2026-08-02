@@ -1,6 +1,11 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: go-coverage validate-compose validate-systemd \
+.PHONY: \
+	build-admin-node dev-deps lint quality check-tools go-test go-vet govulncheck \
+	ansible-lint ansible-syntax sops-check shellcheck actionlint python-check \
+	test-build-admin-node-cache test-container-hardening \
+	test-openbao-internal-tls test-repo-permissions test-secret-rotation \
+	test-docker-api-isolation go-coverage validate-compose validate-systemd \
 	test-disaster-recovery-actions test-ci-full
 
 build-admin-node:
@@ -9,21 +14,45 @@ build-admin-node:
 go-coverage:
 	@./ci/check-go-coverage.sh
 
-lint: shellcheck ansible-syntax sops-check
+dev-deps:
+	@./scripts/check-tools.sh python3
+	@python3 -m venv .ci/quality-venv
+	@.ci/quality-venv/bin/python -m pip install -r ci/requirements-dev.txt
+	@ANSIBLE_GALAXY_CACHE_DIR=.ci/galaxy-cache \
+	 .ci/quality-venv/bin/ansible-galaxy collection install \
+	 -r ansible/requirements.yml -p .ci/ansible_collections
+	@echo 'Run: export PATH="'"$$PWD"'/.ci/quality-venv/bin:$$PATH"'
+	@echo 'Run: export ANSIBLE_COLLECTIONS_PATH="'"$$PWD"'/.ci/ansible_collections"'
+
+check-tools:
+	@./scripts/check-tools.sh go python3 shellcheck actionlint ansible-playbook ansible-lint
+
+lint: go-vet shellcheck actionlint python-check ansible-lint ansible-syntax sops-check
+
+quality: check-tools go-test lint test-build-admin-node-cache \
+	test-container-hardening test-repo-permissions test-secret-rotation \
+	test-docker-api-isolation test-openbao-internal-tls
+
+go-test:
+	@go test -race ./...
+
+go-vet:
+	@go vet ./...
+
+govulncheck:
+	@./scripts/check-tools.sh govulncheck
+	@govulncheck ./...
+
+ansible-lint:
+	@./scripts/check-tools.sh ansible-lint
+	@ansible-lint ansible/site.yml
 
 ansible-syntax:
-	@if command -v ansible-playbook >/dev/null 2>&1; then \
-		ansible-playbook -i ansible/inventory.ini ansible/site.yml --syntax-check; \
-	else \
-		echo "ansible-playbook not installed"; \
-	fi
+	@./scripts/check-tools.sh ansible-playbook
+	@ansible-playbook -i ansible/inventory.ini ansible/site.yml --syntax-check
 
 sops-check:
-	@if command -v sops >/dev/null 2>&1; then \
-		echo "sops binary present"; \
-	else \
-		echo "sops not installed"; \
-	fi
+	@./scripts/validate-sops-files.sh
 
 validate: validate-apis validate-dns validate-cloudflare-tunnel validate-hardening validate-observability
 
@@ -59,6 +88,21 @@ test-traefik-security:
 test-docker-api-isolation:
 	@./ci/test-docker-api-isolation.sh
 
+test-build-admin-node-cache:
+	@./ci/test-build-admin-node-cache.sh
+
+test-container-hardening:
+	@python3 ./ci/test_container_hardening.py
+
+test-openbao-internal-tls:
+	@./ci/test-openbao-internal-tls.sh
+
+test-repo-permissions:
+	@./ci/test-repo-permissions.sh
+
+test-secret-rotation:
+	@./ci/test-secret-rotation.sh
+
 test-restic-config:
 	@./ci/test-restic-config.sh
 
@@ -66,7 +110,7 @@ test-offline-images:
 	@./ci/test-offline-images.sh
 
 test-image-security-policy:
-	@python3 ./ci/test-image-security-policy.py
+	@python3 ./ci/test_image_security_policy.py
 	@./ci/test-scan-container-images.sh
 
 scan-container-images:
@@ -133,11 +177,17 @@ docs-serve: docs-deps
 	fi
 
 shellcheck:
-	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck -e SC1091 scripts/*.sh ci/*.sh ci/lib/*.sh ci/scenarios/*.sh; \
-	else \
-		echo "shellcheck not installed"; \
-	fi
+	@./scripts/check-tools.sh shellcheck
+	@shellcheck -e SC1091 scripts/*.sh ci/*.sh ci/lib/*.sh ci/scenarios/*.sh
+
+actionlint:
+	@./scripts/check-tools.sh actionlint
+	@actionlint -shellcheck=
+
+python-check:
+	@./scripts/check-tools.sh python3 ruff
+	@ruff check scripts ci
+	@python3 -m unittest discover -s ci -p 'test_*.py'
 
 clean:
 	rm -rf backups ci/tmp ci/.tmp .ci/vms

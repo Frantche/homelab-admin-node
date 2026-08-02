@@ -32,7 +32,7 @@ persistantes attendues.
 
 Les exceptions sont contrôlées à deux niveaux :
 
-- `ci/test-container-hardening.py` vérifie toutes les définitions Compose ;
+- `ci/test_container_hardening.py` vérifie toutes les définitions Compose ;
 - `scripts/validate-container-hardening.sh` inspecte la configuration Docker
   effective pendant le scénario bootstrap.
 

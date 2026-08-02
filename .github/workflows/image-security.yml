@@ -7,7 +7,7 @@ on:
       - "security/**"
       - "scripts/image_security_policy.py"
       - "ci/scan-container-images.sh"
-      - "ci/test-image-security-policy.py"
+      - "ci/test_image_security_policy.py"
       - "renovate.json"
   schedule:
     - cron: "30 4 * * 1"
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Validate inventory, policy, and exception expiry
-        run: python3 ci/test-image-security-policy.py
+        run: python3 ci/test_image_security_policy.py
       - name: Verify the scanner evaluates every image before failing
         run: ./ci/test-scan-container-images.sh
 

@@ -23,6 +23,7 @@ backups/
 ci/tmp/
 ci/.tmp/
 .ci/
+.ansible/
 __pycache__/
 ci/__pycache__/
 node_modules/
