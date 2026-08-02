@@ -13,7 +13,7 @@ The repository provides cloud-init inputs under `cloud-init/`:
 cloud-init is responsible for the first irreversible bootstrap step:
 
 1. Create the `admin` user.
-2. Fully upgrade the Arch Linux rolling-release system.
+2. Fully upgrade the Arch Linux rolling-release system and reboot into the updated kernel.
 3. Install base packages such as Git, Ansible, Docker, SOPS, age, restic, jq, and curl.
 4. Clone this repository into `/opt/homelab-admin-node`.
 5. Install systemd units for convergence and stack operation.

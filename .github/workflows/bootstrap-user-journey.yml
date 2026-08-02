@@ -196,24 +196,34 @@ jobs:
             fi
             sleep 5
           done
+          initial_boot_id="$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
+            'cat /proc/sys/kernel/random/boot_id')"
+          echo "INITIAL_BOOT_ID=${initial_boot_id}" >> "$GITHUB_ENV"
 
-      - name: Wait for cloud-init to complete
+      - name: Wait for cloud-init upgrade and reboot
         timeout-minutes: 30
         run: |
           # Cannot use `cloud-init status --wait` because cloud-init reinstalls Python
-          # during package installation, breaking the CLI. Poll for boot-finished instead.
-          echo "Waiting for cloud-init to finish (repo clone + package install)..."
+          # during package installation, breaking the CLI. The rolling-release upgrade
+          # also requires a reboot before host validation can use the updated kernel.
+          echo "Waiting for cloud-init to finish and the upgraded VM to reboot..."
           for j in $(seq 1 360); do
-            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
-                   -o UserKnownHostsFile=/dev/null \
-                   -i .ci/ssh/id_ed25519 \
-                   -p ${SSH_PORT} admin@127.0.0.1 \
-                   "test -f /var/lib/cloud/instance/boot-finished" 2>/dev/null; then
-              echo "Cloud-init completed after ${j} polling attempts"
-              break
+            current_boot_id="$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+              -o UserKnownHostsFile=/dev/null -i .ci/ssh/id_ed25519 \
+              -p ${SSH_PORT} admin@127.0.0.1 \
+              'cat /proc/sys/kernel/random/boot_id' 2>/dev/null || true)"
+            if [[ -n "$current_boot_id" && "$current_boot_id" != "$INITIAL_BOOT_ID" ]]; then
+              if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+                     -o UserKnownHostsFile=/dev/null -i .ci/ssh/id_ed25519 \
+                     -p ${SSH_PORT} admin@127.0.0.1 \
+                     "test -f /var/lib/cloud/instance/boot-finished" 2>/dev/null; then
+                echo "Cloud-init completed and VM rebooted after ${j} polling attempts"
+                break
+              fi
             fi
             if [[ $j -eq 360 ]]; then
-              echo "ERROR: cloud-init did not complete within 1800s"
+              echo "ERROR: cloud-init upgrade and reboot did not complete within 1800s"
               ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                   -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
                   "cat /var/log/cloud-init-output.log" 2>/dev/null | tail -50
