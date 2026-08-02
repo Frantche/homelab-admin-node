@@ -95,3 +95,9 @@ runcmd:
   - [ systemctl, enable, --now, sshd ]
   - [ systemctl, enable, --now, docker ]
   - [ systemctl, enable, --now, admin-converge.timer ]
+
+power_state:
+  mode: reboot
+  message: Reboot after the Arch rolling-release upgrade
+  timeout: 120
+  condition: true
