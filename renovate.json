@@ -34,12 +34,26 @@
     },
     {
       "customType": "regex",
-      "description": "Keep the scanned image inventory synchronized with Renovate image updates.",
+      "description": "Update pinned utility image sources and keep the scan inventory synchronized.",
       "managerFilePatterns": [
-        "/^security/container-images\\.txt$/"
+        "/^security/container-images\\.txt$/",
+        "/^ansible/roles/docker/defaults/main\\.yml$/",
+        "/^ansible/roles/harbor/tasks/main\\.yml$/"
       ],
       "matchStrings": [
         "(?<depName>[a-zA-Z0-9._/-]+):(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the Grafana image used by the dashboard import test.",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/grafana-dashboard-import\\.yml$/"
+      ],
+      "matchStrings": [
+        "GRAFANA_IMAGE:\\s+(?<depName>grafana/grafana):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"

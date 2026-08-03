@@ -42,13 +42,40 @@
     - { name: harbor-egress, bridge: br-hbr-egress, internal: false }
     - { name: harbor-host, bridge: br-hbr-host, internal: false }
 
-- name: Probe Docker bridge networking support
-  ansible.builtin.command: >-
-    docker run --rm --network admin-edge
-    alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc true
+- name: Make the Docker bridge probe image available
+  when: admin_mode not in ['restore', 'restore_failed']
+  block:
+    - name: Pull the pinned Docker bridge probe image
+      community.docker.docker_image_pull:
+        name: "{{ docker_bridge_probe_image }}"
+        pull: not_present
+      register: docker_bridge_probe_image_pull
+      until: docker_bridge_probe_image_pull is succeeded
+      retries: "{{ docker_bridge_probe_pull_retries }}"
+      delay: "{{ docker_bridge_probe_pull_delay }}"
+  rescue:
+    - name: Report an unavailable Docker bridge probe image
+      ansible.builtin.fail:
+        msg: |
+          The pinned Docker bridge probe image could not be downloaded after
+          {{ docker_bridge_probe_pull_retries }} attempts.
+          Image: {{ docker_bridge_probe_image }}
+          Verify registry availability before retrying convergence.
+
+- name: Probe Docker bridge networking support without registry access
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --pull=never
+      - --network
+      - admin-edge
+      - "{{ docker_bridge_probe_image }}"
+      - "true"
   register: docker_bridge_probe
   failed_when: false
-  changed_when: docker_bridge_probe.rc == 0
+  changed_when: false
   when: admin_mode not in ['restore', 'restore_failed']
 
 - name: Record Docker bridge support

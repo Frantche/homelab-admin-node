@@ -11,6 +11,7 @@ users:
       - "ssh-ed25519 AAAA_PLACEHOLDER_REPLACE_ME admin@example"
 
 package_update: true
+package_upgrade: true
 packages:
   - ansible
   - git
@@ -89,7 +90,14 @@ write_files:
 runcmd:
   - [ mkdir, -p, /etc/admin-node ]
   - [ bash, -lc, 'REPO_URL="${REPO_URL:-https://github.com/Frantche/homelab-admin-node.git}"; if [ ! -d /opt/homelab-admin-node/.git ]; then git clone "$REPO_URL" /opt/homelab-admin-node || { echo "[cloud-init] initial clone failed for /opt/homelab-admin-node using $REPO_URL" >&2; echo "[cloud-init] verify repository access/authentication and network connectivity" >&2; exit 1; }; fi' ]
+  - [ ansible-galaxy, collection, install, -r, /opt/homelab-admin-node/ansible/requirements.yml ]
   - [ systemctl, daemon-reload ]
   - [ systemctl, enable, --now, sshd ]
   - [ systemctl, enable, --now, docker ]
   - [ systemctl, enable, --now, admin-converge.timer ]
+
+power_state:
+  mode: reboot
+  message: Reboot after the Arch rolling-release upgrade
+  timeout: 120
+  condition: true
