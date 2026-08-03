@@ -96,10 +96,16 @@ class ImageSecurityPolicyTests(unittest.TestCase):
 
     def test_utility_source_must_match_the_inventory_exactly(self) -> None:
         current = POLICY.DEFAULT_INVENTORY.read_text(encoding="utf-8")
-        mismatched = current.replace(
-            "alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc",
-            "alpine:3.24@sha256:" + ("a" * 64),
+        current_image = POLICY.inventory_image_for_repository(POLICY.inventory(), "alpine")
+        current_digest = current_image.rsplit("@sha256:", 1)[1]
+        replacement_digest = "a" * 64
+        if current_digest == replacement_digest:
+            replacement_digest = "b" * 64
+        mismatched_image = (
+            current_image.rsplit("@sha256:", 1)[0] + "@sha256:" + replacement_digest
         )
+        mismatched = current.replace(current_image, mismatched_image)
+        self.assertNotEqual(current, mismatched)
         with tempfile.TemporaryDirectory() as directory:
             inventory = Path(directory) / "container-images.txt"
             inventory.write_text(mismatched, encoding="utf-8")
