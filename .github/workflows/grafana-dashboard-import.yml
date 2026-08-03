@@ -22,7 +22,7 @@ jobs:
       GRAFANA_URL: http://127.0.0.1:3000
       GRAFANA_USER: admin
       GRAFANA_PASSWORD: admin
-      GRAFANA_IMAGE: grafana/grafana:11.6.0@sha256:b739cda4b61ba3b90707578b643a22cd851fecf4498e6c6ec2d8f9d622a5d0b2
+      GRAFANA_IMAGE: grafana/grafana:11.6.16@sha256:46f09ba55777894d83efe5d28385c71517e8c3e20cd99b3259493706f514320d
 
     steps:
       - name: Checkout
