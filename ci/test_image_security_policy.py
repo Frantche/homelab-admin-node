@@ -83,16 +83,28 @@ class ImageSecurityPolicyTests(unittest.TestCase):
         self.assertGreater(len(images), 10)
         self.assertTrue(all("@sha256:" in image for image in images))
 
-    def test_utility_image_matcher_accepts_renovated_versions(self) -> None:
-        digest = "a" * 64
-        content = f'image: "ghcr.io/example/tool:12.34.56@sha256:{digest}"'
+    def test_inventory_is_the_canonical_utility_image_source(self) -> None:
+        image = "ghcr.io/example/tool:12.34.56@sha256:" + ("a" * 64)
         self.assertEqual(
-            POLICY.pinned_image_references(content, "ghcr.io/example/tool"),
-            [f"ghcr.io/example/tool:12.34.56@sha256:{digest}"],
+            POLICY.inventory_image_for_repository([image], "ghcr.io/example/tool"),
+            image,
         )
 
-    def test_utility_image_matcher_requires_a_digest(self) -> None:
-        self.assertEqual(POLICY.pinned_image_references("image: alpine:3.24", "alpine"), [])
+    def test_inventory_requires_one_utility_image_per_repository(self) -> None:
+        with self.assertRaisesRegex(ValueError, "exactly one alpine reference"):
+            POLICY.inventory_image_for_repository([], "alpine")
+
+    def test_utility_source_must_match_the_inventory_exactly(self) -> None:
+        current = POLICY.DEFAULT_INVENTORY.read_text(encoding="utf-8")
+        mismatched = current.replace(
+            "alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc",
+            "alpine:3.24@sha256:" + ("a" * 64),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            inventory = Path(directory) / "container-images.txt"
+            inventory.write_text(mismatched, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "inventory utility image not found"):
+                POLICY.inventory(inventory)
 
     def test_renovate_manages_utility_sources_and_inventory_together(self) -> None:
         inventory_path = "security/container-images.txt"
