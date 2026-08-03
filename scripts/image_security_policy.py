@@ -22,12 +22,14 @@ UTILITY_IMAGE_SOURCES = {
 }
 
 
-def pinned_image_references(content: str, repository: str) -> list[str]:
-    """Return tag-and-digest references for one image repository."""
-    pattern = re.compile(
-        rf"{re.escape(repository)}:[^\s\"'@]+@sha256:[0-9a-f]{{64}}"
-    )
-    return pattern.findall(content)
+def inventory_image_for_repository(images: list[str], repository: str) -> str:
+    matches = [image for image in images if image.startswith(f"{repository}:")]
+    if len(matches) != 1:
+        raise ValueError(
+            f"the image inventory must contain exactly one {repository} reference; "
+            f"found {len(matches)}"
+        )
+    return matches[0]
 
 
 def load_json(path: Path) -> Any:
@@ -64,17 +66,12 @@ def inventory(path: Path = DEFAULT_INVENTORY) -> list[str]:
     errors.extend(f"Compose image missing from security/container-images.txt: {image}" for image in missing)
 
     for source, repository in UTILITY_IMAGE_SOURCES.items():
+        expected_image = inventory_image_for_repository(images, repository)
         content = source.read_text(encoding="utf-8")
-        matches = pinned_image_references(content, repository)
-        if not matches:
+        if expected_image not in content:
             errors.append(
-                f"pinned production utility image not found in "
-                f"{source.relative_to(REPO_ROOT)}: {repository}"
-            )
-        else:
-            errors.extend(
-                f"utility image missing from security/container-images.txt: {image}"
-                for image in sorted(set(matches).difference(images))
+                f"inventory utility image not found in {source.relative_to(REPO_ROOT)}: "
+                f"{expected_image}"
             )
 
     if errors:
