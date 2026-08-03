@@ -28,3 +28,15 @@ The documentation site can be served locally with:
 ```bash
 make docs-serve
 ```
+
+The site uses Docsy 0.16 as the `github.com/google/docsy/theme` Hugo module.
+Use Hugo Extended 0.160.1 or later; CI validates the officially supported
+0.164.0 release. After changing the Docsy version, refresh its npm workspace
+before committing the generated dependency metadata:
+
+```bash
+cd site
+hugo mod tidy
+hugo mod npm pack
+npm install
+```

@@ -7,8 +7,11 @@ enableRobotsTXT: true
 enableGitInfo: true
 
 module:
+  hugoVersion:
+    extended: true
+    min: 0.160.1
   imports:
-    - path: github.com/google/docsy
+    - path: github.com/google/docsy/theme
 
 markup:
   goldmark:
