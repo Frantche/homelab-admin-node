@@ -1,6 +1,6 @@
 services:
   gitea-db:
-    image: pgautoupgrade/pgautoupgrade:18-trixie@sha256:e5bc29961be866fc4ab099d4785bbfdd69df05f1ffcef05563cfc35e3372c864
+    image: pgautoupgrade/pgautoupgrade:18-trixie@sha256:65a2b843dcfec2679a92ece765d7bc243eee9b743ecafcf8a0d181f243c14479
     container_name: gitea-db
     restart: "no"
     read_only: true
@@ -42,7 +42,7 @@ services:
       - gitea-db
 
   gitea:
-    image: docker.gitea.com/gitea:1.27.0@sha256:7b58541345f52eda63f11f3ec3d575193e91a0934b7841a66a7ee245a66f764a
+    image: docker.gitea.com/gitea:1.27.1@sha256:b64126cf5c3f4e5f0f231b510bb13715f6cb8e508188b44de90bdb9a04f3055d
     container_name: gitea
     restart: "no"
     cap_drop:
