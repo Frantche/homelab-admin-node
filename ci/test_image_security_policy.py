@@ -14,15 +14,16 @@ assert SPEC and SPEC.loader
 POLICY = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(POLICY)
 
-IMAGE = "example.invalid/app:1@sha256:" + ("a" * 64)
+IMAGE_REPOSITORY = "example.invalid/app"
+IMAGE = IMAGE_REPOSITORY + ":1@sha256:" + ("a" * 64)
 TODAY = dt.date(2026, 7, 28)
 
 
-def report(fixed_version: str = "1.2.4") -> dict:
+def report(fixed_version: str = "1.2.4", vulnerability: str = "CVE-2099-0001") -> dict:
     return {
         "Results": [{
             "Vulnerabilities": [{
-                "VulnerabilityID": "CVE-2099-0001",
+                "VulnerabilityID": vulnerability,
                 "PkgName": "sentinel-package",
                 "Severity": "CRITICAL",
                 "FixedVersion": fixed_version,
@@ -31,18 +32,18 @@ def report(fixed_version: str = "1.2.4") -> dict:
     }
 
 
-def policy(expires_at: str | None = None) -> dict:
+def policy(expires_at: str | None = None, repository: str = IMAGE_REPOSITORY) -> dict:
     exceptions = []
     if expires_at:
         exceptions.append({
             "id": "temporary-sentinel",
-            "image": IMAGE,
+            "repository": repository,
             "vulnerability": "CVE-2099-0001",
             "owner": "security@example.invalid",
             "justification": "Sentinel exception used by the policy contract test.",
             "expires_at": expires_at,
         })
-    return {"version": 1, "blocked_severities": ["CRITICAL"], "exceptions": exceptions}
+    return {"version": 2, "blocked_severities": ["CRITICAL"], "exceptions": exceptions}
 
 
 def renovate_dependencies(path: str) -> list[dict[str, str]]:
@@ -135,8 +136,42 @@ class ImageSecurityPolicyTests(unittest.TestCase):
     def test_unfixed_critical_vulnerability_is_not_blocked(self) -> None:
         self.assertEqual(POLICY.violations(report(""), IMAGE, policy(), TODAY), [])
 
-    def test_active_exact_exception_is_accepted(self) -> None:
+    def test_active_repository_exception_is_accepted(self) -> None:
         self.assertEqual(POLICY.violations(report(), IMAGE, policy("2026-07-29"), TODAY), [])
+
+    def test_repository_exception_follows_tag_and_digest_updates(self) -> None:
+        updated = IMAGE_REPOSITORY + ":2@sha256:" + ("b" * 64)
+        self.assertEqual(POLICY.violations(report(), updated, policy("2026-07-29"), TODAY), [])
+
+    def test_repository_exception_does_not_cover_another_repository(self) -> None:
+        other = "example.invalid/other:1@sha256:" + ("b" * 64)
+        self.assertEqual(
+            POLICY.violations(report(), other, policy("2026-07-29"), TODAY),
+            ["CVE-2099-0001 (sentinel-package) fixable in 1.2.4"],
+        )
+
+    def test_repository_exception_does_not_cover_another_vulnerability(self) -> None:
+        self.assertEqual(
+            POLICY.violations(
+                report(vulnerability="CVE-2099-0002"),
+                IMAGE,
+                policy("2026-07-29"),
+                TODAY,
+            ),
+            ["CVE-2099-0002 (sentinel-package) fixable in 1.2.4"],
+        )
+
+    def test_repository_exception_rejects_tags_and_digests(self) -> None:
+        with self.assertRaisesRegex(ValueError, "without a tag or digest"):
+            POLICY.validate_policy(policy("2026-07-29", IMAGE_REPOSITORY + ":1"), TODAY)
+
+    def test_duplicate_repository_vulnerability_scope_is_rejected(self) -> None:
+        duplicate = policy("2026-07-29")
+        second = dict(duplicate["exceptions"][0])
+        second["id"] = "duplicate-sentinel"
+        duplicate["exceptions"].append(second)
+        with self.assertRaisesRegex(ValueError, "duplicate exception scope"):
+            POLICY.validate_policy(duplicate, TODAY)
 
     def test_expired_exception_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "expired"):

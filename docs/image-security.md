@@ -11,12 +11,12 @@ A fixable `CRITICAL` vulnerability blocks the scan. A critical vulnerability wit
 
 ## Temporary exceptions
 
-Exceptions belong in `security/image-vulnerability-policy.json` and must identify one exact image digest and vulnerability:
+Exceptions belong in `security/image-vulnerability-policy.json` and identify one image repository and vulnerability:
 
 ```json
 {
   "id": "CVE-2099-0001-temporary",
-  "image": "registry.example/app:1.2.3@sha256:...",
+  "repository": "registry.example/app",
   "vulnerability": "CVE-2099-0001",
   "owner": "platform@example.com",
   "justification": "Upgrade is being validated against the restore scenario.",
@@ -24,7 +24,9 @@ Exceptions belong in `security/image-vulnerability-policy.json` and must identif
 }
 ```
 
-An exception without an owner or justification is invalid. Expired exceptions fail before the scan begins. Remove an exception as soon as the fixed image is deployed.
+The exception applies to the vulnerability across every tag and digest published in that repository. Other repositories and other vulnerabilities remain blocked. This repository-wide scope lets Renovate update images without copying exceptions into its pull requests, but it deliberately carries the accepted risk across version upgrades until the exception expires.
+
+An exception without an owner or justification is invalid. Repository and vulnerability pairs must be unique. Expired exceptions fail before the scan begins. Remove an exception as soon as the fixed image is deployed.
 
 ## Local checks
 
