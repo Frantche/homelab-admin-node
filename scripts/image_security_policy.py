@@ -15,6 +15,19 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY = REPO_ROOT / "security/image-vulnerability-policy.json"
 DEFAULT_INVENTORY = REPO_ROOT / "security/container-images.txt"
 IMAGE_WITH_DIGEST = re.compile(r"^[^\s]+:[^\s]+@sha256:[0-9a-f]{64}$")
+UTILITY_IMAGE_SOURCES = {
+    REPO_ROOT / "ansible/roles/docker/defaults/main.yml": "alpine",
+    REPO_ROOT / "ansible/roles/harbor/tasks/main.yml": "goharbor/prepare",
+    REPO_ROOT / "scripts/gitea-process-backup.sh": "ghcr.io/frantche/gitea-backup-restore-process",
+}
+
+
+def pinned_image_references(content: str, repository: str) -> list[str]:
+    """Return tag-and-digest references for one image repository."""
+    pattern = re.compile(
+        rf"{re.escape(repository)}:[^\s\"'@]+@sha256:[0-9a-f]{{64}}"
+    )
+    return pattern.findall(content)
 
 
 def load_json(path: Path) -> Any:
@@ -50,18 +63,19 @@ def inventory(path: Path = DEFAULT_INVENTORY) -> list[str]:
     missing = sorted(declared.difference(images))
     errors.extend(f"Compose image missing from security/container-images.txt: {image}" for image in missing)
 
-    utility_sources = {
-        REPO_ROOT / "ansible/roles/docker/tasks/main.yml": "alpine:3.20@sha256:",
-        REPO_ROOT / "ansible/roles/harbor/tasks/main.yml": "goharbor/prepare:v2.15.2@sha256:",
-        REPO_ROOT / "scripts/gitea-process-backup.sh": "ghcr.io/frantche/gitea-backup-restore-process:0.3.6@sha256:",
-    }
-    for source, prefix in utility_sources.items():
+    for source, repository in UTILITY_IMAGE_SOURCES.items():
         content = source.read_text(encoding="utf-8")
-        matches = re.findall(re.escape(prefix) + r"[0-9a-f]{64}", content)
+        matches = pinned_image_references(content, repository)
         if not matches:
-            errors.append(f"pinned production utility image not found in {source.relative_to(REPO_ROOT)}: {prefix}")
-        elif matches[0] not in images:
-            errors.append(f"utility image missing from security/container-images.txt: {matches[0]}")
+            errors.append(
+                f"pinned production utility image not found in "
+                f"{source.relative_to(REPO_ROOT)}: {repository}"
+            )
+        else:
+            errors.extend(
+                f"utility image missing from security/container-images.txt: {image}"
+                for image in sorted(set(matches).difference(images))
+            )
 
     if errors:
         raise ValueError("\n".join(errors))

@@ -34,9 +34,11 @@
     },
     {
       "customType": "regex",
-      "description": "Keep the scanned image inventory synchronized with Renovate image updates.",
+      "description": "Update pinned utility image sources and keep the scan inventory synchronized.",
       "managerFilePatterns": [
-        "/^security/container-images\\.txt$/"
+        "/^security/container-images\\.txt$/",
+        "/^ansible/roles/docker/defaults/main\\.yml$/",
+        "/^ansible/roles/harbor/tasks/main\\.yml$/"
       ],
       "matchStrings": [
         "(?<depName>[a-zA-Z0-9._/-]+):(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})"

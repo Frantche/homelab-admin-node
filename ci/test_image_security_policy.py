@@ -3,6 +3,7 @@
 import datetime as dt
 import importlib.util
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,11 +45,68 @@ def policy(expires_at: str | None = None) -> dict:
     return {"version": 1, "blocked_severities": ["CRITICAL"], "exceptions": exceptions}
 
 
+def renovate_dependencies(path: str) -> list[dict[str, str]]:
+    config = json.loads((REPO_ROOT / "renovate.json").read_text(encoding="utf-8"))
+    content = (REPO_ROOT / path).read_text(encoding="utf-8")
+    dependencies: list[dict[str, str]] = []
+    for manager in config["customManagers"]:
+        if not any(regex_matches_path(pattern, path) for pattern in manager["managerFilePatterns"]):
+            continue
+        for pattern in manager["matchStrings"]:
+            python_pattern = pattern.replace("(?<", "(?P<")
+            dependencies.extend(match.groupdict() for match in re.finditer(python_pattern, content))
+    return dependencies
+
+
+def regex_matches_path(pattern: str, path: str) -> bool:
+    expression = pattern[1:-1] if pattern.startswith("/") and pattern.endswith("/") else pattern
+    return re.search(expression, path) is not None
+
+
+def dependency_for(path: str, repository: str) -> dict[str, str]:
+    matches = [dependency for dependency in renovate_dependencies(path) if dependency["depName"] == repository]
+    unique_matches = {
+        (dependency["currentValue"], dependency["currentDigest"])
+        for dependency in matches
+    }
+    if len(unique_matches) != 1:
+        raise AssertionError(
+            f"expected Renovate to find one consistent {repository} dependency in {path}, "
+            f"found {len(matches)} occurrences with {len(unique_matches)} versions"
+        )
+    return matches[0]
+
+
 class ImageSecurityPolicyTests(unittest.TestCase):
     def test_repository_inventory_is_complete_and_digest_pinned(self) -> None:
         images = POLICY.inventory()
         self.assertGreater(len(images), 10)
         self.assertTrue(all("@sha256:" in image for image in images))
+
+    def test_utility_image_matcher_accepts_renovated_versions(self) -> None:
+        digest = "a" * 64
+        content = f'image: "ghcr.io/example/tool:12.34.56@sha256:{digest}"'
+        self.assertEqual(
+            POLICY.pinned_image_references(content, "ghcr.io/example/tool"),
+            [f"ghcr.io/example/tool:12.34.56@sha256:{digest}"],
+        )
+
+    def test_utility_image_matcher_requires_a_digest(self) -> None:
+        self.assertEqual(POLICY.pinned_image_references("image: alpine:3.24", "alpine"), [])
+
+    def test_renovate_manages_utility_sources_and_inventory_together(self) -> None:
+        inventory_path = "security/container-images.txt"
+        sources = {
+            "alpine": "ansible/roles/docker/defaults/main.yml",
+            "goharbor/prepare": "ansible/roles/harbor/tasks/main.yml",
+            "ghcr.io/frantche/gitea-backup-restore-process": "scripts/gitea-process-backup.sh",
+        }
+        for repository, source_path in sources.items():
+            with self.subTest(repository=repository):
+                source = dependency_for(source_path, repository)
+                inventory = dependency_for(inventory_path, repository)
+                self.assertEqual(source["currentValue"], inventory["currentValue"])
+                self.assertEqual(source["currentDigest"], inventory["currentDigest"])
 
     def test_fixable_critical_vulnerability_is_blocked(self) -> None:
         self.assertEqual(
