@@ -15,6 +15,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY = REPO_ROOT / "security/image-vulnerability-policy.json"
 DEFAULT_INVENTORY = REPO_ROOT / "security/container-images.txt"
 IMAGE_WITH_DIGEST = re.compile(r"^[^\s]+:[^\s]+@sha256:[0-9a-f]{64}$")
+IMAGE_REPOSITORY = re.compile(
+    r"^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$"
+)
 UTILITY_IMAGE_SOURCES = {
     REPO_ROOT / "ansible/roles/docker/defaults/main.yml": "alpine",
     REPO_ROOT / "ansible/roles/harbor/tasks/main.yml": "goharbor/prepare",
@@ -30,6 +33,15 @@ def inventory_image_for_repository(images: list[str], repository: str) -> str:
             f"found {len(matches)}"
         )
     return matches[0]
+
+
+def repository_for_image(image: str) -> str:
+    if not IMAGE_WITH_DIGEST.fullmatch(image):
+        raise ValueError(f"image must be pinned by tag and sha256 digest: {image}")
+    repository, separator, _tag = image.rsplit("@sha256:", 1)[0].rpartition(":")
+    if not separator or not IMAGE_REPOSITORY.fullmatch(repository):
+        raise ValueError(f"image contains an invalid repository: {image}")
+    return repository
 
 
 def load_json(path: Path) -> Any:
@@ -87,8 +99,8 @@ def parse_date(value: str, field: str) -> dt.date:
 
 
 def validate_policy(policy: dict[str, Any], today: dt.date) -> list[dict[str, Any]]:
-    if policy.get("version") != 1:
-        raise ValueError("policy version must be 1")
+    if policy.get("version") != 2:
+        raise ValueError("policy version must be 2")
     if policy.get("blocked_severities") != ["CRITICAL"]:
         raise ValueError("blocked_severities must contain CRITICAL")
     exceptions = policy.get("exceptions")
@@ -96,7 +108,8 @@ def validate_policy(policy: dict[str, Any], today: dt.date) -> list[dict[str, An
         raise ValueError("exceptions must be a list")
 
     ids: set[str] = set()
-    required = {"id", "image", "vulnerability", "owner", "justification", "expires_at"}
+    scopes: set[tuple[str, str]] = set()
+    required = {"id", "repository", "vulnerability", "owner", "justification", "expires_at"}
     for exception in exceptions:
         missing = required.difference(exception)
         if missing:
@@ -106,6 +119,16 @@ def validate_policy(policy: dict[str, Any], today: dt.date) -> list[dict[str, An
         if exception["id"] in ids:
             raise ValueError(f"duplicate exception id: {exception['id']}")
         ids.add(exception["id"])
+        if not IMAGE_REPOSITORY.fullmatch(exception["repository"]):
+            raise ValueError(
+                f"exception {exception['id']} repository must be an image repository without a tag or digest"
+            )
+        scope = (exception["repository"], exception["vulnerability"])
+        if scope in scopes:
+            raise ValueError(
+                f"duplicate exception scope: {exception['repository']} {exception['vulnerability']}"
+            )
+        scopes.add(scope)
         if parse_date(exception["expires_at"], f"exception {exception['id']} expires_at") < today:
             raise ValueError(f"exception {exception['id']} expired on {exception['expires_at']}")
     return exceptions
@@ -113,6 +136,7 @@ def validate_policy(policy: dict[str, Any], today: dt.date) -> list[dict[str, An
 
 def violations(report: dict[str, Any], image: str, policy: dict[str, Any], today: dt.date) -> list[str]:
     exceptions = validate_policy(policy, today)
+    repository = repository_for_image(image)
     blocked = set(policy["blocked_severities"])
     found: list[str] = []
     for result in report.get("Results") or []:
@@ -123,7 +147,8 @@ def violations(report: dict[str, Any], image: str, policy: dict[str, Any], today
             if severity not in blocked or not fixed_version:
                 continue
             excepted = any(
-                exception["image"] == image and exception["vulnerability"] == vulnerability_id
+                exception["repository"] == repository
+                and exception["vulnerability"] == vulnerability_id
                 for exception in exceptions
             )
             if not excepted:
