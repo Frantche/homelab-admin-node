@@ -23,11 +23,32 @@ network="${GITEA_PROCESS_BACKUP_NETWORK:-admin-edge}"
 backup_tmp="${BACKUP_TMP_FOLDER:-/tmp/backup}"
 restore_tmp="${RESTORE_TMP_FOLDER:-/tmp/restore}"
 
+scratch_parent() {
+  local path="$1"
+  local parent
+  if [[ "$path" != /* ]]; then
+    echo "[gitea-process-backup] scratch path must be absolute: $path" >&2
+    exit 1
+  fi
+  parent="$(dirname -- "$path")"
+  if [[ "$parent" == "/" ]]; then
+    echo "[gitea-process-backup] refusing to mount filesystem root for scratch path: $path" >&2
+    exit 1
+  fi
+  printf '%s\n' "$parent"
+}
+
+backup_tmp_parent="$(scratch_parent "$backup_tmp")"
+restore_tmp_parent="$(scratch_parent "$restore_tmp")"
+scratch_mounts=(-v "$backup_tmp_parent:$backup_tmp_parent")
+if [[ "$restore_tmp_parent" != "$backup_tmp_parent" ]]; then
+  scratch_mounts+=(-v "$restore_tmp_parent:$restore_tmp_parent")
+fi
+
 docker run --rm \
   --network "$network" \
   --env-file /srv/admin/env/gitea-process-backup.env \
   -v /srv/admin/data/gitea-stack/gitea:/data:ro \
-  -v "$backup_tmp:$backup_tmp" \
-  -v "$restore_tmp:$restore_tmp" \
+  "${scratch_mounts[@]}" \
   "$image" \
   gitea-backup
