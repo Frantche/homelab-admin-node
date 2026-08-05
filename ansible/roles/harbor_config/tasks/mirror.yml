@@ -239,15 +239,50 @@
     - harbor_mirror_auth_config.path is defined
   no_log: true
 
-- name: Pull image through Harbor registry mirror
+- name: Build Harbor registry mirror validation image reference
+  ansible.builtin.set_fact:
+    harbor_mirror_validation_image_ref: >-
+      {{ service_domains.harbor }}/{{ harbor_mirror_item.project_name | default(harbor_mirror_item.name) }}/{{ harbor_mirror_item.validation.image }}
+  when:
+    - (harbor_validate_registry_mirrors | bool) or (harbor_mirror_item.validation.enabled | default(false) | bool)
+    - harbor_mirror_item.validation.image | default('', true) | length > 0
+
+- name: Find cached local registry mirror validation image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - ls
+      - --quiet
+      - --no-trunc
+      - "{{ harbor_mirror_validation_image_ref }}"
+  register: harbor_mirror_cached_validation_image
+  changed_when: false
+  when:
+    - (harbor_validate_registry_mirrors | bool) or (harbor_mirror_item.validation.enabled | default(false) | bool)
+    - harbor_mirror_item.validation.image | default('', true) | length > 0
+
+- name: Remove cached local registry mirror validation image reference
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - rm
+      - "{{ harbor_mirror_validation_image_ref }}"
+  changed_when: false
+  when:
+    - (harbor_validate_registry_mirrors | bool) or (harbor_mirror_item.validation.enabled | default(false) | bool)
+    - harbor_mirror_item.validation.image | default('', true) | length > 0
+    - harbor_mirror_cached_validation_image.stdout | default('', true) | trim | length > 0
+
+- name: Pull image through Harbor registry mirror without a local image reference
   ansible.builtin.command:
     argv:
       - docker
       - pull
-      - "{{ service_domains.harbor }}/{{ harbor_mirror_item.project_name | default(harbor_mirror_item.name) }}/{{ harbor_mirror_item.validation.image }}"
+      - "{{ harbor_mirror_validation_image_ref }}"
   environment: "{{ {'DOCKER_CONFIG': harbor_mirror_auth_config.path} if (harbor_mirror_auth_config.path is defined) else {} }}"
-  register: harbor_mirror_pull
-  changed_when: "'Downloaded newer image' in (harbor_mirror_pull.stdout | default(''))"
+  changed_when: false
   when:
     - (harbor_validate_registry_mirrors | bool) or (harbor_mirror_item.validation.enabled | default(false) | bool)
     - harbor_mirror_item.validation.image | default('', true) | length > 0
