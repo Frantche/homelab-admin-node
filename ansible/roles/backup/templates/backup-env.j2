@@ -13,6 +13,7 @@ PIHOLE_ENABLED={{ ((pihole.enabled | default(true) | bool) | ternary('true', 'fa
 CLOUDFLARE_ENABLED={{ ((cloudflare.enabled | default(true) | bool) | ternary('true', 'false')) | quote }}
 OBSERVABILITY_ENABLED={{ ((observability.enabled | default(false) | bool) | ternary('true', 'false')) | quote }}
 ADMIN_OPERATION_LOCK=/run/admin-node-operation.lock
+BACKUP_OPERATION_LOCK_TIMEOUT={{ backup.operation_lock_timeout | default('30m') | quote }}
 GITEA_STACK_PATH={{ (admin_node_root ~ '/data/gitea-stack') | quote }}
 ADMIN_SNAPSHOT_ROOT={{ (admin_node_root ~ '/backups/snapshots') | quote }}
 BACKUP_REQUIRE_BTRFS_HOT={{ ((backup.require_btrfs_hot | default(false) | bool) | ternary('true', 'false')) | quote }}

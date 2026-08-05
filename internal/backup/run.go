@@ -33,7 +33,7 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	if err != nil || currentMode != "normal" {
 		return Info{}, fmt.Errorf("refusing backup unless mode is normal")
 	}
-	unlock, err := operation.Acquire(cfg.OperationLock)
+	unlock, err := operation.AcquireWait(ctx, cfg.OperationLock, cfg.BackupOperationLockTimeout)
 	if err != nil {
 		return Info{}, err
 	}
