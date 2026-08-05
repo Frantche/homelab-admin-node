@@ -21,5 +21,5 @@ traefik:v3.7@sha256:0ae6898c4a6ad568e8eabad0839b1660eb54a72aa43089ead05c6f624f86
 
 # Production utility images invoked outside Compose.
 alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
-ghcr.io/frantche/gitea-backup-restore-process:0.3.18@sha256:a0bc24193cf2364bde0550ceba5e27ef47148086235e7e0906e11a3ea3dd8975
+ghcr.io/frantche/gitea-backup-restore-process:0.3.21@sha256:fa400b039e740d1a84d3bb9af76a1d69276f1abfaf995db06d10dc813954ec52
 goharbor/prepare:v2.15.2@sha256:5b9428fb649b3a0e0fe497189a880d7c9f1281538b85de9ad377cb524e427bd5
