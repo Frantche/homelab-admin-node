@@ -22,6 +22,7 @@
       "description": "Update the Gitea backup-restore-process GHCR image tag and digest in scripts, templates, and docs.",
       "managerFilePatterns": [
         "/(^|/)scripts/gitea-process-backup\\.sh$/",
+        "/(^|/)cmd/admin-node/main\\.go$/",
         "/(^|/)ansible/roles/backup/templates/gitea-process-backup-env\\.j2$/",
         "/(^|/)docs/(backup|restore-runbook)\\.md$/",
         "/(^|/)site/content/en/docs/(configuration/backup-hardening-observability|operations/backup-restore)\\.md$/"

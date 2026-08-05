@@ -127,6 +127,19 @@ class ImageSecurityPolicyTests(unittest.TestCase):
                 self.assertEqual(source["currentValue"], inventory["currentValue"])
                 self.assertEqual(source["currentDigest"], inventory["currentDigest"])
 
+    def test_renovate_manages_every_gitea_backup_image_default(self) -> None:
+        repository = "ghcr.io/frantche/gitea-backup-restore-process"
+        inventory = dependency_for("security/container-images.txt", repository)
+        for source_path in (
+            "cmd/admin-node/main.go",
+            "scripts/gitea-process-backup.sh",
+            "ansible/roles/backup/templates/gitea-process-backup-env.j2",
+        ):
+            with self.subTest(source_path=source_path):
+                source = dependency_for(source_path, repository)
+                self.assertEqual(source["currentValue"], inventory["currentValue"])
+                self.assertEqual(source["currentDigest"], inventory["currentDigest"])
+
     def test_fixable_critical_vulnerability_is_blocked(self) -> None:
         self.assertEqual(
             POLICY.violations(report(), IMAGE, policy(), TODAY),
