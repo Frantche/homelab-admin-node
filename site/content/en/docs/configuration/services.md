@@ -234,7 +234,7 @@ harbor_config:
 | `harbor_config.registry_mirrors[].username` | unset | Upstream registry username for private mirrors. Store encrypted when sensitive. |
 | `harbor_config.registry_mirrors[].password` | unset | Upstream registry password/token for private mirrors. Store encrypted. |
 | `harbor_config.registry_mirrors[].validation.enabled` | `harbor_config.validate_registry_mirrors` | Enables a test pull through the mirror. |
-| `harbor_config.registry_mirrors[].validation.image` | required when validation is enabled | Image path used for mirror validation. |
+| `harbor_config.registry_mirrors[].validation.image` | required when validation is enabled | Dedicated image path used for mirror validation. Its exact local Docker reference is refreshed before each validation pull so Harbor cannot be bypassed by the local image cache. |
 | `harbor_config.registry_mirrors[].validation.username` | unset | Harbor username used by validation pull when needed. |
 | `harbor_config.registry_mirrors[].validation.password` | unset | Harbor password/token used by validation pull when needed. |
 

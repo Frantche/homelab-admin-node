@@ -4,6 +4,7 @@ SHELL := /usr/bin/env bash
 	build-admin-node dev-deps lint quality check-tools go-test go-vet govulncheck \
 	ansible-lint ansible-syntax sops-check shellcheck actionlint python-check \
 	test-build-admin-node-cache test-container-hardening \
+	test-harbor-mirror-validation \
 	test-openbao-internal-tls test-repo-permissions test-secret-rotation \
 	test-docker-api-isolation test-gitea-process-backup go-coverage validate-compose validate-systemd \
 	test-disaster-recovery-actions test-ci-full
@@ -31,7 +32,8 @@ lint: go-vet shellcheck actionlint python-check ansible-lint ansible-syntax sops
 
 quality: check-tools go-test lint test-build-admin-node-cache \
 	test-container-hardening test-repo-permissions test-secret-rotation \
-	test-docker-api-isolation test-gitea-process-backup test-openbao-internal-tls
+	test-docker-api-isolation test-gitea-process-backup test-harbor-mirror-validation \
+	test-openbao-internal-tls
 
 go-test:
 	@go test -race ./...
@@ -90,6 +92,9 @@ test-docker-api-isolation:
 
 test-gitea-process-backup:
 	@./ci/test-gitea-process-backup.sh
+
+test-harbor-mirror-validation:
+	@python3 ./ci/test_harbor_mirror_validation.py
 
 test-build-admin-node-cache:
 	@./ci/test-build-admin-node-cache.sh
