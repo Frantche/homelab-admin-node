@@ -70,6 +70,7 @@ container is not healthy, that execution is skipped.
 | `backup.gitea_process.on_calendar` | `*-*-* 03:30:00` | systemd `OnCalendar` schedule for the timer. |
 | `backup.gitea_process.method` | `s3` or `ftp` | Storage backend passed as `BACKUP_METHODE`. |
 | `backup.gitea_process.image` | `ghcr.io/frantche/gitea-backup-restore-process:0.3.18` | Backup container image. |
+| `backup.gitea_process.network` | `gitea-db` | Docker network used by the helper to reach PostgreSQL. Override only when the Gitea database uses a different isolated network. |
 | `backup.gitea_process.max_retention` | `5` | Maximum number of backups retained by the helper. |
 | `backup.gitea_process.endpoint_url` | required for S3 | S3-compatible endpoint URL. |
 | `backup.gitea_process.bucket` | required for S3 | S3 bucket name. |

@@ -17,6 +17,17 @@ mkdir -p \
   "$test_root/restore-parent/restore"
 docker_log="$test_root/docker.log"
 
+assert_docker_arg_pair() {
+  local first="$1"
+  local second="$2"
+  if ! awk -v first="$first" -v second="$second" \
+    'previous == first && $0 == second { found = 1 } { previous = $0 } END { exit !found }' \
+    "$docker_log"; then
+    echo "expected Docker arguments '$first' followed by '$second'" >&2
+    exit 1
+  fi
+}
+
 cat > "$test_root/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -34,6 +45,8 @@ BACKUP_TMP_FOLDER="$test_root/scratch/backup" \
 RESTORE_TMP_FOLDER="$test_root/scratch/restore" \
   "$repo_root/scripts/gitea-process-backup.sh"
 
+assert_docker_arg_pair "--network" "gitea-db"
+
 scratch_mount="$test_root/scratch:$test_root/scratch"
 if [[ "$(grep -Fxc "$scratch_mount" "$docker_log")" -ne 1 ]]; then
   echo "expected exactly one shared scratch parent mount" >&2
@@ -50,9 +63,12 @@ fi
 
 PATH="$test_root/bin:$PATH" \
 DOCKER_LOG="$docker_log" \
+GITEA_PROCESS_BACKUP_NETWORK="custom-gitea-db" \
 BACKUP_TMP_FOLDER="$test_root/backup-parent/backup" \
 RESTORE_TMP_FOLDER="$test_root/restore-parent/restore" \
   "$repo_root/scripts/gitea-process-backup.sh"
+
+assert_docker_arg_pair "--network" "custom-gitea-db"
 
 for parent in "$test_root/backup-parent" "$test_root/restore-parent"; do
   if [[ "$(grep -Fxc "$parent:$parent" "$docker_log")" -ne 1 ]]; then
@@ -61,4 +77,18 @@ for parent in "$test_root/backup-parent" "$test_root/restore-parent"; do
   fi
 done
 
-echo "Gitea process backup scratch mounts passed"
+if ! grep -Fqx \
+  "GITEA_PROCESS_BACKUP_NETWORK={{ backup.gitea_process.network | default('gitea-db') }}" \
+  "$repo_root/ansible/roles/backup/templates/gitea-process-backup-env.j2"; then
+  echo "Ansible template does not use the isolated Gitea database network by default" >&2
+  exit 1
+fi
+
+if ! grep -Fq \
+  'envValue(env, "GITEA_PROCESS_BACKUP_NETWORK", "gitea-db")' \
+  "$repo_root/cmd/admin-node/main.go"; then
+  echo "Gitea restore fallback does not use the isolated database network" >&2
+  exit 1
+fi
+
+echo "Gitea process backup network and scratch mounts passed"

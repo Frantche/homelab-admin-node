@@ -17,7 +17,9 @@ When `backup.gitea_process.enabled` is true, a separate
 `admin-gitea-process-backup.timer` also runs daily at 03:30 by default using
 `Frantche/gitea-backup-restore-process`. The schedule is configurable through
 `backup.gitea_process.on_calendar`. It runs only when both `gitea-db` and `gitea`
-report `healthy`; otherwise that execution is skipped.
+report `healthy`; otherwise that execution is skipped. The helper joins the
+isolated `gitea-db` Docker network by default so it can resolve PostgreSQL without
+exposing the database on the ingress network.
 
 PostgreSQL databases are exported with `pg_dump -Fc`:
 
