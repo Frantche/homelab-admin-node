@@ -111,7 +111,7 @@ manual:
      -e BACKUP_FILENAME="$BACKUP_FILENAME" \
      -v /srv/admin/data/gitea:/data \
      -v /srv/admin/backups/gitea-process/restore-tmp:/srv/admin/backups/gitea-process/restore-tmp \
-     ghcr.io/frantche/gitea-backup-restore-process:0.3.18 \
+     ghcr.io/frantche/gitea-backup-restore-process:0.3.21 \
      gitea-restore
    ```
 
