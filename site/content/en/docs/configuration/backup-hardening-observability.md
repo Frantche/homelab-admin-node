@@ -37,6 +37,7 @@ Repositories can be local, SFTP, S3, or any restic-supported backend.
 | `backup.restic_init_repositories` | `false` | Initializes repositories before backup when enabled. |
 | `backup.restic_require_secure_repositories` | `true` | Rejects insecure repository declarations when enabled. |
 | `backup.restic_backup_paths` | tool default | Optional explicit backup path list passed to the backup environment. |
+| `backup.operation_lock_timeout` | `30m` | Maximum time a scheduled backup waits for another admin-node operation, such as convergence, to release the global lock. |
 
 ### Gitea Backup-Restore-Process
 
