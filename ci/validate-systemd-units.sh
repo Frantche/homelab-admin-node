@@ -16,4 +16,13 @@ trap 'rm -rf "$validation_root"' EXIT
 ansible-playbook "$repo_root/ci/playbooks/render-validation-artifacts.yml" \
   -e "validation_output=$validation_root" >/dev/null
 
+for unit in "$validation_root"/systemd/*.service; do
+  sed -i 's#/opt/homelab-admin-node/bin/admin-node#/bin/true#g' "$unit"
+done
+
+if rg -n '/opt/homelab-admin-node/bin/admin-node' "$validation_root/systemd"; then
+  echo "rendered systemd validation still depends on the deployed admin-node binary" >&2
+  exit 1
+fi
+
 systemd-analyze verify "$validation_root"/systemd/*
