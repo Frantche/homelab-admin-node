@@ -12,9 +12,12 @@ done
 
 validation_root="$(mktemp -d /tmp/admin-node-config-validation.XXXXXX)"
 trap 'rm -rf "$validation_root"' EXIT
+runtime_root="$validation_root/runtime"
+install -Dm0600 /dev/null "$runtime_root/env/traefik.env"
 
 ansible-playbook "$repo_root/ci/playbooks/render-validation-artifacts.yml" \
-  -e "validation_output=$validation_root" >/dev/null
+  -e "validation_output=$validation_root" \
+  -e "admin_node_root=$runtime_root" >/dev/null
 
 export \
   CLOUDFLARE_TUNNEL_TOKEN=validation \
