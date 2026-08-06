@@ -287,8 +287,10 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 		return err
 	}
 	image := envValue(env, "GITEA_PROCESS_BACKUP_IMAGE", "ghcr.io/frantche/gitea-backup-restore-process:0.3.21@sha256:fa400b039e740d1a84d3bb9af76a1d69276f1abfaf995db06d10dc813954ec52")
-	network := envValue(env, "GITEA_PROCESS_BACKUP_NETWORK", "gitea-db")
+	databaseNetwork := envValue(env, "GITEA_PROCESS_BACKUP_NETWORK", "gitea-db")
+	egressNetwork := envValue(env, "GITEA_PROCESS_BACKUP_EGRESS_NETWORK", "admin-edge")
 	restoreTmp := envValue(env, "RESTORE_TMP_FOLDER", "/srv/admin/backups/gitea-process/restore-tmp")
+	backupFileLog := envValue(env, "BACKUP_FILE_LOG", "/srv/admin/backups/gitea-process/history/backupFileLog.txt")
 
 	fmt.Fprintf(a.out, "[gitea-restore-process] restoring %s\n", opts.BackupFilename)
 	if err := mode.Set(a.cfg.ModeFile, "locked"); err != nil {
@@ -306,6 +308,20 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 		fmt.Fprintf(a.errOut, "[gitea-restore-process] warning: %v\n", err)
 	}
 
+	restoreDockerCommand := []string{"docker", "run", "--rm"}
+	restoreDockerCommand = append(restoreDockerCommand, giteaProcessNetworkArgs(databaseNetwork, egressNetwork)...)
+	writableMountArgs, err := giteaProcessWritableMountArgs(restoreTmp, backupFileLog)
+	if err != nil {
+		return err
+	}
+	restoreDockerCommand = append(restoreDockerCommand,
+		"--env-file", opts.ProcessEnv,
+		"-e", "BACKUP_FILENAME="+opts.BackupFilename,
+		"-v", filepath.Join(a.cfg.GiteaStackPath, "gitea")+":/data",
+	)
+	restoreDockerCommand = append(restoreDockerCommand, writableMountArgs...)
+	restoreDockerCommand = append(restoreDockerCommand, image, "gitea-restore")
+
 	commands := [][]string{
 		{"docker", "compose", "--env-file", opts.GiteaEnv, "-f", opts.GiteaCompose, "up", "-d", "gitea-db"},
 		{"docker", "compose", "--env-file", opts.GiteaEnv, "-f", opts.GiteaCompose, "stop", "gitea"},
@@ -316,14 +332,7 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 		{"find", filepath.Join(a.cfg.GiteaStackPath, "gitea/gitea/repo-avatars"), "-mindepth", "1", "-maxdepth", "1", "-exec", "rm", "-rf", "{}", "+"},
 		{"install", "-d", "-m", "0700", restoreTmp},
 		{"find", restoreTmp, "-mindepth", "1", "-maxdepth", "1", "-exec", "rm", "-rf", "{}", "+"},
-		{"docker", "run", "--rm",
-			"--network", network,
-			"--env-file", opts.ProcessEnv,
-			"-e", "BACKUP_FILENAME=" + opts.BackupFilename,
-			"-v", filepath.Join(a.cfg.GiteaStackPath, "gitea") + ":/data",
-			"-v", restoreTmp + ":" + restoreTmp,
-			image,
-			"gitea-restore"},
+		restoreDockerCommand,
 	}
 	for _, command := range commands {
 		if err := a.execLogged(ctx, command[0], command[1:]...); err != nil {
@@ -355,6 +364,29 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 		PlaybookPath:  getenv("PLAYBOOK_PATH", a.cfg.RepoRoot+"/ansible/site.yml"),
 		SkipGitPull:   opts.SkipGitPull,
 	})
+}
+
+func giteaProcessNetworkArgs(databaseNetwork, egressNetwork string) []string {
+	args := []string{"--network", databaseNetwork}
+	if egressNetwork != databaseNetwork {
+		args = append(args, "--network", egressNetwork)
+	}
+	return args
+}
+
+func giteaProcessWritableMountArgs(restoreTmp, backupFileLog string) ([]string, error) {
+	if !filepath.IsAbs(restoreTmp) || !filepath.IsAbs(backupFileLog) {
+		return nil, fmt.Errorf("Gitea process writable paths must be absolute")
+	}
+	historyDir := filepath.Dir(backupFileLog)
+	if restoreTmp == "/" || historyDir == "/" {
+		return nil, fmt.Errorf("refusing to mount filesystem root for Gitea process writable paths")
+	}
+	args := []string{"-v", restoreTmp + ":" + restoreTmp}
+	if historyDir != restoreTmp {
+		args = append(args, "-v", historyDir+":"+historyDir)
+	}
+	return args, nil
 }
 
 func (a app) restoreGiteaProcessDatabase(ctx context.Context, dumpPath string) error {

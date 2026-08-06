@@ -65,6 +65,18 @@
   when: backup.gitea_process.enabled | default(false) | bool
   no_log: true
 
+- name: Validate Gitea process backup writable paths
+  ansible.builtin.assert:
+    that:
+      - item.startswith('/')
+      - (item | dirname) != '/'
+    fail_msg: "Gitea process backup writable paths must be absolute and cannot be direct children of filesystem root."
+  loop:
+    - "{{ backup.gitea_process.tmp_folder | default('/srv/admin/backups/gitea-process/tmp', true) }}"
+    - "{{ backup.gitea_process.restore_tmp_folder | default('/srv/admin/backups/gitea-process/restore-tmp', true) }}"
+    - "{{ backup.gitea_process.backup_file_log | default('/srv/admin/backups/gitea-process/history/backupFileLog.txt', true) }}"
+  when: backup.gitea_process.enabled | default(false) | bool
+
 - name: Ensure Gitea process backup scratch directories
   ansible.builtin.file:
     path: "{{ item }}"
@@ -73,6 +85,7 @@
     group: root
     mode: "0700"
   loop:
-    - "{{ backup.gitea_process.tmp_folder | default('/srv/admin/backups/gitea-process/tmp') }}"
-    - "{{ backup.gitea_process.restore_tmp_folder | default('/srv/admin/backups/gitea-process/restore-tmp') }}"
+    - "{{ backup.gitea_process.tmp_folder | default('/srv/admin/backups/gitea-process/tmp', true) }}"
+    - "{{ backup.gitea_process.restore_tmp_folder | default('/srv/admin/backups/gitea-process/restore-tmp', true) }}"
+    - "{{ backup.gitea_process.backup_file_log | default('/srv/admin/backups/gitea-process/history/backupFileLog.txt', true) | dirname }}"
   when: backup.gitea_process.enabled | default(false) | bool

@@ -14,7 +14,8 @@ mkdir -p \
   "$test_root/scratch/backup" \
   "$test_root/scratch/restore" \
   "$test_root/backup-parent/backup" \
-  "$test_root/restore-parent/restore"
+  "$test_root/restore-parent/restore" \
+  "$test_root/history-parent"
 docker_log="$test_root/docker.log"
 
 assert_docker_arg_pair() {
@@ -24,6 +25,14 @@ assert_docker_arg_pair() {
     'previous == first && $0 == second { found = 1 } { previous = $0 } END { exit !found }' \
     "$docker_log"; then
     echo "expected Docker arguments '$first' followed by '$second'" >&2
+    exit 1
+  fi
+}
+
+assert_network_count() {
+  local expected="$1"
+  if [[ "$(grep -Fxc -- "--network" "$docker_log")" -ne "$expected" ]]; then
+    echo "expected $expected Docker network attachments" >&2
     exit 1
   fi
 }
@@ -43,9 +52,12 @@ PATH="$test_root/bin:$PATH" \
 DOCKER_LOG="$docker_log" \
 BACKUP_TMP_FOLDER="$test_root/scratch/backup" \
 RESTORE_TMP_FOLDER="$test_root/scratch/restore" \
+BACKUP_FILE_LOG="$test_root/scratch/backupFileLog.txt" \
   "$repo_root/scripts/gitea-process-backup.sh"
 
 assert_docker_arg_pair "--network" "gitea-db"
+assert_docker_arg_pair "--network" "admin-edge"
+assert_network_count 2
 
 scratch_mount="$test_root/scratch:$test_root/scratch"
 if [[ "$(grep -Fxc "$scratch_mount" "$docker_log")" -ne 1 ]]; then
@@ -64,18 +76,34 @@ fi
 PATH="$test_root/bin:$PATH" \
 DOCKER_LOG="$docker_log" \
 GITEA_PROCESS_BACKUP_NETWORK="custom-gitea-db" \
+GITEA_PROCESS_BACKUP_EGRESS_NETWORK="custom-egress" \
 BACKUP_TMP_FOLDER="$test_root/backup-parent/backup" \
 RESTORE_TMP_FOLDER="$test_root/restore-parent/restore" \
+BACKUP_FILE_LOG="$test_root/history-parent/backupFileLog.txt" \
   "$repo_root/scripts/gitea-process-backup.sh"
 
 assert_docker_arg_pair "--network" "custom-gitea-db"
+assert_docker_arg_pair "--network" "custom-egress"
+assert_network_count 2
 
-for parent in "$test_root/backup-parent" "$test_root/restore-parent"; do
+for parent in "$test_root/backup-parent" "$test_root/restore-parent" "$test_root/history-parent"; do
   if [[ "$(grep -Fxc "$parent:$parent" "$docker_log")" -ne 1 ]]; then
     echo "expected one mount for scratch parent $parent" >&2
     exit 1
   fi
 done
+
+PATH="$test_root/bin:$PATH" \
+DOCKER_LOG="$docker_log" \
+GITEA_PROCESS_BACKUP_NETWORK="shared-network" \
+GITEA_PROCESS_BACKUP_EGRESS_NETWORK="shared-network" \
+BACKUP_TMP_FOLDER="$test_root/scratch/backup" \
+RESTORE_TMP_FOLDER="$test_root/scratch/restore" \
+BACKUP_FILE_LOG="$test_root/scratch/backupFileLog.txt" \
+  "$repo_root/scripts/gitea-process-backup.sh"
+
+assert_docker_arg_pair "--network" "shared-network"
+assert_network_count 1
 
 if ! grep -Fqx \
   "GITEA_PROCESS_BACKUP_NETWORK={{ backup.gitea_process.network | default('gitea-db') }}" \
@@ -85,10 +113,25 @@ if ! grep -Fqx \
 fi
 
 if ! grep -Fq \
-  'envValue(env, "GITEA_PROCESS_BACKUP_NETWORK", "gitea-db")' \
+  'envValue(env, "GITEA_PROCESS_BACKUP_EGRESS_NETWORK", "admin-edge")' \
   "$repo_root/cmd/admin-node/main.go"; then
-  echo "Gitea restore fallback does not use the isolated database network" >&2
+  echo "Gitea restore fallback does not use the egress network" >&2
   exit 1
 fi
 
-echo "Gitea process backup network and scratch mounts passed"
+for expected in \
+  "GITEA_PROCESS_BACKUP_EGRESS_NETWORK={{ backup.gitea_process.egress_network | default('admin-edge') }}" \
+  "BACKUP_FILE_LOG={{ backup.gitea_process.backup_file_log | default('/srv/admin/backups/gitea-process/history/backupFileLog.txt') }}" \
+  "S3_MULTIPART_ENABLED={{ (backup.gitea_process.s3_multipart_enabled | default(true) | bool) | ternary('true', 'false') }}"; do
+  if ! grep -Fqx "$expected" "$repo_root/ansible/roles/backup/templates/gitea-process-backup-env.j2"; then
+    echo "Ansible template is missing runtime default: $expected" >&2
+    exit 1
+  fi
+done
+
+if grep -Fqx "/srv/admin/data/gitea-stack/gitea:/data" "$docker_log"; then
+  echo "Gitea data must remain read-only during backup" >&2
+  exit 1
+fi
+
+echo "Gitea process backup networks, multipart, history, and scratch mounts passed"
