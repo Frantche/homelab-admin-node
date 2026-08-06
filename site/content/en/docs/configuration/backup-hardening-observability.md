@@ -91,7 +91,7 @@ Hardening is enabled by default.
 Backup and stack systemd services also use a restrictive umask, prevent new
 privileges, isolate temporary files, and deny direct access to home directories
 and kernel-control interfaces. Rendered units are checked with
-`systemd-analyze verify` by `make quality`.
+`systemd-analyze verify` by `make ci-quality`.
 
 ```yaml
 hardening:

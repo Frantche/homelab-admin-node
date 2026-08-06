@@ -4,9 +4,7 @@ Les controles rapides couvrent Go, Ansible, les scripts shell et les contrats
 OIDC :
 
 ```bash
-go test -race ./...
-make lint
-make test-oidc-contracts
+make ci-continuous
 ```
 
 La CI d'integration contient deux parcours bloquants.
@@ -27,8 +25,9 @@ PostgreSQL.
 Les variantes DR sont exclues des `pull_request` et des `push`. Elles sont
 declenchables manuellement depuis GitHub Actions avec le scope
 `disaster-recovery`, selectionne par defaut, et sont planifiees chaque dimanche
-a `03:00 UTC`. Le cron ne lance pas le parcours `bootstrap`. Les scopes manuels
-`bootstrap` et `all` restent disponibles.
+a `03:00 UTC`. Le cron ne lance pas le job `bootstrap` separe, mais le parcours
+DR execute le bootstrap avant la mise a niveau. Les scopes manuels `bootstrap`
+et `all` restent disponibles.
 
 Les mots de passe declares dans `keycloak_config.users` ne sont jamais tournes
 par ce parcours. Le test echoue s'ils changent.
@@ -36,14 +35,14 @@ par ce parcours. Le test echoue s'ils changent.
 Execution locale complete :
 
 ```bash
-make test-ci-full
+make ci-full
 ```
 
 La cible execute les variantes `standard` et `offline-images`. Pour n'en lancer
 qu'une :
 
 ```bash
-DR_VARIANTS=standard make test-ci-full
+DR_VARIANTS=standard make ci-full
 ```
 
 Ce test necessite Docker, QEMU, `cloud-localds`, `socat`, `curl`, `jq` et un

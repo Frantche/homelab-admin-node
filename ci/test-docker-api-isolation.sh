@@ -19,5 +19,3 @@ if rg -n '^[[:space:]]+docker:$|docker_stats|traefik\.http\.' \
   echo "Docker discovery or Docker runtime collection is still configured" >&2
   exit 1
 fi
-
-"$REPO_ROOT/ci/test-traefik-external-services.sh"

@@ -20,8 +20,9 @@ idempotente par etape GitHub Actions. GitHub Actions execute deux variantes :
 Ces variantes ne s'executent pas sur les pull requests ni sur les push. Elles
 sont lancees manuellement avec `workflow_dispatch` en choisissant le scope
 `disaster-recovery`, selectionne par defaut, ou automatiquement chaque dimanche
-a `03:00 UTC`. Le cron hebdomadaire n'execute pas le parcours `bootstrap`, mais
-conserve les controles `quality` et `oidc-contracts` requis par le scenario DR.
+a `03:00 UTC`. Le cron hebdomadaire n'execute pas le job `bootstrap` separe,
+mais conserve `ci-quality` et les contrats OIDC requis par le scenario DR. Le
+scenario DR execute lui-meme le parcours bootstrap avant la mise a niveau.
 Le lancement manuel propose aussi les scopes `bootstrap` et `all`.
 
 Chaque variante :
@@ -43,18 +44,19 @@ QEMU reutilisables vivent dans `lib/arch-vm.sh`.
 Le parcours rapide suppose qu'il est lance comme root dans une VM deja preparee :
 
 ```bash
-make test-ci-fast
+make ci-bootstrap
 ```
 
 Le parcours complet exige Docker, QEMU, cloud-localds, socat et un acces Internet :
 
 ```bash
-make test-ci-full
+make ci-full
 ```
 
-Les deux parcours utilisent volontairement l'image cloud Arch `latest`. Arch
-etant une rolling release, cloud-init effectue une mise a niveau complete du
-systeme avant d'installer les paquets du noeud.
+`ci-full` execute les controles continus, les contrats OIDC, puis les variantes
+DR `standard` et `offline-images`. Les parcours VM utilisent volontairement
+l'image cloud Arch `latest`. Arch etant une rolling release, cloud-init effectue
+une mise a niveau complete du systeme avant d'installer les paquets du noeud.
 
 Les SHA et URLs peuvent etre imposes avec `MAIN_SHA`, `CANDIDATE_SHA`,
 `MAIN_REPO_URL` et `CANDIDATE_REPO_URL`.

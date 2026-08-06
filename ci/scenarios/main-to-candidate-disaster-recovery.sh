@@ -155,7 +155,7 @@ case "$ACTION" in
   deploy-main)
     vm_ssh "sudo CI_MOCK_PIHOLE=true CI_MOCK_CLOUDFLARE_TUNNEL=true \
       CI_SKIP_PUBLIC_URL_VALIDATION=true SKIP_PUBLIC_URL_VALIDATION=true \
-      CI_SKIP_LOCAL_RESTORE=true /opt/homelab-admin-node/ci/scenarios/bootstrap-user-journey.sh"
+      CI_SKIP_LOCAL_RESTORE=true make -C /opt/homelab-admin-node ci-bootstrap"
     ;;
   upgrade-candidate)
     vm_ssh "sudo git -C /opt/homelab-admin-node fetch --no-tags '$CANDIDATE_REPO_URL' '$CANDIDATE_SHA'; \

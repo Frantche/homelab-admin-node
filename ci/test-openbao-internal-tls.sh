@@ -21,5 +21,3 @@ if grep -qF -- '- admin-edge' "$REPO_ROOT/stacks/openbao/compose.yaml.j2"; then
   echo "OpenBao still shares the general admin-edge network" >&2
   exit 1
 fi
-
-"$REPO_ROOT/ci/test-traefik-external-services.sh"
