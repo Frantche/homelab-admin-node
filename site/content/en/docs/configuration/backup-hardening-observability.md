@@ -71,6 +71,9 @@ container is not healthy, that execution is skipped.
 | `backup.gitea_process.method` | `s3` or `ftp` | Storage backend passed as `BACKUP_METHODE`. |
 | `backup.gitea_process.image` | `ghcr.io/frantche/gitea-backup-restore-process:0.3.21` | Backup container image. |
 | `backup.gitea_process.network` | `gitea-db` | Docker network used by the helper to reach PostgreSQL. Override only when the Gitea database uses a different isolated network. |
+| `backup.gitea_process.egress_network` | `admin-edge` | Second Docker network used for DNS and access to the remote S3 or FTP backend. If it matches `network`, the helper attaches it only once. |
+| `backup.gitea_process.backup_file_log` | `/srv/admin/backups/gitea-process/history/backupFileLog.txt` | Writable helper history outside the read-only Gitea data mount. Its parent is mounted as scratch storage. |
+| `backup.gitea_process.s3_multipart_enabled` | `true` | Splits S3 uploads into parts, avoiding reverse-proxy request-size limits for large archives. |
 | `backup.gitea_process.max_retention` | `5` | Maximum number of backups retained by the helper. |
 | `backup.gitea_process.endpoint_url` | required for S3 | S3-compatible endpoint URL. |
 | `backup.gitea_process.bucket` | required for S3 | S3 bucket name. |

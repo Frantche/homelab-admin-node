@@ -18,8 +18,10 @@ When `backup.gitea_process.enabled` is true, a separate
 `Frantche/gitea-backup-restore-process`. The schedule is configurable through
 `backup.gitea_process.on_calendar`. It runs only when both `gitea-db` and `gitea`
 report `healthy`; otherwise that execution is skipped. The helper joins the
-isolated `gitea-db` Docker network by default so it can resolve PostgreSQL without
-exposing the database on the ingress network.
+isolated `gitea-db` Docker network to resolve PostgreSQL and `admin-edge` for
+DNS and remote backup egress. Gitea data stays read-only during backup; helper
+history is stored under `/srv/admin/backups/gitea-process`. S3 uploads use
+multipart mode by default so large archives can cross a size-limited proxy.
 
 PostgreSQL databases are exported with `pg_dump -Fc`:
 
