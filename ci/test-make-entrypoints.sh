@@ -78,7 +78,12 @@ if [[ "$(grep -Fc './ci/run-disaster-recovery.sh' <<<"$full_dry_run" || true)" -
 fi
 
 workflow="$repo_root/.github/workflows/bootstrap-user-journey.yml"
+bootstrap_job="$(
+  sed -n '/^  bootstrap:$/,/^  main-to-candidate-disaster-recovery:$/p' "$workflow"
+)"
 bootstrap_vm_markers=(
+  "inputs.scope == 'bootstrap'"
+  "inputs.scope == 'all'"
   'ci_vm_download_image'
   'python3 ci/render-bootstrap-cloud-init.py'
   'cloud-localds .ci/vm/seed.img .ci/vm/user-data .ci/vm/meta-data'
@@ -89,7 +94,7 @@ bootstrap_vm_markers=(
 )
 
 for marker in "${bootstrap_vm_markers[@]}"; do
-  if ! grep -Fq "$marker" "$workflow"; then
+  if ! grep -Fq "$marker" <<<"$bootstrap_job"; then
     echo "bootstrap job no longer provisions and validates a complete fresh VM: $marker" >&2
     exit 1
   fi
