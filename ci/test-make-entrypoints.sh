@@ -78,6 +78,23 @@ if [[ "$(grep -Fc './ci/run-disaster-recovery.sh' <<<"$full_dry_run" || true)" -
 fi
 
 workflow="$repo_root/.github/workflows/bootstrap-user-journey.yml"
+bootstrap_vm_markers=(
+  'ci_vm_download_image'
+  'python3 ci/render-bootstrap-cloud-init.py'
+  'cloud-localds .ci/vm/seed.img .ci/vm/user-data .ci/vm/meta-data'
+  'qemu-system-x86_64'
+  'grep -q locked /etc/admin-node/mode'
+  'make -C /opt/homelab-admin-node ci-bootstrap'
+  'sudo /opt/homelab-admin-node/ci/run-hardening-audit.sh'
+)
+
+for marker in "${bootstrap_vm_markers[@]}"; do
+  if ! grep -Fq "$marker" "$workflow"; then
+    echo "bootstrap job no longer provisions and validates a complete fresh VM: $marker" >&2
+    exit 1
+  fi
+done
+
 while IFS= read -r action; do
   if ! grep -Fq "DR_ACTION=$action" "$workflow"; then
     echo "GitHub Actions does not expose disaster recovery action: $action" >&2

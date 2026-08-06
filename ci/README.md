@@ -10,6 +10,11 @@ cloud-init. Il genere un config repo depuis les exemples, traverse les modes
 `locked`, `init` et `normal`, puis valide services, OIDC, observabilite,
 sauvegarde et restauration locale.
 
+Le job GitHub Actions `bootstrap` conserve la validation de bout en bout : il
+telecharge une image cloud Arch vierge, rend cloud-init avec le SHA candidat,
+cree et demarre une VM QEMU, verifie le mode `locked`, puis execute
+`make ci-bootstrap` dans cette VM.
+
 `scenarios/main-to-candidate-disaster-recovery.sh` expose une commande
 idempotente par etape GitHub Actions. GitHub Actions execute deux variantes :
 
