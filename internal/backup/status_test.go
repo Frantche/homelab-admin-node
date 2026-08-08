@@ -3,6 +3,7 @@ package backup
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -80,6 +81,33 @@ func TestOptionalOfflineStatusDoesNotFailWhenDisabled(t *testing.T) {
 	offline := freshnessByKind(t, results, StatusOfflineImages)
 	if offline.Required {
 		t.Fatalf("offline status unexpectedly required: %#v", offline)
+	}
+}
+
+func TestCheckFreshnessRejectsInvalidPolicyDuration(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "backup.env")
+	if err := os.WriteFile(envFile, []byte("BACKUP_STANDARD_MAX_AGE=tomorrow\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckFreshness(time.Now(), envFile, root); err == nil {
+		t.Fatal("expected invalid freshness duration failure")
+	}
+}
+
+func TestCheckFreshnessRejectsFutureMarker(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 8, 10, 0, 0, 0, time.UTC)
+	if err := WriteSuccessStatus(root, StatusStandard, "20260808-110000", now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	results, err := CheckFreshness(now, filepath.Join(root, "missing.env"), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	standard := freshnessByKind(t, results, StatusStandard)
+	if standard.Fresh || !strings.Contains(standard.Message, "future") {
+		t.Fatalf("future marker accepted: %#v", standard)
 	}
 }
 

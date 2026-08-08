@@ -84,16 +84,29 @@ func CheckFreshness(now time.Time, envFile, statusRoot string) ([]FreshnessStatu
 	remoteRequired := parseBool(values["BACKUP_REQUIRE_REMOTE_REPOSITORY"], false)
 	giteaRequired := parseBool(values["GITEA_PROCESS_BACKUP_ENABLED"], false)
 	integrityRequired := len(repositories) > 0 || values["RESTIC_REPOSITORY"] != ""
-	policies := []struct {
+	type policy struct {
 		kind     string
 		required bool
 		maxAge   time.Duration
+	}
+	policyInputs := []struct {
+		kind, key string
+		required  bool
+		fallback  time.Duration
 	}{
-		{StatusStandard, true, durationValue(values["BACKUP_STANDARD_MAX_AGE"], 36*time.Hour)},
-		{StatusGiteaProcess, giteaRequired, durationValue(values["BACKUP_GITEA_PROCESS_MAX_AGE"], 36*time.Hour)},
-		{StatusRemote, remoteRequired, durationValue(values["BACKUP_REMOTE_MAX_AGE"], 36*time.Hour)},
-		{StatusOfflineImages, false, durationValue(values["BACKUP_OFFLINE_MAX_AGE"], 0)},
-		{StatusIntegrityCheck, integrityRequired, durationValue(values["BACKUP_INTEGRITY_MAX_AGE"], 192*time.Hour)},
+		{StatusStandard, "BACKUP_STANDARD_MAX_AGE", true, 36 * time.Hour},
+		{StatusGiteaProcess, "BACKUP_GITEA_PROCESS_MAX_AGE", giteaRequired, 36 * time.Hour},
+		{StatusRemote, "BACKUP_REMOTE_MAX_AGE", remoteRequired, 36 * time.Hour},
+		{StatusOfflineImages, "BACKUP_OFFLINE_MAX_AGE", false, 0},
+		{StatusIntegrityCheck, "BACKUP_INTEGRITY_MAX_AGE", integrityRequired, 192 * time.Hour},
+	}
+	policies := make([]policy, 0, len(policyInputs))
+	for _, input := range policyInputs {
+		maxAge, err := durationValue(values[input.key], input.fallback)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s: %w", input.key, err)
+		}
+		policies = append(policies, policy{kind: input.kind, required: input.required, maxAge: maxAge})
 	}
 	var results []FreshnessStatus
 	for _, policy := range policies {
@@ -116,9 +129,18 @@ func CheckFreshness(now time.Time, envFile, statusRoot string) ([]FreshnessStatu
 		}
 		result.Present = true
 		result.BackupID = marker.BackupID
+		if (policy.kind == StatusStandard || policy.kind == StatusRemote || policy.kind == StatusOfflineImages) && !ValidID(marker.BackupID) {
+			result.Present = false
+			result.Message = "invalid or missing backup id"
+			results = append(results, result)
+			continue
+		}
 		result.Age = now.Sub(marker.CompletedAt)
 		if result.Age < 0 {
 			result.Age = 0
+			result.Message = "success marker is in the future"
+			results = append(results, result)
+			continue
 		}
 		result.Fresh = policy.maxAge <= 0 || result.Age <= policy.maxAge
 		if result.Fresh {
@@ -141,18 +163,18 @@ func FreshnessFailed(results []FreshnessStatus) bool {
 	return false
 }
 
-func durationValue(value string, fallback time.Duration) time.Duration {
+func durationValue(value string, fallback time.Duration) (time.Duration, error) {
 	if value == "" {
-		return fallback
+		return fallback, nil
 	}
 	if value == "0" {
-		return 0
+		return 0, nil
 	}
 	parsed, err := time.ParseDuration(value)
 	if err != nil || parsed < 0 {
-		return fallback
+		return 0, fmt.Errorf("must be zero or a non-negative Go duration, got %q", value)
 	}
-	return parsed
+	return parsed, nil
 }
 
 func FormatFreshnessAge(value time.Duration) string {

@@ -87,6 +87,9 @@ func TestFromEnvOverrides(t *testing.T) {
 	if cfg.AdminRoot != "/tmp/admin" {
 		t.Fatalf("AdminRoot = %q", cfg.AdminRoot)
 	}
+	if cfg.BackupStatusRoot != "/tmp/admin/backups/status" {
+		t.Fatalf("BackupStatusRoot = %q", cfg.BackupStatusRoot)
+	}
 	if cfg.KeycloakDomain != "keycloak.test" {
 		t.Fatalf("KeycloakDomain = %q", cfg.KeycloakDomain)
 	}

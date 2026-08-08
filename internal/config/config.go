@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -61,9 +62,14 @@ type Config struct {
 
 func FromEnv() Config {
 	backupEnvFile := getenv("RESTIC_BACKUP_ENV_FILE", DefaultBackupEnvFile)
+	adminRoot := getenv("ADMIN_NODE_ROOT", DefaultAdminRoot)
+	backupStatusRoot := os.Getenv("BACKUP_STATUS_ROOT")
+	if backupStatusRoot == "" {
+		backupStatusRoot = filepath.Join(adminRoot, "backups/status")
+	}
 	return Config{
 		RepoRoot:                   getenv("ADMIN_NODE_REPO_ROOT", DefaultRepoRoot),
-		AdminRoot:                  getenv("ADMIN_NODE_ROOT", DefaultAdminRoot),
+		AdminRoot:                  adminRoot,
 		ModeFile:                   getenv("ADMIN_MODE_FILE", DefaultModeFile),
 		RestoreIDFile:              getenv("ADMIN_RESTORE_ID_FILE", DefaultRestoreIDFile),
 		BackupRoot:                 getenv("ADMIN_BACKUP_ROOT", DefaultBackupRoot),
@@ -71,7 +77,7 @@ func FromEnv() Config {
 		OperationLock:              getenv("ADMIN_OPERATION_LOCK", DefaultOperationLock),
 		GiteaStackPath:             getenv("GITEA_STACK_PATH", DefaultGiteaStackPath),
 		SnapshotRoot:               getenv("ADMIN_SNAPSHOT_ROOT", DefaultSnapshotRoot),
-		BackupStatusRoot:           getenv("BACKUP_STATUS_ROOT", DefaultBackupStatusRoot),
+		BackupStatusRoot:           backupStatusRoot,
 		RequireBtrfsHotBackup:      getenvBool("BACKUP_REQUIRE_BTRFS_HOT", false),
 		RequireHarborReadOnly:      getenvBool("BACKUP_REQUIRE_HARBOR_READ_ONLY", false),
 		LocalBackupRetention:       getenvInt("BACKUP_LOCAL_RETENTION", 3),
