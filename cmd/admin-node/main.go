@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -28,6 +29,8 @@ import (
 	"github.com/Frantche/homelab-admin-node/internal/secret"
 	"github.com/Frantche/homelab-admin-node/internal/validate"
 )
+
+var giteaProcessBackupFilenamePattern = regexp.MustCompile(`^gitea-backup-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}\.zip$`)
 
 type app struct {
 	out    io.Writer
@@ -287,6 +290,9 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 		return fmt.Errorf("acquire operation lock: %w", err)
 	}
 	defer unlock()
+	if err := validateGiteaProcessRestoreInputs(a.cfg.GiteaStackPath, opts); err != nil {
+		return err
+	}
 
 	env, err := readEnvFile(opts.ProcessEnv)
 	if err != nil {
@@ -394,8 +400,40 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 	}
 
 	restoreComplete = true
-	resumeTimers()
+	if err := resumeTimers(); err != nil {
+		return err
+	}
 	fmt.Fprintln(a.out, "[gitea-restore-process] restore validated, mode set to normal, and timers resumed")
+	return nil
+}
+
+func validateGiteaProcessRestoreInputs(giteaStackPath string, opts giteaProcessRestoreOptions) error {
+	if !giteaProcessBackupFilenamePattern.MatchString(opts.BackupFilename) {
+		return fmt.Errorf("backup filename must match gitea-backup-YYYY-MM-DD-HH-MM-SS.zip")
+	}
+	preRestoreDir := filepath.Clean(opts.PreRestoreDir)
+	if !filepath.IsAbs(preRestoreDir) || preRestoreDir == "/" {
+		return fmt.Errorf("pre-restore safety copy directory must be an absolute bounded path")
+	}
+	stackPath := filepath.Clean(giteaStackPath)
+	if !filepath.IsAbs(stackPath) || stackPath == "/" {
+		return fmt.Errorf("Gitea stack path must be an absolute bounded path")
+	}
+	relative, err := filepath.Rel(stackPath, preRestoreDir)
+	if err != nil {
+		return fmt.Errorf("compare Gitea restore paths: %w", err)
+	}
+	if relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator))) {
+		return fmt.Errorf("pre-restore safety copy directory must not be inside Gitea data")
+	}
+	for _, marker := range []string{"gitea.dump", "gitea-data"} {
+		path := filepath.Join(preRestoreDir, marker)
+		if _, err := os.Lstat(path); err == nil {
+			return fmt.Errorf("pre-restore safety copy already exists at %s; archive it and select an empty directory before retrying", path)
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("inspect pre-restore safety copy %s: %w", path, err)
+		}
+	}
 	return nil
 }
 

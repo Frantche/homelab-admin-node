@@ -110,6 +110,10 @@ rollback material is:
 /srv/admin/backups/pre-gitea-process-restore/gitea.dump
 ```
 
+The command refuses to overwrite either safety artifact. Before another restore,
+archive the whole directory and select a new empty location with
+`--pre-restore-dir`; never delete the only known-good rollback copy.
+
 Do not return the node to `normal` until Gitea has been repaired or the saved
 filesystem and custom-format PostgreSQL dump have been restored and validated.
 After a successful manual recovery, run the full validation before re-enabling

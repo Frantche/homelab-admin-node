@@ -305,7 +305,7 @@ printf 'safety-copy\n' > "${destination%/}/.restore-test"
 			}
 			preRestoreDir := filepath.Join(root, "pre-restore")
 			err := a.runGiteaProcessRestore(context.Background(), giteaProcessRestoreOptions{
-				BackupFilename: "gitea-backup-test.zip",
+				BackupFilename: "gitea-backup-2026-08-08-12-00-00.zip",
 				ProcessEnv:     processEnv,
 				GiteaEnv:       filepath.Join(root, "gitea.env"),
 				GiteaCompose:   filepath.Join(root, "compose.yaml"),
@@ -340,5 +340,44 @@ printf 'safety-copy\n' > "${destination%/}/.restore-test"
 				t.Fatalf("pre-restore filesystem copy missing: %v", statErr)
 			}
 		})
+	}
+}
+
+func TestValidateGiteaProcessRestoreInputsFailsClosed(t *testing.T) {
+	root := t.TempDir()
+	stackPath := filepath.Join(root, "gitea-stack")
+	if err := os.MkdirAll(stackPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	valid := giteaProcessRestoreOptions{
+		BackupFilename: "gitea-backup-2026-08-08-12-00-00.zip",
+		PreRestoreDir:  filepath.Join(root, "safety"),
+	}
+	tests := []struct {
+		name string
+		opts giteaProcessRestoreOptions
+	}{
+		{name: "unexpected remote filename", opts: valid},
+		{name: "filesystem root", opts: valid},
+		{name: "safety copy inside live data", opts: valid},
+	}
+	tests[0].opts.BackupFilename = "../backup.zip"
+	tests[1].opts.PreRestoreDir = "/"
+	tests[2].opts.PreRestoreDir = filepath.Join(stackPath, "safety")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateGiteaProcessRestoreInputs(stackPath, test.opts); err == nil {
+				t.Fatal("expected unsafe restore input refusal")
+			}
+		})
+	}
+	if err := os.MkdirAll(valid.PreRestoreDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(valid.PreRestoreDir, "gitea.dump"), []byte("previous"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateGiteaProcessRestoreInputs(stackPath, valid); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("error = %v, want existing safety copy refusal", err)
 	}
 }
