@@ -29,6 +29,17 @@ type OfflineImageArchive struct {
 	ImageID    string `json:"image_id"`
 }
 
+const (
+	ArtifactProduced = "produced"
+	ArtifactDisabled = "disabled"
+)
+
+type ManifestArtifact struct {
+	Path     string `json:"path"`
+	Required bool   `json:"required"`
+	Status   string `json:"status"`
+}
+
 type Manifest struct {
 	Version              int                   `json:"version"`
 	ID                   string                `json:"id"`
@@ -41,6 +52,7 @@ type Manifest struct {
 	ActiveStacks         []string              `json:"active_stacks,omitempty"`
 	StackDefinitions     bool                  `json:"stack_definitions,omitempty"`
 	RepositoryBundle     bool                  `json:"repository_bundle,omitempty"`
+	Artifacts            []ManifestArtifact    `json:"artifacts,omitempty"`
 	Consistency          string                `json:"consistency"`
 	Complete             bool                  `json:"complete"`
 	Files                []ManifestFile        `json:"files"`
@@ -114,6 +126,11 @@ func Verify(dir string) (Manifest, error) {
 			return Manifest{}, err
 		}
 	}
+	if len(manifest.Artifacts) > 0 {
+		if err := validateManifestArtifacts(manifest, dir); err != nil {
+			return Manifest{}, err
+		}
+	}
 	actual, err := BuildManifestFiles(dir)
 	if err != nil {
 		return Manifest{}, err
@@ -127,6 +144,32 @@ func Verify(dir string) (Manifest, error) {
 		}
 	}
 	return manifest, nil
+}
+
+func validateManifestArtifacts(manifest Manifest, dir string) error {
+	seen := map[string]struct{}{}
+	for _, artifact := range manifest.Artifacts {
+		if artifact.Path == "" || filepath.IsAbs(artifact.Path) || filepath.Clean(artifact.Path) != artifact.Path || strings.HasPrefix(artifact.Path, "..") {
+			return fmt.Errorf("invalid manifest artifact path %q", artifact.Path)
+		}
+		if _, ok := seen[artifact.Path]; ok {
+			return fmt.Errorf("duplicate manifest artifact %q", artifact.Path)
+		}
+		seen[artifact.Path] = struct{}{}
+		switch artifact.Status {
+		case ArtifactProduced:
+			if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(artifact.Path))); err != nil {
+				return fmt.Errorf("produced artifact is missing: %s", artifact.Path)
+			}
+		case ArtifactDisabled:
+			if artifact.Required {
+				return fmt.Errorf("required artifact is disabled: %s", artifact.Path)
+			}
+		default:
+			return fmt.Errorf("invalid status %q for artifact %s", artifact.Status, artifact.Path)
+		}
+	}
+	return nil
 }
 
 func validateActiveStacks(manifest Manifest, dir string) error {

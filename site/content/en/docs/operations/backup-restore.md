@@ -11,7 +11,16 @@ Run a backup:
 sudo /opt/homelab-admin-node/bin/admin-node backup run
 ```
 
-The backup flow validates service health, prepares local backup data, and applies restic retention to configured repositories.
+The backup flow validates service health, prepares local backup data, and
+applies restic retention to configured repositories. A successful command means
+that every artifact required by the active stateful stacks was produced. It
+fails instead of silently omitting an active Gitea or Harbor database, Harbor
+registry data, or the OpenBao snapshot.
+
+The backup manifest contains an `artifacts` inventory. Required entries must be
+`produced`; optional offline-image and repository-bundle entries are explicitly
+`disabled` during a standard backup. `admin-node backup verify` checks this
+inventory in addition to file hashes.
 
 When `backup.gitea_process.enabled` is true, a separate
 `admin-gitea-process-backup.timer` also runs daily at 03:30 by default using
@@ -26,8 +35,20 @@ multipart mode by default so large archives can cross a size-limited proxy.
 PostgreSQL databases are exported with `pg_dump -Fc`:
 
 - `keycloak.dump` for Keycloak.
-- `gitea.dump` for Gitea when `gitea-db` is running.
-- `harbor.dump` for Harbor when `harbor-db` is running.
+- `gitea.dump` for an active Gitea stack; a missing `gitea-db` is a backup
+  failure.
+- `harbor.dump` for an active Harbor stack; a missing `harbor-db` or registry
+  data is a backup failure.
+
+An active OpenBao stack must also produce `openbao.snap`. Install the dedicated
+snapshot token through convergence before relying on scheduled backups.
+
+Remote delivery is required by default. Set
+`backup.require_remote_repository: false` explicitly only for a deployment that
+intentionally accepts local-only backups. When remote delivery is required, a
+missing Restic binary, missing non-local repository, incomplete credentials, or
+repository failure makes the backup command fail while preserving any complete
+local recovery point already created.
 
 Harbor registry blobs and other file data remain under `/srv/admin/data/harbor`; the default restic path set includes `/srv/admin/data`.
 

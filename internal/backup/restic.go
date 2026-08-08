@@ -27,15 +27,18 @@ type resticConfig struct {
 const defaultResticCacheHome = "/var/cache/admin-node/restic"
 
 func RunRestic(ctx context.Context, envFile string, backupPaths []string) error {
+	cfg, err := loadResticConfig(envFile)
+	if err != nil {
+		return err
+	}
 	if _, err := exec.LookPath("restic"); err != nil {
-		fmt.Println("[restic] restic is not installed, skipping remote backups")
+		if cfg.RequireRemote {
+			return fmt.Errorf("restic is required by BACKUP_REQUIRE_REMOTE_REPOSITORY but is not installed")
+		}
+		fmt.Println("[restic] restic is not installed, skipping optional repository backups")
 		return nil
 	}
 	if err := ensureResticCacheEnv(); err != nil {
-		return err
-	}
-	cfg, err := loadResticConfig(envFile)
-	if err != nil {
 		return err
 	}
 	if len(backupPaths) > 0 {
@@ -351,11 +354,11 @@ func validateSecureRepository(repo string, requireSecure bool) error {
 	case strings.HasPrefix(repo, "sftp:"), strings.HasPrefix(repo, "rest:https://"), strings.HasPrefix(repo, "s3:s3."), strings.HasPrefix(repo, "s3:https://"), strings.HasPrefix(repo, "swift:"), strings.HasPrefix(repo, "b2:"), strings.HasPrefix(repo, "azure:"), strings.HasPrefix(repo, "gs:"):
 		return nil
 	case strings.HasPrefix(repo, "rest:http://"), strings.HasPrefix(repo, "s3:http://"), strings.HasPrefix(repo, "ftp:"):
-		return fmt.Errorf("refusing insecure repository URL: %s", repo)
+		return fmt.Errorf("refusing insecure restic repository URL")
 	case strings.HasPrefix(repo, "rclone:"):
-		return fmt.Errorf("refusing rclone repository while RESTIC_REQUIRE_SECURE_REPOSITORIES=true: %s", repo)
+		return fmt.Errorf("refusing rclone repository while RESTIC_REQUIRE_SECURE_REPOSITORIES=true")
 	default:
-		return fmt.Errorf("unsupported or insecure repository URL: %s", repo)
+		return fmt.Errorf("unsupported or insecure restic repository URL")
 	}
 }
 
