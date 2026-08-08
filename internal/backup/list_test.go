@@ -72,3 +72,29 @@ func TestManifestRoundTrip(t *testing.T) {
 		t.Fatalf("manifest = %#v", got)
 	}
 }
+
+func TestListAcceptsSupportedManifestVersions(t *testing.T) {
+	root := t.TempDir()
+	for index, version := range []int{LegacyManifestVersion, ManifestVersion} {
+		id := []string{"20260624-120000", "20260625-120000"}[index]
+		dir := filepath.Join(root, id)
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteManifest(dir, Manifest{Version: version, ID: id, CreatedAt: time.Now().UTC(), Complete: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	backups, err := List(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backups) != 2 {
+		t.Fatalf("len(backups) = %d, want 2", len(backups))
+	}
+	for _, info := range backups {
+		if info.ManifestInvalid {
+			t.Fatalf("supported manifest %s marked invalid", info.ID)
+		}
+	}
+}

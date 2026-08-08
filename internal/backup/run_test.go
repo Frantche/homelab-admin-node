@@ -589,8 +589,15 @@ func TestVerifyRejectsUnprovenGiteaConsistencyClaim(t *testing.T) {
 	manifest := Manifest{
 		Version: ManifestVersion, ID: backupID, CreatedAt: createdAt,
 		ActiveStacks: []string{"gitea"}, StackDefinitions: true,
-		Consistency: "service-specific-consistency-boundaries", Complete: true, Files: files,
+		Consistency: "logical-online", Complete: true, Files: files,
 	}
+	if err := WriteManifest(backupDir, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(backupDir); err == nil || !strings.Contains(err.Error(), "requires a Gitea consistency boundary") {
+		t.Fatalf("error = %v, want downgraded Gitea consistency refusal", err)
+	}
+	manifest.Consistency = "service-specific-consistency-boundaries"
 	if err := WriteManifest(backupDir, manifest); err != nil {
 		t.Fatal(err)
 	}
@@ -606,6 +613,34 @@ func TestVerifyRejectsUnprovenGiteaConsistencyClaim(t *testing.T) {
 	}
 	if _, err := Verify(backupDir); err == nil || !strings.Contains(err.Error(), "unsupported consistency boundary") {
 		t.Fatalf("error = %v, want unsupported boundary refusal", err)
+	}
+}
+
+func TestVerifyKeepsLegacyV2GiteaRecoveryPointsReadable(t *testing.T) {
+	root := t.TempDir()
+	backupID := "20260808-100000"
+	backupDir := filepath.Join(root, backupID)
+	if err := os.MkdirAll(filepath.Join(backupDir, "stack-definitions", "gitea"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, "stack-definitions", "gitea", "compose.yaml"), []byte("services: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files, err := BuildManifestFiles(backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := Manifest{
+		Version: LegacyManifestVersion, ID: backupID,
+		CreatedAt:    time.Date(2026, 8, 8, 10, 1, 0, 0, time.UTC),
+		ActiveStacks: []string{"gitea"}, StackDefinitions: true,
+		Consistency: "logical-online", Complete: true, Files: files,
+	}
+	if err := WriteManifest(backupDir, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(backupDir); err != nil {
+		t.Fatalf("legacy v2 Gitea recovery point is no longer readable: %v", err)
 	}
 }
 

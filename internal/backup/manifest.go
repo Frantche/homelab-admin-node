@@ -15,7 +15,15 @@ import (
 )
 
 const ManifestName = "manifest.json"
-const ManifestVersion = 2
+
+const (
+	LegacyManifestVersion = 2
+	ManifestVersion       = 3
+)
+
+func SupportedManifestVersion(version int) bool {
+	return version == LegacyManifestVersion || version == ManifestVersion
+}
 
 type ManifestFile struct {
 	Path   string `json:"path"`
@@ -125,7 +133,7 @@ func Verify(dir string) (Manifest, error) {
 	if !ok {
 		return Manifest{}, fmt.Errorf("manifest is required")
 	}
-	if manifest.Version != ManifestVersion || !manifest.Complete {
+	if !SupportedManifestVersion(manifest.Version) || !manifest.Complete {
 		return Manifest{}, fmt.Errorf("unsupported or incomplete manifest version %d", manifest.Version)
 	}
 	if manifest.ID == "" || filepath.Base(manifest.ID) != manifest.ID || strings.Contains(manifest.ID, "..") {
@@ -150,8 +158,12 @@ func Verify(dir string) (Manifest, error) {
 			return Manifest{}, fmt.Errorf("unsupported consistency boundary %s/%s", boundary.Service, boundary.Method)
 		}
 	}
+	hasActiveGitea := stackscope.Contains(manifest.ActiveStacks, "gitea")
+	if manifest.Version == ManifestVersion && hasActiveGitea && manifest.Consistency != "service-specific-consistency-boundaries" {
+		return Manifest{}, fmt.Errorf("manifest version %d requires a Gitea consistency boundary", manifest.Version)
+	}
 	if manifest.Consistency == "service-specific-consistency-boundaries" {
-		if !stackscope.Contains(manifest.ActiveStacks, "gitea") {
+		if !hasActiveGitea {
 			return Manifest{}, fmt.Errorf("service-specific consistency requires an active Gitea stack")
 		}
 		if _, exists := seenBoundaries["gitea"]; !exists || len(seenBoundaries) != 1 {

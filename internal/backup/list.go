@@ -82,7 +82,7 @@ func inspect(path, id string) (Info, error) {
 	manifestInvalid := false
 	if err != nil {
 		manifestInvalid = true
-	} else if !hasManifest || manifest.Version != ManifestVersion || !manifest.Complete || manifest.ID != id {
+	} else if !hasManifest || !SupportedManifestVersion(manifest.Version) || !manifest.Complete || manifest.ID != id {
 		manifestInvalid = true
 	} else if !manifest.CreatedAt.IsZero() {
 		createdAt = manifest.CreatedAt

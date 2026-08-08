@@ -72,6 +72,10 @@ Each successful Gitea boundary is recorded in `manifest.json` with its method,
 start, and completion timestamps. A Btrfs source records a quiesced logical
 dump plus Btrfs snapshot; the portable fallback records a quiesced logical dump
 plus bounded filesystem copy. Neither pair is described as globally atomic.
+This contract is emitted as manifest version 3. Restore and listing remain
+compatible with historical version 2 recovery points, while every version 3
+manifest with an active Gitea stack is rejected unless it contains exactly one
+recognized Gitea consistency boundary.
 
 The other stateful stacks use these contracts:
 
