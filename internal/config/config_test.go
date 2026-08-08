@@ -27,6 +27,9 @@ func TestFromEnvDefaults(t *testing.T) {
 	if cfg.BackupOperationLockTimeout != 30*time.Minute {
 		t.Fatalf("BackupOperationLockTimeout = %s, want 30m", cfg.BackupOperationLockTimeout)
 	}
+	if cfg.OfflineBackupRetention != 2 || cfg.OfflineBackupMaxAge != 8*24*time.Hour || cfg.RecoveryKitMaxAge != 90*24*time.Hour {
+		t.Fatalf("offline defaults = retention %d max age %s kit age %s", cfg.OfflineBackupRetention, cfg.OfflineBackupMaxAge, cfg.RecoveryKitMaxAge)
+	}
 	if cfg.CIMode {
 		t.Fatal("CIMode = true, want false")
 	}
@@ -78,6 +81,9 @@ func TestFromEnvOverrides(t *testing.T) {
 	t.Setenv("OBSERVABILITY_ENABLED", "true")
 	t.Setenv("ADMIN_NODE_VALIDATE_MOCK_ALL", "true")
 	t.Setenv("BACKUP_OPERATION_LOCK_TIMEOUT", "45m")
+	t.Setenv("BACKUP_OFFLINE_RETENTION", "4")
+	t.Setenv("BACKUP_OFFLINE_MAX_AGE", "10h")
+	t.Setenv("BACKUP_OFFLINE_MIN_FREE_BYTES", "1234")
 
 	cfg := FromEnv()
 
@@ -113,5 +119,8 @@ func TestFromEnvOverrides(t *testing.T) {
 	}
 	if cfg.BackupOperationLockTimeout != 45*time.Minute {
 		t.Fatalf("BackupOperationLockTimeout = %s, want 45m", cfg.BackupOperationLockTimeout)
+	}
+	if cfg.OfflineBackupRetention != 4 || cfg.OfflineBackupMaxAge != 10*time.Hour || cfg.OfflineBackupMinFreeBytes != 1234 {
+		t.Fatalf("offline overrides = %#v", cfg)
 	}
 }

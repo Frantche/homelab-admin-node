@@ -53,6 +53,23 @@ not sufficient. At least one SFTP, S3, REST, or other supported non-local
 repository must be configured. Missing tooling is tolerated only in an
 explicit local-only configuration.
 
+### Scheduled offline recovery points
+
+Set `backup.offline.enabled: true` only after completing the
+[offline recovery runbook]({{< relref "/docs/operations/offline-recovery" >}}).
+The separate timer runs `backup run --include-images`, enforces its own free-space
+floor, keeps its own number of offline points, and verifies the resulting bundle.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `backup.offline.enabled` | `false` | Opts in to `admin-offline-backup.timer`; locked mode always stops it. |
+| `backup.offline.on_calendar` | `Sun *-*-* 04:00:00` | Offline backup schedule. |
+| `backup.offline.randomized_delay_sec` | `30m` | Spreads image-heavy work. |
+| `backup.offline.retention` | `2` | Offline points retained independently from standard backups. |
+| `backup.offline.max_age` | `192h` | Maximum accepted age reported by `backup offline-status`. |
+| `backup.offline.minimum_free_bytes` | `32212254720` | Required free capacity before exporting images (30 GiB). |
+| `backup.offline.recovery_kit_max_age` | `2160h` | Maximum age of the external recovery-kit attestation (90 days). |
+
 ### Gitea Backup-Restore-Process
 
 The standard local/restic backup remains enabled. A second Gitea-specific job can

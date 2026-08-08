@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -40,6 +41,14 @@ type Config struct {
 	RequireHarborReadOnly      bool
 	LocalBackupRetention       int
 	BackupOperationLockTimeout time.Duration
+	OfflineBackupRetention     int
+	OfflineBackupMaxAge        time.Duration
+	OfflineBackupMinFreeBytes  int64
+	RecoveryKitInventoryFile   string
+	RecoveryKitMaxAge          time.Duration
+	AgeKeyFile                 string
+	ConfigRepoRoot             string
+	OpenBaoRecoveryFile        string
 	AdminNodeLANIP             string
 	KeycloakDomain             string
 	HarborDomain               string
@@ -73,6 +82,14 @@ func FromEnv() Config {
 		RequireHarborReadOnly:      getenvBool("BACKUP_REQUIRE_HARBOR_READ_ONLY", false),
 		LocalBackupRetention:       getenvInt("BACKUP_LOCAL_RETENTION", 3),
 		BackupOperationLockTimeout: getenvDuration("BACKUP_OPERATION_LOCK_TIMEOUT", 30*time.Minute),
+		OfflineBackupRetention:     getenvInt("BACKUP_OFFLINE_RETENTION", 2),
+		OfflineBackupMaxAge:        getenvDuration("BACKUP_OFFLINE_MAX_AGE", 8*24*time.Hour),
+		OfflineBackupMinFreeBytes:  getenvInt64("BACKUP_OFFLINE_MIN_FREE_BYTES", 0),
+		RecoveryKitInventoryFile:   getenv("BACKUP_RECOVERY_KIT_INVENTORY", "/etc/admin-node/recovery-kit-inventory.json"),
+		RecoveryKitMaxAge:          getenvDuration("BACKUP_RECOVERY_KIT_MAX_AGE", 90*24*time.Hour),
+		AgeKeyFile:                 getenv("SOPS_AGE_KEY_FILE", "/etc/sops/age/keys.txt"),
+		ConfigRepoRoot:             getenv("ADMIN_CONFIG_REPO_ROOT", "/etc/admin-config/homelab-node-admin-config"),
+		OpenBaoRecoveryFile:        getenv("OPENBAO_RECOVERY_FILE", filepath.Join(getenv("ADMIN_NODE_REPO_ROOT", DefaultRepoRoot), "secrets/openbao-unseal.sops.yaml")),
 		AdminNodeLANIP:             getenv("ADMIN_NODE_LAN_IP", DefaultAdminNodeLANIP),
 		KeycloakDomain:             getenv("KEYCLOAK_DOMAIN", DefaultKeycloakDomain),
 		HarborDomain:               getenv("HARBOR_DOMAIN", DefaultHarborDomain),
@@ -110,6 +127,18 @@ func getenvInt(key string, fallback int) int {
 	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil || parsed < 1 {
+		return fallback
+	}
+	return parsed
+}
+
+func getenvInt64(key string, fallback int64) int64 {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed < 0 {
 		return fallback
 	}
 	return parsed

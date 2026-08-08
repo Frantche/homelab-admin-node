@@ -87,3 +87,5 @@
           dest: admin-converge.timer
         - src: "{{ playbook_dir }}/../../ansible/roles/base/templates/admin-gitea-process-backup.timer.j2"
           dest: admin-gitea-process-backup.timer
+        - src: "{{ playbook_dir }}/../../ansible/roles/base/templates/admin-offline-backup.timer.j2"
+          dest: admin-offline-backup.timer

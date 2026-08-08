@@ -32,6 +32,31 @@
     mode: "0600"
   no_log: true
 
+- name: Validate offline backup policy and recovery-kit attestations
+  ansible.builtin.assert:
+    that:
+      - (backup.offline.retention | default(2) | int) >= 1
+      - (backup.offline.minimum_free_bytes | default(32212254720) | int) >= 1073741824
+      - backup.offline.recovery_kit.last_verified_at | default('') | length > 0
+      - backup.offline.recovery_kit.age_identity_offsite | default(false) | bool
+      - backup.offline.recovery_kit.config_repo_access_tested | default(false) | bool
+      - backup.offline.recovery_kit.restic_access_offsite | default(false) | bool
+      - backup.offline.recovery_kit.openbao_recovery_offsite | default(false) | bool
+      - backup.offline.recovery_kit.separation_of_duties_verified | default(false) | bool
+    fail_msg: >-
+      backup.offline is enabled but retention/capacity or the secret-free recovery-kit
+      attestations are incomplete. Complete the published offline recovery checklist first.
+  when: backup.offline.enabled | default(false) | bool
+
+- name: Render secret-free recovery-kit inventory
+  ansible.builtin.copy:
+    dest: /etc/admin-node/recovery-kit-inventory.json
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ (backup.offline.recovery_kit | default({})) | to_nice_json }}\n"
+  when: backup.offline.enabled | default(false) | bool
+
 - name: Validate Gitea process backup configuration
   ansible.builtin.assert:
     that:
