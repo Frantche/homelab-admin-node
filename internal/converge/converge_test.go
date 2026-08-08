@@ -61,6 +61,67 @@ func TestUpdateGitRepositoryPullsWhenUpstreamHasNewCommit(t *testing.T) {
 	}
 }
 
+func TestUpdateAdminRepositoryKeepsImmutableCommitPin(t *testing.T) {
+	ctx := context.Background()
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	git(t, "", "init", "--bare", "--initial-branch=main", origin)
+	source := filepath.Join(t.TempDir(), "source")
+	git(t, "", "clone", origin, source)
+	configureGitUser(t, source)
+	writeAndCommit(t, source, "release/config-schema-version", "1\n", "initial")
+	git(t, source, "push", "-u", "origin", "main")
+	pinned := gitOutput(t, source, "rev-parse", "HEAD")
+
+	local := filepath.Join(t.TempDir(), "local")
+	git(t, "", "clone", origin, local)
+	writeAndCommit(t, source, "README.md", "newer\n", "newer")
+	git(t, source, "push")
+	refFile := filepath.Join(t.TempDir(), "release-ref")
+	if err := os.WriteFile(refFile, []byte(pinned+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := updateAdminRepository(ctx, Options{RepoDir: local, ReleaseRefFile: refFile}); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitOutput(t, local, "rev-parse", "HEAD"); got != pinned {
+		t.Fatalf("HEAD = %s, want immutable pin %s", got, pinned)
+	}
+	if branch := gitOutput(t, local, "branch", "--show-current"); branch != "" {
+		t.Fatalf("pinned checkout remains on moving branch %q", branch)
+	}
+}
+
+func TestPersistInstalledState(t *testing.T) {
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "release/config-schema-version", "3\n", "schema")
+	stateDir := t.TempDir()
+	opts := Options{
+		RepoDir:      repo,
+		RevisionFile: filepath.Join(stateDir, "git-ref"),
+		SchemaSource: filepath.Join(repo, "release/config-schema-version"),
+		SchemaFile:   filepath.Join(stateDir, "schema"),
+	}
+	if err := persistInstalledState(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(readFile(t, opts.RevisionFile)); got != gitOutput(t, repo, "rev-parse", "HEAD") {
+		t.Fatalf("recorded revision = %s", got)
+	}
+	if got := strings.TrimSpace(readFile(t, opts.SchemaFile)); got != "3" {
+		t.Fatalf("recorded schema = %q", got)
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(content)
+}
+
 func initGitRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()

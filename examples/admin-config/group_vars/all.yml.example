@@ -1,5 +1,6 @@
 # Public example only — keep real secrets in group_vars/secrets.sops.yaml
 ci_mode: false
+admin_config_schema_version: "1"
 
 storage_isolation:
   enabled: true

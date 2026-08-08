@@ -10,6 +10,7 @@ Before switching modes, confirm that the config repo is present and that the con
 ```bash
 sudo git -C /etc/admin-config/homelab-node-admin-config status --short --branch
 systemctl cat admin-converge.service
+sudo /opt/homelab-admin-node/bin/admin-node version
 ```
 
 For the current VM, the inventory should be:
@@ -73,6 +74,11 @@ If the code repo is already aligned and root cannot fetch it over SSH, use `--sk
 ```bash
 sudo /opt/homelab-admin-node/bin/admin-node converge run --skip-git-pull
 ```
+
+On a production release, convergence enforces the full commit stored in
+`/etc/admin-node/release-ref`. It will fetch and detach at that commit if the
+working copy differs. `--skip-git-pull` deliberately bypasses this alignment for
+diagnostics, but still records the code and schema actually converged.
 
 ## Validate
 

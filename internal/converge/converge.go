@@ -11,12 +11,16 @@ import (
 )
 
 type Options struct {
-	RepoDir       string
-	InventoryPath string
-	PlaybookPath  string
-	LockFile      string
-	SkipGitPull   bool
-	ExtraArgs     []string
+	RepoDir        string
+	InventoryPath  string
+	PlaybookPath   string
+	LockFile       string
+	SkipGitPull    bool
+	ExtraArgs      []string
+	ReleaseRefFile string
+	RevisionFile   string
+	SchemaSource   string
+	SchemaFile     string
 }
 
 func Run(ctx context.Context, opts Options) error {
@@ -45,7 +49,7 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("git repository not found in %s", opts.RepoDir)
 	}
 	if !opts.SkipGitPull {
-		if err := updateGitRepository(ctx, opts.RepoDir, "admin repo"); err != nil {
+		if err := updateAdminRepository(ctx, opts); err != nil {
 			return err
 		}
 		inventoryRepo, err := gitRootForPath(ctx, opts.InventoryPath)
@@ -74,8 +78,109 @@ func Run(ctx context.Context, opts Options) error {
 	if err := run(ctx, "", "ansible-playbook", args...); err != nil {
 		return err
 	}
+	if err := persistInstalledState(ctx, opts); err != nil {
+		return err
+	}
 	fmt.Println("[admin-converge] completed")
 	return nil
+}
+
+func updateAdminRepository(ctx context.Context, opts Options) error {
+	desiredBytes, err := os.ReadFile(opts.ReleaseRefFile)
+	if os.IsNotExist(err) {
+		fmt.Printf("[admin-converge] release pin %s is absent; using legacy branch update\n", opts.ReleaseRefFile)
+		return updateGitRepository(ctx, opts.RepoDir, "admin repo")
+	}
+	if err != nil {
+		return fmt.Errorf("read release pin %s: %w", opts.ReleaseRefFile, err)
+	}
+	desired := strings.TrimSpace(string(desiredBytes))
+	if desired == "" {
+		return fmt.Errorf("release pin %s is empty", opts.ReleaseRefFile)
+	}
+	if desired == "main" || desired == "refs/heads/main" {
+		fmt.Println("[admin-converge] development channel main selected")
+		if err := run(ctx, opts.RepoDir, "git", "fetch", "origin", "main"); err != nil {
+			return fmt.Errorf("fetch development channel main: %w", err)
+		}
+		if err := run(ctx, opts.RepoDir, "git", "checkout", "-B", "main", "origin/main"); err != nil {
+			return fmt.Errorf("checkout development channel main: %w", err)
+		}
+		if err := run(ctx, opts.RepoDir, "git", "branch", "--set-upstream-to", "origin/main", "main"); err != nil {
+			return fmt.Errorf("track development channel main: %w", err)
+		}
+		return updateGitRepository(ctx, opts.RepoDir, "admin repo")
+	}
+	if !isFullGitRevision(desired) {
+		return fmt.Errorf("release pin %s must contain a full 40-character commit SHA, got %q", opts.ReleaseRefFile, desired)
+	}
+	current, err := commandOutput(ctx, opts.RepoDir, "git", "rev-parse", "HEAD")
+	if err != nil {
+		return fmt.Errorf("read installed admin revision: %w", err)
+	}
+	_, branchErr := commandOutput(ctx, opts.RepoDir, "git", "symbolic-ref", "--quiet", "HEAD")
+	if current == desired && branchErr != nil {
+		fmt.Printf("[admin-converge] admin repo pinned at %s\n", desired)
+		return nil
+	}
+	resolved, err := commandOutput(ctx, opts.RepoDir, "git", "rev-parse", desired+"^{commit}")
+	if err != nil {
+		if err := run(ctx, opts.RepoDir, "git", "fetch", "origin", desired); err != nil {
+			return fmt.Errorf("fetch pinned admin revision %s: %w", desired, err)
+		}
+		resolved, err = commandOutput(ctx, opts.RepoDir, "git", "rev-parse", "FETCH_HEAD^{commit}")
+	}
+	if err != nil || resolved != desired {
+		return fmt.Errorf("resolved release revision does not match pin %s", desired)
+	}
+	if err := run(ctx, opts.RepoDir, "git", "checkout", "--detach", desired); err != nil {
+		return fmt.Errorf("checkout pinned admin revision %s: %w", desired, err)
+	}
+	return nil
+}
+
+func persistInstalledState(ctx context.Context, opts Options) error {
+	revision, err := commandOutput(ctx, opts.RepoDir, "git", "rev-parse", "HEAD")
+	if err != nil {
+		return fmt.Errorf("read installed admin revision: %w", err)
+	}
+	if err := writeStateFile(opts.RevisionFile, revision+"\n"); err != nil {
+		return fmt.Errorf("persist installed admin revision: %w", err)
+	}
+	schema, err := os.ReadFile(opts.SchemaSource)
+	if err != nil {
+		return fmt.Errorf("read configuration schema version: %w", err)
+	}
+	if err := writeStateFile(opts.SchemaFile, strings.TrimSpace(string(schema))+"\n"); err != nil {
+		return fmt.Errorf("persist configuration schema version: %w", err)
+	}
+	return nil
+}
+
+func writeStateFile(path, content string) error {
+	if path == "" {
+		return fmt.Errorf("state file path is empty")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+func isFullGitRevision(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for _, char := range value {
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 func SplitExtraArgs(raw string) []string {
