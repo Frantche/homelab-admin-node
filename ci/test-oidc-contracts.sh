@@ -12,6 +12,14 @@ export ANSIBLE_ROLES_PATH="$REPO_ROOT/ansible/roles"
 
 grep -F 'CI_MODE: "{{ (ci_mode | default(false) | bool) | ternary('\''true'\'', '\''false'\'') }}"' \
   "$REPO_ROOT/ansible/roles/gitea_config/tasks/main.yml" >/dev/null
+validation_ci_mode_count="$(
+  grep -cF 'CI_MODE: "{{ (ci_mode | default(false) | bool) | ternary('\''true'\'', '\''false'\'') }}"' \
+    "$REPO_ROOT/ansible/roles/validate_apis/tasks/main.yml"
+)"
+if [[ "$validation_ci_mode_count" != "4" ]]; then
+  echo "[oidc-contracts] every early admin-node validation must receive explicit CI_MODE" >&2
+  exit 1
+fi
 
 echo "[oidc-contracts] non-CI success scenario"
 ansible-playbook -i localhost, "$SUCCESS_PLAYBOOK"
