@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -772,7 +773,7 @@ func directoryContentsPath(path string) string {
 }
 
 func backupHarbor(ctx context.Context, cfg config.Config, target, id string) (err error) {
-	user, password := os.Getenv("HARBOR_ADMIN_USER"), os.Getenv("HARBOR_ADMIN_PASSWORD")
+	user, password := harborAdminCredentials(cfg)
 	readOnly := user != "" && password != ""
 	if cfg.RequireHarborReadOnly && !readOnly {
 		return fmt.Errorf("harbor read-only credentials are required")
@@ -825,6 +826,37 @@ func backupHarbor(ctx context.Context, cfg config.Config, target, id string) (er
 		return fmt.Errorf("required Harbor registry artifact was not produced")
 	}
 	return nil
+}
+
+func harborAdminCredentials(cfg config.Config) (string, string) {
+	user, password := os.Getenv("HARBOR_ADMIN_USER"), os.Getenv("HARBOR_ADMIN_PASSWORD")
+	if user == "" {
+		user = envFileCredential(cfg.BackupEnvFile, "HARBOR_ADMIN_USER")
+	}
+	if user == "" {
+		user = "admin"
+	}
+	if password == "" {
+		password = envFileCredential(cfg.BackupEnvFile, "HARBOR_ADMIN_PASSWORD")
+	}
+	return user, password
+}
+
+func envFileCredential(path, key string) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		name, value, ok := strings.Cut(strings.TrimSpace(scanner.Text()), "=")
+		if !ok || strings.TrimSpace(name) != key {
+			continue
+		}
+		return unquoteEnvValue(strings.TrimSpace(value))
+	}
+	return ""
 }
 
 func SetHarborReadOnly(ctx context.Context, domain, user, password string, enabled bool) error {
