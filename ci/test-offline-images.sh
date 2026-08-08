@@ -97,6 +97,9 @@ set -euo pipefail
 if [[ "$*" == "cat config" ]]; then
   exit 1
 fi
+if [[ "${1:-}" == "snapshots" ]]; then
+  printf '[{"id":"verified-offline-snapshot"}]\n'
+fi
 exit 0
 EOF
 chmod +x "$fake_restic"

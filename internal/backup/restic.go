@@ -3,6 +3,7 @@ package backup
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type resticConfig struct {
@@ -27,15 +29,18 @@ type resticConfig struct {
 const defaultResticCacheHome = "/var/cache/admin-node/restic"
 
 func RunRestic(ctx context.Context, envFile string, backupPaths []string) error {
+	cfg, err := loadResticConfig(envFile)
+	if err != nil {
+		return err
+	}
 	if _, err := exec.LookPath("restic"); err != nil {
-		fmt.Println("[restic] restic is not installed, skipping remote backups")
+		if cfg.RequireRemote {
+			return fmt.Errorf("restic is required by BACKUP_REQUIRE_REMOTE_REPOSITORY but is not installed")
+		}
+		fmt.Println("[restic] restic is not installed, skipping optional repository backups")
 		return nil
 	}
 	if err := ensureResticCacheEnv(); err != nil {
-		return err
-	}
-	cfg, err := loadResticConfig(envFile)
-	if err != nil {
 		return err
 	}
 	if len(backupPaths) > 0 {
@@ -207,12 +212,16 @@ func runResticRepo(ctx context.Context, cfg resticConfig, id string) error {
 		return err
 	}
 	fmt.Printf("[restic] backing up to repository '%s'\n", id)
-	backupArgs := append(append([]string{}, options...), "backup", "--tag", "admin-node-v2")
+	verificationTag := fmt.Sprintf("admin-node-run:%d", time.Now().UTC().UnixNano())
+	backupArgs := append(append([]string{}, options...), "backup", "--tag", "admin-node-v2", "--tag", verificationTag)
 	if backupID := backupIDFromPaths(cfg.BackupPaths); backupID != "" {
 		backupArgs = append(backupArgs, "--tag", "backup-id:"+backupID)
 	}
 	if err := restic(ctx, env, append(backupArgs, cfg.BackupPaths...)...); err != nil {
 		return err
+	}
+	if err := verifyResticSnapshot(ctx, env, options, verificationTag); err != nil {
+		return fmt.Errorf("verify repository '%s' delivery: %w", id, err)
 	}
 	forgetArgs := values["RESTIC_FORGET_ARGS"]
 	if forgetArgs == "" {
@@ -289,10 +298,38 @@ func runResticLegacy(ctx context.Context, cfg resticConfig) error {
 		return err
 	}
 	fmt.Println("[restic] backing up to legacy RESTIC_REPOSITORY")
-	if err := restic(ctx, env, append([]string{"backup"}, cfg.BackupPaths...)...); err != nil {
+	verificationTag := fmt.Sprintf("admin-node-run:%d", time.Now().UTC().UnixNano())
+	backupArgs := []string{"backup", "--tag", "admin-node-v2", "--tag", verificationTag}
+	if backupID := backupIDFromPaths(cfg.BackupPaths); backupID != "" {
+		backupArgs = append(backupArgs, "--tag", "backup-id:"+backupID)
+	}
+	if err := restic(ctx, env, append(backupArgs, cfg.BackupPaths...)...); err != nil {
 		return err
 	}
+	if err := verifyResticSnapshot(ctx, env, nil, verificationTag); err != nil {
+		return fmt.Errorf("verify legacy repository delivery: %w", err)
+	}
 	return forgetRestic(ctx, env, options, cfg.DefaultForgetArgs)
+}
+
+func verifyResticSnapshot(ctx context.Context, env, options []string, tag string) error {
+	args := append(append([]string{}, options...), "snapshots", "--json", "--tag", tag)
+	cmd := exec.CommandContext(ctx, "restic", args...)
+	cmd.Env = env
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("query tagged snapshot: %w", err)
+	}
+	var snapshots []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(output, &snapshots); err != nil {
+		return fmt.Errorf("decode tagged snapshot inventory: %w", err)
+	}
+	if len(snapshots) != 1 || snapshots[0].ID == "" {
+		return fmt.Errorf("expected exactly one tagged snapshot, found %d", len(snapshots))
+	}
+	return nil
 }
 
 func initRestic(ctx context.Context, cfg resticConfig, env []string, options []string, id string) error {
@@ -351,11 +388,11 @@ func validateSecureRepository(repo string, requireSecure bool) error {
 	case strings.HasPrefix(repo, "sftp:"), strings.HasPrefix(repo, "rest:https://"), strings.HasPrefix(repo, "s3:s3."), strings.HasPrefix(repo, "s3:https://"), strings.HasPrefix(repo, "swift:"), strings.HasPrefix(repo, "b2:"), strings.HasPrefix(repo, "azure:"), strings.HasPrefix(repo, "gs:"):
 		return nil
 	case strings.HasPrefix(repo, "rest:http://"), strings.HasPrefix(repo, "s3:http://"), strings.HasPrefix(repo, "ftp:"):
-		return fmt.Errorf("refusing insecure repository URL: %s", repo)
+		return fmt.Errorf("refusing insecure restic repository URL")
 	case strings.HasPrefix(repo, "rclone:"):
-		return fmt.Errorf("refusing rclone repository while RESTIC_REQUIRE_SECURE_REPOSITORIES=true: %s", repo)
+		return fmt.Errorf("refusing rclone repository while RESTIC_REQUIRE_SECURE_REPOSITORIES=true")
 	default:
-		return fmt.Errorf("unsupported or insecure repository URL: %s", repo)
+		return fmt.Errorf("unsupported or insecure restic repository URL")
 	}
 }
 

@@ -82,7 +82,7 @@ exit 1
 		t.Fatal(err)
 	}
 	adminRoot := filepath.Join(root, "admin")
-	for _, dir := range []string{"stacks", "env", "data/gitea", "backups/openbao-scratch"} {
+	for _, dir := range []string{"stacks", "env", "data/gitea", "data/harbor/registry", "backups/openbao-scratch"} {
 		if err := os.MkdirAll(filepath.Join(adminRoot, dir), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -116,6 +116,9 @@ exit 1
 	if err := os.WriteFile(filepath.Join(adminRoot, "data/gitea/app.ini"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(adminRoot, "data/harbor/registry/blob"), []byte("registry-data\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	repoRoot := filepath.Join(root, "repo")
 	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
 		t.Fatal(err)
@@ -145,6 +148,9 @@ set -euo pipefail
 echo "$*" >> "`+resticLog+`"
 if [[ "$*" == "cat config" ]]; then
   exit 1
+fi
+if [[ "${1:-}" == "snapshots" ]]; then
+  printf '[{"id":"verified-snapshot"}]\n'
 fi
 exit 0
 `), 0o755); err != nil {
@@ -229,6 +235,95 @@ RESTIC_DEFAULT_FORGET_ARGS="--keep-last 2 --prune"
 	if strings.Join(manifest.ActiveStacks, ",") != "gitea,harbor,keycloak,openbao" {
 		t.Fatalf("active stacks = %#v", manifest.ActiveStacks)
 	}
+	if len(manifest.Artifacts) == 0 {
+		t.Fatal("manifest artifact inventory is empty")
+	}
+	for _, artifact := range manifest.Artifacts {
+		if artifact.Required && artifact.Status != ArtifactProduced {
+			t.Fatalf("required artifact is not produced: %#v", artifact)
+		}
+	}
+}
+
+func TestRunFailsWhenActiveOpenBaoSnapshotTokenIsMissing(t *testing.T) {
+	root := t.TempDir()
+	adminRoot := filepath.Join(root, "admin")
+	writeActiveStack(t, adminRoot, "openbao")
+	t.Setenv("OPENBAO_TOKEN", "")
+
+	_, err := Run(context.Background(), config.Config{
+		AdminRoot:  adminRoot,
+		RepoRoot:   filepath.Join(root, "repo-without-token"),
+		ModeFile:   writeBackupMode(t, root),
+		BackupRoot: filepath.Join(root, "backups"),
+	}, RunOptions{})
+	if err == nil || !strings.Contains(err.Error(), "snapshot token") {
+		t.Fatalf("error = %v, want missing OpenBao snapshot token", err)
+	}
+	failureManifestPath := filepath.Join(root, "backups", ".failed")
+	failureIDs, readErr := os.ReadDir(failureManifestPath)
+	if readErr != nil || len(failureIDs) != 1 {
+		t.Fatalf("failed artifact inventory was not retained: entries=%v error=%v", failureIDs, readErr)
+	}
+	failureManifest, ok, readErr := ReadManifest(filepath.Join(failureManifestPath, failureIDs[0].Name()))
+	if readErr != nil || !ok || failureManifest.Complete {
+		t.Fatalf("invalid failed artifact inventory: manifest=%#v ok=%t error=%v", failureManifest, ok, readErr)
+	}
+	foundOpenBaoFailure := false
+	for _, artifact := range failureManifest.Artifacts {
+		if artifact.Path == "openbao.snap" && artifact.Status == ArtifactFailed {
+			foundOpenBaoFailure = true
+		}
+	}
+	if !foundOpenBaoFailure {
+		t.Fatalf("OpenBao failure is absent from artifact inventory: %#v", failureManifest.Artifacts)
+	}
+}
+
+func TestRunFailsWhenActiveGiteaDatabaseIsUnavailable(t *testing.T) {
+	root := t.TempDir()
+	adminRoot := filepath.Join(root, "admin")
+	writeActiveStack(t, adminRoot, "gitea")
+	if err := os.MkdirAll(filepath.Join(adminRoot, "data/gitea"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "docker"), []byte("#!/usr/bin/env bash\nset -euo pipefail\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, err := Run(context.Background(), config.Config{
+		AdminRoot:  adminRoot,
+		ModeFile:   writeBackupMode(t, root),
+		BackupRoot: filepath.Join(root, "backups"),
+	}, RunOptions{})
+	if err == nil || !strings.Contains(err.Error(), "gitea-db is not running") {
+		t.Fatalf("error = %v, want unavailable Gitea database", err)
+	}
+}
+
+func writeActiveStack(t *testing.T, adminRoot, name string) {
+	t.Helper()
+	path := filepath.Join(adminRoot, "stacks", name)
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeBackupMode(t *testing.T, root string) string {
+	t.Helper()
+	path := filepath.Join(root, "mode")
+	if err := os.WriteFile(path, []byte("normal\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func TestRunStandardBackupIncludesActiveStackDefinitions(t *testing.T) {

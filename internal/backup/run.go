@@ -82,6 +82,16 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	if len(activeStacks) == 0 {
 		return Info{}, fmt.Errorf("no active rendered stacks found")
 	}
+	runSuccessful := false
+	defer func() {
+		if !runSuccessful {
+			artifactRoot := partial
+			if completed {
+				artifactRoot = target
+			}
+			_ = writeArtifactFailureRecord(cfg.BackupRoot, artifactRoot, stamp, activeStacks, opts.IncludeImages)
+		}
+	}()
 
 	cliRevision := repoRevision(ctx, cfg.RepoRoot)
 	if opts.IncludeImages {
@@ -110,19 +120,29 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		}
 	}
 
-	if stackscope.Contains(activeStacks, "gitea") && containerExists(ctx, "gitea-db") {
+	if stackscope.Contains(activeStacks, "gitea") {
+		if !containerExists(ctx, "gitea-db") {
+			return Info{}, fmt.Errorf("required Gitea database container gitea-db is not running")
+		}
 		if err := dumpPostgres(ctx, partial, "gitea.dump", "gitea-db", "gitea", "gitea"); err != nil {
 			return Info{}, fmt.Errorf("dump gitea: %w", err)
 		}
 	}
 
-	if stackscope.Contains(activeStacks, "harbor") && containerExists(ctx, "harbor-db") {
+	if stackscope.Contains(activeStacks, "harbor") {
+		if !containerExists(ctx, "harbor-db") {
+			return Info{}, fmt.Errorf("required Harbor database container harbor-db is not running")
+		}
 		if err := backupHarbor(ctx, cfg, partial, stamp); err != nil {
 			return Info{}, err
 		}
 	}
 
-	if token := openBaoToken(cfg); stackscope.Contains(activeStacks, "openbao") && token != "" {
+	if stackscope.Contains(activeStacks, "openbao") {
+		token := openBaoToken(cfg)
+		if token == "" {
+			return Info{}, fmt.Errorf("OpenBao is active but no snapshot token is available")
+		}
 		scratchPath, err := openBaoSnapshotScratchPath(cfg.AdminRoot)
 		if err != nil {
 			return Info{}, err
@@ -174,12 +194,17 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 			if err := copyPath(giteaData, filepath.Join(partial, "gitea-data")); err != nil {
 				return Info{}, fmt.Errorf("copy gitea data: %w", err)
 			}
+		} else {
+			return Info{}, fmt.Errorf("required Gitea filesystem data is missing: %s", giteaData)
 		}
 	}
 
 	images := DetectImagesForStacks(ctx, cfg.AdminRoot, activeStacks)
 	var offlineImageArchives []OfflineImageArchive
 	if opts.IncludeImages {
+		if len(images) == 0 {
+			return Info{}, fmt.Errorf("include docker images: no images were detected for active stacks")
+		}
 		if len(images) > 0 {
 			var archiveTags []string
 			for index, image := range images {
@@ -222,6 +247,10 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	if err != nil {
 		return Info{}, fmt.Errorf("build manifest: %w", err)
 	}
+	artifacts, err := buildManifestArtifacts(partial, activeStacks, opts.IncludeImages)
+	if err != nil {
+		return Info{}, err
+	}
 	manifest := Manifest{
 		Version:              ManifestVersion,
 		ID:                   stamp,
@@ -234,6 +263,7 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		ActiveStacks:         activeStacks,
 		StackDefinitions:     true,
 		RepositoryBundle:     opts.IncludeImages,
+		Artifacts:            artifacts,
 		Consistency:          consistency,
 		Complete:             true,
 		Files:                files,
@@ -246,8 +276,24 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	}
 	completed = true
 
+	resticCfg, resticConfigErr := loadResticConfig(cfg.BackupEnvFile)
+	remoteRequired := resticCfg.RequireRemote
+	if resticConfigErr != nil {
+		if remoteRequired {
+			_ = recordRemoteDelivery(target, ArtifactFailed, false)
+		}
+		return Info{}, fmt.Errorf("restic backup: %w", resticConfigErr)
+	}
 	if err := RunRestic(ctx, cfg.BackupEnvFile, []string{target}); err != nil {
+		if remoteRequired {
+			_ = recordRemoteDelivery(target, ArtifactFailed, false)
+		}
 		return Info{}, fmt.Errorf("restic backup: %w", err)
+	}
+	if remoteRequired {
+		if err := recordRemoteDelivery(target, ArtifactProduced, true); err != nil {
+			return Info{}, fmt.Errorf("record remote delivery: %w", err)
+		}
 	}
 	retention := cfg.LocalBackupRetention
 	if retention < 1 {
@@ -256,7 +302,85 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	if err := rotateLocal(cfg.BackupRoot, retention); err != nil {
 		return Info{}, err
 	}
-	return inspect(target, stamp)
+	info, err := inspect(target, stamp)
+	if err != nil {
+		return Info{}, err
+	}
+	runSuccessful = true
+	return info, nil
+}
+
+func writeArtifactFailureRecord(backupRoot, artifactRoot, id string, activeStacks []string, includeImages bool) error {
+	artifacts := expectedManifestArtifacts(artifactRoot, activeStacks, includeImages, false)
+	failureDir := filepath.Join(backupRoot, ".failed", id)
+	if err := os.MkdirAll(failureDir, 0o700); err != nil {
+		return err
+	}
+	manifest := Manifest{Version: ManifestVersion, ID: id, CreatedAt: time.Now().UTC(), Hostname: hostname(), ActiveStacks: activeStacks, Artifacts: artifacts, Complete: false}
+	return WriteManifest(failureDir, manifest)
+}
+
+func recordRemoteDelivery(root, status string, complete bool) error {
+	manifest, ok, err := ReadManifest(root)
+	if err != nil || !ok {
+		return fmt.Errorf("read local backup manifest before recording delivery")
+	}
+	manifest.Artifacts = append(manifest.Artifacts, ManifestArtifact{Path: "remote-delivery", Required: true, Status: status, External: true})
+	manifest.Complete = complete
+	return WriteManifest(root, manifest)
+}
+
+func buildManifestArtifacts(root string, activeStacks []string, includeImages bool) ([]ManifestArtifact, error) {
+	artifacts := expectedManifestArtifacts(root, activeStacks, includeImages, true)
+	manifest := Manifest{Complete: true, Artifacts: artifacts}
+	if err := validateManifestArtifacts(manifest, root); err != nil {
+		return nil, fmt.Errorf("backup artifact set is incomplete: %w", err)
+	}
+	return artifacts, nil
+}
+
+func expectedManifestArtifacts(root string, activeStacks []string, includeImages, requireProduced bool) []ManifestArtifact {
+	var artifacts []ManifestArtifact
+	add := func(path string, required bool, status string) {
+		if requireProduced && status == ArtifactFailed {
+			status = ArtifactProduced
+		}
+		artifacts = append(artifacts, ManifestArtifact{Path: filepath.ToSlash(path), Required: required, Status: status})
+	}
+	localStatus := func(path string) string {
+		if _, err := os.Stat(filepath.Join(root, path)); err == nil {
+			return ArtifactProduced
+		}
+		return ArtifactFailed
+	}
+	for _, stack := range activeStacks {
+		stackDefinition := filepath.Join("stack-definitions", stack)
+		add(stackDefinition, true, localStatus(stackDefinition))
+		switch stack {
+		case "keycloak":
+			add("keycloak.dump", true, localStatus("keycloak.dump"))
+		case "gitea":
+			add("gitea.dump", true, localStatus("gitea.dump"))
+			if dirExists(filepath.Join(root, "gitea-stack")) {
+				add("gitea-stack", true, localStatus("gitea-stack"))
+			} else {
+				add("gitea-data", true, localStatus("gitea-data"))
+			}
+		case "harbor":
+			add("harbor.dump", true, localStatus("harbor.dump"))
+			add("harbor-data", true, localStatus("harbor-data"))
+		case "openbao":
+			add("openbao.snap", true, localStatus("openbao.snap"))
+		}
+	}
+	if includeImages {
+		add("offline-images.tar", true, localStatus("offline-images.tar"))
+		add("repository.bundle", true, localStatus("repository.bundle"))
+	} else {
+		add("offline-images.tar", false, ArtifactDisabled)
+		add("repository.bundle", false, ArtifactDisabled)
+	}
+	return artifacts
 }
 
 func copyActiveStackDefinitions(adminRoot, partial string, activeStacks []string) error {
@@ -550,29 +674,36 @@ func backupHarbor(ctx context.Context, cfg config.Config, target, id string) (er
 		return fmt.Errorf("dump harbor: %w", err)
 	}
 	harborPath := filepath.Join(cfg.AdminRoot, "data/harbor")
-	if dirExists(harborPath) {
-		paths := map[string]string{
-			"registry":              filepath.Join(target, "harbor-data/registry"),
-			"core":                  filepath.Join(target, "harbor-data/core"),
-			"job_logs":              filepath.Join(target, "harbor-data/job_logs"),
-			"trivy-adapter/reports": filepath.Join(target, "harbor-data/trivy-adapter/reports"),
-		}
-		used, snapErr := copyBtrfsSnapshotPaths(ctx, harborPath, cfg.SnapshotRoot, id, "harbor", paths)
-		if snapErr != nil {
-			return fmt.Errorf("snapshot harbor data: %w", snapErr)
-		}
-		if !used && cfg.RequireBtrfsHotBackup {
-			return fmt.Errorf("%s is not a Btrfs subvolume", harborPath)
-		}
-		if !used {
-			for rel, dst := range paths {
-				if dirExists(filepath.Join(harborPath, rel)) {
-					if err := copyPath(filepath.Join(harborPath, rel), dst); err != nil {
-						return err
-					}
+	if !dirExists(harborPath) {
+		return fmt.Errorf("required Harbor filesystem data is missing: %s", harborPath)
+	}
+	if !dirExists(filepath.Join(harborPath, "registry")) {
+		return fmt.Errorf("required Harbor registry data is missing: %s", filepath.Join(harborPath, "registry"))
+	}
+	paths := map[string]string{
+		"registry":              filepath.Join(target, "harbor-data/registry"),
+		"core":                  filepath.Join(target, "harbor-data/core"),
+		"job_logs":              filepath.Join(target, "harbor-data/job_logs"),
+		"trivy-adapter/reports": filepath.Join(target, "harbor-data/trivy-adapter/reports"),
+	}
+	used, snapErr := copyBtrfsSnapshotPaths(ctx, harborPath, cfg.SnapshotRoot, id, "harbor", paths)
+	if snapErr != nil {
+		return fmt.Errorf("snapshot harbor data: %w", snapErr)
+	}
+	if !used && cfg.RequireBtrfsHotBackup {
+		return fmt.Errorf("%s is not a Btrfs subvolume", harborPath)
+	}
+	if !used {
+		for rel, dst := range paths {
+			if dirExists(filepath.Join(harborPath, rel)) {
+				if err := copyPath(filepath.Join(harborPath, rel), dst); err != nil {
+					return err
 				}
 			}
 		}
+	}
+	if !dirExists(filepath.Join(target, "harbor-data/registry")) {
+		return fmt.Errorf("required Harbor registry artifact was not produced")
 	}
 	return nil
 }

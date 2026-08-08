@@ -11,6 +11,7 @@ Reference: [restic documentation](https://restic.readthedocs.io/en/stable/).
 
 ```yaml
 backup:
+  require_remote_repository: true
   restic_default_forget_args: "--keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune"
   restic_require_secure_repositories: true
   restic_repositories:
@@ -36,8 +37,21 @@ Repositories can be local, SFTP, S3, or any restic-supported backend.
 | `backup.restic_default_forget_args` | `--keep-last 3 --prune` | Default retention arguments for repositories. |
 | `backup.restic_init_repositories` | `false` | Initializes repositories before backup when enabled. |
 | `backup.restic_require_secure_repositories` | `true` | Rejects insecure repository declarations when enabled. |
+| `backup.require_remote_repository` | `true` | Requires at least one non-local repository and makes a missing Restic binary, configuration, credential, or delivery failure fatal. Set explicitly to `false` for a local-only deployment. |
 | `backup.restic_backup_paths` | tool default | Optional explicit backup path list passed to the backup environment. |
 | `backup.operation_lock_timeout` | `30m` | Maximum time a scheduled backup waits for another admin-node operation, such as convergence, to release the global lock. |
+
+Backup completion is fail-closed for active stateful stacks. An active Keycloak,
+Gitea, Harbor, or OpenBao stack must produce its required database/snapshot and
+filesystem artifacts. In particular, OpenBao requires the dedicated snapshot
+token and Harbor requires registry data. The completed manifest records each
+required artifact as `produced`; offline images and the repository bundle are
+recorded as `disabled` for a standard backup.
+
+When `backup.require_remote_repository` is `true`, a local Restic repository is
+not sufficient. At least one SFTP, S3, REST, or other supported non-local
+repository must be configured. Missing tooling is tolerated only in an
+explicit local-only configuration.
 
 ### Gitea Backup-Restore-Process
 

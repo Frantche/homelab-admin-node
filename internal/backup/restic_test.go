@@ -1,8 +1,10 @@
 package backup
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -88,5 +90,65 @@ func TestEnsureResticCacheEnvWithoutUserHome(t *testing.T) {
 	}
 	if got := info.Mode().Perm(); got != 0o700 {
 		t.Fatalf("cache mode = %o, want 0700", got)
+	}
+}
+
+func TestRunResticFailsWhenRequiredBinaryIsMissing(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "backup.env")
+	content := `BACKUP_REQUIRE_REMOTE_REPOSITORY=true
+RESTIC_REPOSITORIES=offsite
+RESTIC_REPOSITORY_OFFSITE=sftp:backup:/srv/restic
+RESTIC_PASSWORD_OFFSITE=test-password
+`
+	if err := os.WriteFile(envFile, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", root)
+
+	err := RunRestic(context.Background(), envFile, []string{filepath.Join(root, "backup")})
+	if err == nil || !strings.Contains(err.Error(), "restic is required") {
+		t.Fatalf("error = %v, want required restic binary failure", err)
+	}
+}
+
+func TestRunResticAllowsMissingBinaryInExplicitLocalOnlyMode(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "backup.env")
+	if err := os.WriteFile(envFile, []byte("BACKUP_REQUIRE_REMOTE_REPOSITORY=false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", root)
+
+	if err := RunRestic(context.Background(), envFile, []string{filepath.Join(root, "backup")}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadResticConfigRejectsRequiredLocalOnlyRepository(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "backup.env")
+	content := `BACKUP_REQUIRE_REMOTE_REPOSITORY=true
+RESTIC_REPOSITORIES=local
+RESTIC_REPOSITORY_LOCAL=/srv/admin/backups/restic
+RESTIC_PASSWORD_LOCAL=test-password
+`
+	if err := os.WriteFile(envFile, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadResticConfig(envFile); err == nil || !strings.Contains(err.Error(), "non-local") {
+		t.Fatalf("error = %v, want required remote repository failure", err)
+	}
+}
+
+func TestVerifyResticSnapshotFailsWhenDeliveryCannotBeObserved(t *testing.T) {
+	root := t.TempDir()
+	resticPath := filepath.Join(root, "restic")
+	if err := os.WriteFile(resticPath, []byte("#!/bin/bash\nset -euo pipefail\nprintf '[]\\n'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", root)
+	if err := verifyResticSnapshot(context.Background(), os.Environ(), nil, "admin-node-run:test"); err == nil || !strings.Contains(err.Error(), "found 0") {
+		t.Fatalf("error = %v, want missing snapshot failure", err)
 	}
 }
