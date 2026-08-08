@@ -42,7 +42,7 @@ func TestCheckOfflineStatusVerifiesRecoveryPointAndRecoveryKit(t *testing.T) {
 		t.Fatal(err)
 	}
 	backupEnv := filepath.Join(root, "backup.env")
-	if err := os.WriteFile(backupEnv, []byte("RESTIC_REPOSITORY_OFFSITE=s3:test\nRESTIC_PASSWORD_OFFSITE=present\n"), 0o600); err != nil {
+	if err := os.WriteFile(backupEnv, []byte("RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=s3:test\nRESTIC_PASSWORD_OFFSITE=present\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	status, err := CheckOfflineStatus(config.Config{
@@ -70,5 +70,28 @@ func TestCheckOfflineStatusReportsMissingPrerequisites(t *testing.T) {
 	}
 	if len(status.Problems) < 2 || status.Fresh || status.Verified || status.RecoveryKitComplete {
 		t.Fatalf("status = %#v", status)
+	}
+}
+
+func TestResticRecoveryKitDeclarationRequiresMatchingNonEmptyPair(t *testing.T) {
+	root := t.TempDir()
+	for _, test := range []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: "matching repository", content: "RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=s3:test\nRESTIC_PASSWORD_OFFSITE=secret\n", want: true},
+		{name: "different identifiers", content: "RESTIC_REPOSITORIES=one two\nRESTIC_REPOSITORY_ONE=s3:test\nRESTIC_PASSWORD_TWO=secret\n"},
+		{name: "empty quoted password", content: "RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=s3:test\nRESTIC_PASSWORD_OFFSITE=\"\"\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(root, test.name+".env")
+			if err := os.WriteFile(path, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if got := resticRepositoryAccessDeclared(path); got != test.want {
+				t.Fatalf("resticRepositoryAccessDeclared() = %t, want %t", got, test.want)
+			}
+		})
 	}
 }

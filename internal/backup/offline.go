@@ -1,12 +1,10 @@
 package backup
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/Frantche/homelab-admin-node/internal/config"
@@ -111,29 +109,26 @@ func checkRecoveryKit(cfg config.Config, now time.Time, status *OfflineStatus) {
 			status.Problems = append(status.Problems, "local recovery prerequisite missing: "+prerequisite.name)
 		}
 	}
-	if !resticKeyNamesPresent(cfg.BackupEnvFile) {
+	if !resticRepositoryAccessDeclared(cfg.BackupEnvFile) {
 		complete = false
 		status.Problems = append(status.Problems, "Restic repository/password declarations are missing")
 	}
 	status.RecoveryKitComplete = complete
 }
 
-func resticKeyNamesPresent(path string) bool {
-	file, err := os.Open(path)
+func resticRepositoryAccessDeclared(path string) bool {
+	values, err := parseEnvFile(path)
 	if err != nil {
 		return false
 	}
-	defer file.Close()
-	repository, password := false, false
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		name, value, ok := strings.Cut(strings.TrimSpace(scanner.Text()), "=")
-		if !ok || strings.TrimSpace(value) == "" {
-			continue
-		}
-		name = strings.TrimSpace(name)
-		repository = repository || name == "RESTIC_REPOSITORY" || strings.HasPrefix(name, "RESTIC_REPOSITORY_")
-		password = password || name == "RESTIC_PASSWORD" || strings.HasPrefix(name, "RESTIC_PASSWORD_")
+	if values["RESTIC_REPOSITORY"] != "" && values["RESTIC_PASSWORD"] != "" {
+		return true
 	}
-	return repository && password && scanner.Err() == nil
+	for _, id := range fields(values["RESTIC_REPOSITORIES"]) {
+		suffix := sanitizeRepoID(id)
+		if values["RESTIC_REPOSITORY_"+suffix] != "" && values["RESTIC_PASSWORD_"+suffix] != "" {
+			return true
+		}
+	}
+	return false
 }

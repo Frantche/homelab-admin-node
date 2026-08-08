@@ -44,6 +44,9 @@ sudo admin-node backup offline-status
 The status command reports the newest offline point, age, freshness, full
 manifest checksum verification, and recovery-kit state. It exits non-zero with
 actionable prerequisite names when anything is missing or stale.
+The scheduled service also requires the Ansible-managed
+`/srv/admin/env/backup.env`; a missing policy file is a hard failure rather than
+an invitation to run with permissive defaults.
 
 Capacity must include the live data snapshot plus exported images and temporary
 headroom. The default 30 GiB floor is only a starting point; measure the largest
