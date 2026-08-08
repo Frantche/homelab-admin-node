@@ -38,6 +38,80 @@ func TestResolveRejectsPathTraversal(t *testing.T) {
 	}
 }
 
+func TestSuspendSystemdTimersRestartsOnlyPreviouslyActiveTimers(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "systemctl.log")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  is-active)
+    [[ "${3:-}" == "active.timer" ]]
+    ;;
+  is-enabled)
+    exit 1
+    ;;
+  stop|start)
+    printf '%s\n' "$*" >> "${SYSTEMCTL_TEST_LOG:?}"
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(binDir, "systemctl"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SYSTEMCTL_TEST_LOG", logPath)
+
+	resume, err := SuspendSystemdTimers(context.Background(), []string{"active.timer", "inactive.timer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := resume(); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(content), "stop active.timer\nstart active.timer\n"; got != want {
+		t.Fatalf("systemctl calls = %q, want %q", got, want)
+	}
+}
+
+func TestSuspendSystemdTimersReportsRestartFailure(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  is-active) exit 0 ;;
+  is-enabled|stop) exit 0 ;;
+  start) echo "start refused" >&2; exit 42 ;;
+  *) exit 1 ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(binDir, "systemctl"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	resume, err := SuspendSystemdTimers(context.Background(), []string{"admin-backup.timer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := resume(); err == nil || !strings.Contains(err.Error(), "start refused") {
+		t.Fatalf("error = %v, want timer restart failure", err)
+	}
+}
+
 func TestRestoreRepositoryRevisionUsesBundledBackupCommit(t *testing.T) {
 	root := t.TempDir()
 	repoRoot := filepath.Join(root, "repo")

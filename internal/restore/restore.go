@@ -49,7 +49,7 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 		return err
 	}
 	defer unlock()
-	resumeTimers, err := suspendSystemdTimers(ctx, opts.SystemdTimers)
+	resumeTimers, err := SuspendSystemdTimers(ctx, opts.SystemdTimers)
 	if err != nil {
 		writeMode(cfg.ModeFile, "restore_failed")
 		return err
@@ -57,7 +57,7 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 	restoreSucceeded := false
 	defer func() {
 		if restoreSucceeded {
-			resumeTimers()
+			_ = resumeTimers()
 		}
 	}()
 
@@ -669,12 +669,15 @@ func startStacks(ctx context.Context, cfg config.Config, set stacks) error {
 	return nil
 }
 
-func suspendSystemdTimers(ctx context.Context, timers []string) (func(), error) {
+// SuspendSystemdTimers stops timers that are active or enabled and returns a
+// callback that starts only those timers. Callers intentionally decide whether
+// the callback is safe to invoke after a restore failure.
+func SuspendSystemdTimers(ctx context.Context, timers []string) (func() error, error) {
 	if len(timers) == 0 {
-		return func() {}, nil
+		return func() error { return nil }, nil
 	}
 	if _, err := exec.LookPath("systemctl"); err != nil {
-		return func() {}, nil
+		return func() error { return nil }, nil
 	}
 	var active []string
 	for _, timer := range timers {
@@ -685,17 +688,21 @@ func suspendSystemdTimers(ctx context.Context, timers []string) (func(), error) 
 		}
 	}
 	if len(active) == 0 {
-		return func() {}, nil
+		return func() error { return nil }, nil
 	}
 	args := append([]string{"stop"}, active...)
 	if out, err := exec.CommandContext(ctx, "systemctl", args...).CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("stop restore timers: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	return func() {
+	return func() error {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		args := append([]string{"start"}, active...)
-		_ = exec.CommandContext(cleanupCtx, "systemctl", args...).Run()
+		out, err := exec.CommandContext(cleanupCtx, "systemctl", args...).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("restart restore timers: %w: %s", err, strings.TrimSpace(string(out)))
+		}
+		return nil
 	}, nil
 }
 

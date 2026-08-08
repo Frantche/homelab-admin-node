@@ -77,64 +77,53 @@ Use this flow only for backups produced by `backup.gitea_process`. The external
 project provides `gitea-restore`, which uses the same backend environment
 variables as `gitea-backup`.
 
-The restore is destructive for the current Gitea data and database, so keep it
-manual:
+The restore replaces the current Gitea data and database. Use the guarded CLI
+workflow rather than invoking Docker directly:
 
-1. Enter restore mode and stop the Gitea process backup timer.
+```bash
+sudo /opt/homelab-admin-node/bin/admin-node gitea restore-process \
+  --backup-filename "gitea-backup-YYYY-MM-DD-HH-MM-SS.zip"
+```
 
-   ```bash
-   sudo /opt/homelab-admin-node/bin/admin-node mode set restore
-   sudo systemctl stop admin-gitea-process-backup.timer
-   ```
+`--backup-filename` must match the exact remote `.zip` filename in the S3 bucket
+or FTP directory. It is only needed for restore, not for the daily backup job.
 
-2. Stop the Gitea application container, but keep `gitea-db` running.
+The command:
 
-   ```bash
-   cd /srv/admin/stacks/gitea
-   sudo docker compose --env-file /srv/admin/env/gitea.env -f compose.yaml stop gitea
-   ```
+- acquires the global administration-operation lock;
+- enters `restore` mode and stops convergence, standard-backup, and Gitea-backup
+  timers;
+- stops Gitea writes and saves the current database plus filesystem under
+  `/srv/admin/backups/pre-gitea-process-restore`;
+- restores the selected remote archive and its PostgreSQL dump;
+- validates the database, users, repository storage, container health, and
+  internal Gitea API;
+- optionally converges the node, returns to `normal`, and resumes timers only
+  after success.
 
-3. Keep a local safety copy of the current Gitea data.
+If the command fails, it leaves the node in `restore_failed` and keeps the
+timers stopped. Inspect the error and the safety copy before retrying. The
+rollback material is:
 
-   ```bash
-   sudo install -d -m 0700 /srv/admin/backups/pre-gitea-process-restore
-   sudo rsync -a --delete /srv/admin/data/gitea/ /srv/admin/backups/pre-gitea-process-restore/gitea-data/
-   ```
+```text
+/srv/admin/backups/pre-gitea-process-restore/gitea-data/
+/srv/admin/backups/pre-gitea-process-restore/gitea.dump
+```
 
-4. Set the remote backup filename to restore, then run `gitea-restore` with the
-   Ansible-rendered backend environment.
+The command refuses to overwrite either safety artifact. Before another restore,
+archive the whole directory and select a new empty location with
+`--pre-restore-dir`; never delete the only known-good rollback copy.
 
-   ```bash
-   export BACKUP_FILENAME="gitea-backup-YYYY-MM-DD-HH-MM-SS.zip"
+Do not return the node to `normal` until Gitea has been repaired or the saved
+filesystem and custom-format PostgreSQL dump have been restored and validated.
+After a successful manual recovery, run the full validation before re-enabling
+normal operation:
 
-   sudo docker run --rm \
-     --network admin-net \
-     --env-file /srv/admin/env/gitea-process-backup.env \
-     -e BACKUP_FILENAME="$BACKUP_FILENAME" \
-     -v /srv/admin/data/gitea:/data \
-     -v /srv/admin/backups/gitea-process/restore-tmp:/srv/admin/backups/gitea-process/restore-tmp \
-     ghcr.io/frantche/gitea-backup-restore-process:0.3.21 \
-     gitea-restore
-   ```
-
-   `BACKUP_FILENAME` must match the exact remote `.zip` filename in the S3
-   bucket or FTP directory. It is only needed for manual restore, not for the
-   daily backup job.
-
-5. Restart and validate Gitea.
-
-   ```bash
-   cd /srv/admin/stacks/gitea
-   sudo docker compose --env-file /srv/admin/env/gitea.env -f compose.yaml up -d
-   sudo /opt/homelab-admin-node/bin/admin-node validate apis
-   ```
-
-6. Return to normal mode after validation.
-
-   ```bash
-   sudo /opt/homelab-admin-node/bin/admin-node mode set normal
-   sudo /opt/homelab-admin-node/bin/admin-node converge run
-   ```
+```bash
+sudo /opt/homelab-admin-node/bin/admin-node validate all
+sudo /opt/homelab-admin-node/bin/admin-node mode set normal
+sudo /opt/homelab-admin-node/bin/admin-node converge run --skip-git-pull
+```
 
 If `backup.gitea_process.image`, `network`, or `restore_tmp_folder` were
 customized, reuse the corresponding values from
