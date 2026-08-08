@@ -277,6 +277,9 @@ func (a app) runGitea(ctx context.Context, args []string) int {
 		fmt.Fprintln(a.errOut, "usage: admin-node gitea restore-process --backup-filename <gitea-backup-YYYY-MM-DD-HH-MM-SS.zip>")
 		return 2
 	}
+	if !a.requireOperationalConfig() {
+		return 1
+	}
 	if err := a.runGiteaProcessRestore(ctx, giteaProcessRestoreOptions{
 		BackupFilename: *backupFilename,
 		ProcessEnv:     *processEnv,

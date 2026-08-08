@@ -263,5 +263,9 @@
     GITEA_VALIDATION_REPO: "{{ gitea_validation_repo }}"
     GITEA_VALIDATION_ISSUE_TITLE: "{{ gitea_validation_issue_title }}"
   changed_when: false
+  register: gitea_admin_validation
+  until: gitea_admin_validation.rc == 0
+  retries: 12
+  delay: 5
   when: not (gitea_config_test_mode | default(false))
   no_log: true

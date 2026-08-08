@@ -40,6 +40,17 @@ func TestOperationalCommandReportsRuntimeConfigurationErrors(t *testing.T) {
 	}
 }
 
+func TestGiteaRestoreRefusesRuntimeConfigurationErrorsBeforeDestructiveWork(t *testing.T) {
+	var out, errOut bytes.Buffer
+	a := app{out: &out, errOut: &errOut, configErr: errors.New("malformed managed file")}
+
+	code := a.run(context.Background(), []string{"gitea", "restore-process", "--backup-filename", "gitea-backup-2026-08-08-12-00-00.zip"})
+
+	if code != 1 || !strings.Contains(errOut.String(), "runtime configuration: malformed managed file") {
+		t.Fatalf("code=%d stderr=%q", code, errOut.String())
+	}
+}
+
 func TestOperationalCommandRejectsBuiltInExampleDomains(t *testing.T) {
 	var out, errOut bytes.Buffer
 	a := app{out: &out, errOut: &errOut, cfg: config.Config{
