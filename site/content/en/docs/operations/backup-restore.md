@@ -57,6 +57,33 @@ missing Restic binary, missing non-local repository, incomplete credentials, or
 repository failure makes the backup command fail while preserving any complete
 local recovery point already created.
 
+### Consistency contract
+
+The standard backup briefly stops the Gitea application container while its
+PostgreSQL dump and filesystem capture are created. The database remains
+running. This prevents repository, attachment, LFS, issue, and metadata writes
+from crossing the recovery boundary. The previous running state is restored
+after the capture and on every failure path. Capture time is limited by
+`backup.gitea_quiesce_timeout` (10 minutes by default), followed by a bounded
+two-minute health wait after restart. Exceeding either limit fails the backup
+instead of publishing an uncertain recovery point.
+
+Each successful Gitea boundary is recorded in `manifest.json` with its method,
+start, and completion timestamps. A Btrfs source records a quiesced logical
+dump plus Btrfs snapshot; the portable fallback records a quiesced logical dump
+plus bounded filesystem copy. Neither pair is described as globally atomic.
+This contract is emitted as manifest version 3. Restore and listing remain
+compatible with historical version 2 recovery points, while every version 3
+manifest with an active Gitea stack is rejected unless it contains exactly one
+recognized Gitea consistency boundary.
+
+The other stateful stacks use these contracts:
+
+- Keycloak has database-only durable state and uses its PostgreSQL logical dump.
+- OpenBao uses its native Raft snapshot rather than pairing a database with files.
+- Harbor enters application read-only mode around its PostgreSQL dump and file
+  capture when the default `backup.require_harbor_read_only` policy is enabled.
+
 Harbor registry blobs and other file data remain under `/srv/admin/data/harbor`; the default restic path set includes `/srv/admin/data`.
 
 Useful checks:

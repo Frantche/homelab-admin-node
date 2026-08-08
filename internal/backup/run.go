@@ -120,13 +120,13 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		}
 	}
 
+	var consistencyBoundaries []ConsistencyBoundary
 	if stackscope.Contains(activeStacks, "gitea") {
-		if !containerExists(ctx, "gitea-db") {
-			return Info{}, fmt.Errorf("required Gitea database container gitea-db is not running")
+		boundary, err := backupGitea(ctx, cfg, partial, stamp, now)
+		if err != nil {
+			return Info{}, err
 		}
-		if err := dumpPostgres(ctx, partial, "gitea.dump", "gitea-db", "gitea", "gitea"); err != nil {
-			return Info{}, fmt.Errorf("dump gitea: %w", err)
-		}
+		consistencyBoundaries = append(consistencyBoundaries, boundary)
 	}
 
 	if stackscope.Contains(activeStacks, "harbor") {
@@ -173,30 +173,8 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	}
 
 	consistency := "logical-online"
-	if stackscope.Contains(activeStacks, "gitea") && dirExists(cfg.GiteaStackPath) {
-		usedSnapshot, err := copyBtrfsSnapshot(ctx, cfg.GiteaStackPath, cfg.SnapshotRoot, stamp, filepath.Join(partial, "gitea-stack"))
-		if err != nil {
-			return Info{}, fmt.Errorf("snapshot gitea stack: %w", err)
-		}
-		if usedSnapshot {
-			consistency = "btrfs-atomic-crash-consistent"
-		} else if cfg.RequireBtrfsHotBackup {
-			return Info{}, fmt.Errorf("%s is not a Btrfs subvolume", cfg.GiteaStackPath)
-		} else if err := copyPath(cfg.GiteaStackPath, filepath.Join(partial, "gitea-stack")); err != nil {
-			return Info{}, err
-		}
-	} else if stackscope.Contains(activeStacks, "gitea") {
-		giteaData := filepath.Join(cfg.AdminRoot, "data/gitea")
-		if cfg.RequireBtrfsHotBackup {
-			return Info{}, fmt.Errorf("required Gitea stack subvolume is missing: %s", cfg.GiteaStackPath)
-		}
-		if dirExists(giteaData) {
-			if err := copyPath(giteaData, filepath.Join(partial, "gitea-data")); err != nil {
-				return Info{}, fmt.Errorf("copy gitea data: %w", err)
-			}
-		} else {
-			return Info{}, fmt.Errorf("required Gitea filesystem data is missing: %s", giteaData)
-		}
+	if len(consistencyBoundaries) > 0 {
+		consistency = "service-specific-consistency-boundaries"
 	}
 
 	images := DetectImagesForStacks(ctx, cfg.AdminRoot, activeStacks)
@@ -252,21 +230,22 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		return Info{}, err
 	}
 	manifest := Manifest{
-		Version:              ManifestVersion,
-		ID:                   stamp,
-		CreatedAt:            now().UTC(),
-		Hostname:             hostname(),
-		CLIRevision:          cliRevision,
-		OfflineImages:        opts.IncludeImages,
-		Images:               images,
-		OfflineImageArchives: offlineImageArchives,
-		ActiveStacks:         activeStacks,
-		StackDefinitions:     true,
-		RepositoryBundle:     opts.IncludeImages,
-		Artifacts:            artifacts,
-		Consistency:          consistency,
-		Complete:             true,
-		Files:                files,
+		Version:               ManifestVersion,
+		ID:                    stamp,
+		CreatedAt:             now().UTC(),
+		Hostname:              hostname(),
+		CLIRevision:           cliRevision,
+		OfflineImages:         opts.IncludeImages,
+		Images:                images,
+		OfflineImageArchives:  offlineImageArchives,
+		ActiveStacks:          activeStacks,
+		StackDefinitions:      true,
+		RepositoryBundle:      opts.IncludeImages,
+		Artifacts:             artifacts,
+		Consistency:           consistency,
+		ConsistencyBoundaries: consistencyBoundaries,
+		Complete:              true,
+		Files:                 files,
 	}
 	if err := WriteManifest(partial, manifest); err != nil {
 		return Info{}, fmt.Errorf("write manifest: %w", err)
@@ -511,6 +490,104 @@ func dumpPostgres(ctx context.Context, target string, filename string, container
 	return runToFile(ctx, filepath.Join(target, filename), "docker", "exec", container, "pg_dump", "-Fc", "-U", user, "-d", db)
 }
 
+func backupGitea(ctx context.Context, cfg config.Config, target, id string, now func() time.Time) (boundary ConsistencyBoundary, err error) {
+	if !containerExists(ctx, "gitea-db") {
+		return boundary, fmt.Errorf("backup gitea: database container gitea-db is not running")
+	}
+
+	source := cfg.GiteaStackPath
+	destination := filepath.Join(target, "gitea-stack")
+	if !dirExists(source) {
+		if cfg.RequireBtrfsHotBackup {
+			return boundary, fmt.Errorf("required Gitea stack subvolume is missing: %s", source)
+		}
+		source = filepath.Join(cfg.AdminRoot, "data/gitea")
+		destination = filepath.Join(target, "gitea-data")
+	}
+	if !dirExists(source) {
+		return boundary, fmt.Errorf("backup gitea: data directory is missing: %s", source)
+	}
+
+	timeout := cfg.GiteaBackupQuiesceTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	boundaryCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	wasRunning := containerExists(ctx, "gitea")
+	restartNeeded := wasRunning
+	defer func() {
+		if !restartNeeded {
+			return
+		}
+		if restartErr := restartGitea(ctx); restartErr != nil && err == nil {
+			err = fmt.Errorf("restart gitea after consistency boundary: %w", restartErr)
+		}
+	}()
+	if wasRunning {
+		if stopErr := run(boundaryCtx, "docker", "stop", "--time", "60", "gitea"); stopErr != nil {
+			return boundary, fmt.Errorf("stop gitea for consistency boundary: %w", stopErr)
+		}
+	}
+
+	boundary = ConsistencyBoundary{
+		Service:   "gitea",
+		StartedAt: now().UTC(),
+	}
+	if err := dumpPostgres(boundaryCtx, target, "gitea.dump", "gitea-db", "gitea", "gitea"); err != nil {
+		return boundary, fmt.Errorf("dump gitea inside consistency boundary: %w", err)
+	}
+	usedSnapshot, snapshotErr := copyBtrfsSnapshot(boundaryCtx, source, cfg.SnapshotRoot, id, destination)
+	if snapshotErr != nil {
+		return boundary, fmt.Errorf("snapshot gitea inside consistency boundary: %w", snapshotErr)
+	}
+	if usedSnapshot {
+		boundary.Method = "application-quiesced-postgresql-dump-and-btrfs-snapshot"
+	} else {
+		if cfg.RequireBtrfsHotBackup {
+			return boundary, fmt.Errorf("%s is not a Btrfs subvolume", source)
+		}
+		if err := copyPathContext(boundaryCtx, source, destination); err != nil {
+			return boundary, fmt.Errorf("copy gitea inside consistency boundary: %w", err)
+		}
+		boundary.Method = "application-quiesced-postgresql-dump-and-filesystem-copy"
+	}
+	if !wasRunning {
+		boundary.Method = strings.Replace(boundary.Method, "application-quiesced", "application-already-stopped", 1)
+	}
+	boundary.CompletedAt = now().UTC()
+
+	if restartNeeded {
+		restartNeeded = false
+		if restartErr := restartGitea(ctx); restartErr != nil {
+			return boundary, fmt.Errorf("restart gitea after consistency boundary: %w", restartErr)
+		}
+	}
+	return boundary, nil
+}
+
+func restartGitea(parent context.Context) error {
+	restartCtx, cancel := context.WithTimeout(context.WithoutCancel(parent), 2*time.Minute)
+	defer cancel()
+	if err := run(restartCtx, "docker", "start", "gitea"); err != nil {
+		return err
+	}
+	for {
+		state, err := commandOutput(restartCtx, "docker", "inspect", "--format", "{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{end}}", "gitea")
+		if err == nil && state == "true healthy" {
+			return nil
+		}
+		timer := time.NewTimer(time.Second)
+		select {
+		case <-restartCtx.Done():
+			timer.Stop()
+			return fmt.Errorf("wait for healthy Gitea after restart: %w", restartCtx.Err())
+		case <-timer.C:
+		}
+	}
+}
+
 func containerExists(ctx context.Context, name string) bool {
 	cmd := exec.CommandContext(ctx, "docker", "ps", "--format", "{{.Names}}")
 	output, err := cmd.Output()
@@ -543,22 +620,29 @@ func openBaoToken(cfg config.Config) string {
 }
 
 func copyPath(src, dst string) error {
-	return copyPathWithMode(src, dst, false)
+	return copyPathWithMode(context.Background(), src, dst, false)
+}
+
+func copyPathContext(ctx context.Context, src, dst string) error {
+	return copyPathWithMode(ctx, src, dst, false)
 }
 
 func copyPathPreservingMode(src, dst string) error {
-	return copyPathWithMode(src, dst, true)
+	return copyPathWithMode(context.Background(), src, dst, true)
 }
 
-func copyPathWithMode(src, dst string, preserveMode bool) error {
+func copyPathWithMode(ctx context.Context, src, dst string, preserveMode bool) error {
 	root, err := filepath.Abs(src)
 	if err != nil {
 		return err
 	}
-	return copyPathWithin(root, src, dst, preserveMode)
+	return copyPathWithin(ctx, root, src, dst, preserveMode)
 }
 
-func copyPathWithin(root, src, dst string, preserveMode bool) error {
+func copyPathWithin(ctx context.Context, root, src, dst string, preserveMode bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	info, err := os.Lstat(src)
 	if err != nil {
 		return err
@@ -575,7 +659,7 @@ func copyPathWithin(root, src, dst string, preserveMode bool) error {
 		if resolvedAbs != root && !strings.HasPrefix(resolvedAbs, root+string(os.PathSeparator)) {
 			return fmt.Errorf("symlink escapes backup source: %s", src)
 		}
-		return copyPathWithin(root, resolvedAbs, dst, preserveMode)
+		return copyPathWithin(ctx, root, resolvedAbs, dst, preserveMode)
 	}
 	if info.IsDir() {
 		mode := info.Mode().Perm()
@@ -593,7 +677,7 @@ func copyPathWithin(root, src, dst string, preserveMode bool) error {
 			return err
 		}
 		for _, entry := range entries {
-			if err := copyPathWithin(root, filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name()), preserveMode); err != nil {
+			if err := copyPathWithin(ctx, root, filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name()), preserveMode); err != nil {
 				return err
 			}
 		}
@@ -606,10 +690,14 @@ func copyPathWithin(root, src, dst string, preserveMode bool) error {
 	if !preserveMode {
 		mode &= 0o600
 	}
-	return copyFile(src, dst, mode)
+	return copyFileContext(ctx, src, dst, mode)
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {
+	return copyFileContext(context.Background(), src, dst, mode)
+}
+
+func copyFileContext(ctx context.Context, src, dst string, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}
@@ -623,10 +711,22 @@ func copyFile(src, dst string, mode os.FileMode) error {
 		return err
 	}
 	defer out.Close()
-	if _, err = io.Copy(out, in); err != nil {
+	if _, err = io.Copy(out, &contextReader{ctx: ctx, reader: in}); err != nil {
 		return err
 	}
 	return os.Chmod(dst, mode)
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r *contextReader) Read(buffer []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(buffer)
 }
 
 func copyBtrfsSnapshot(ctx context.Context, source, snapshotRoot, id, dst string) (bool, error) {

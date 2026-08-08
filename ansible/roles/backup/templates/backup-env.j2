@@ -14,6 +14,7 @@ CLOUDFLARE_ENABLED={{ ((cloudflare.enabled | default(true) | bool) | ternary('tr
 OBSERVABILITY_ENABLED={{ ((observability.enabled | default(false) | bool) | ternary('true', 'false')) | quote }}
 ADMIN_OPERATION_LOCK=/run/admin-node-operation.lock
 BACKUP_OPERATION_LOCK_TIMEOUT={{ backup.operation_lock_timeout | default('30m') | quote }}
+BACKUP_GITEA_QUIESCE_TIMEOUT={{ backup.gitea_quiesce_timeout | default('10m') | quote }}
 GITEA_STACK_PATH={{ (admin_node_root ~ '/data/gitea-stack') | quote }}
 ADMIN_SNAPSHOT_ROOT={{ (admin_node_root ~ '/backups/snapshots') | quote }}
 BACKUP_STATUS_ROOT={{ (admin_node_root ~ '/backups/status') | quote }}

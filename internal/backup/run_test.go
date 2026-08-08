@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -243,6 +244,12 @@ RESTIC_DEFAULT_FORGET_ARGS="--keep-last 2 --prune"
 			t.Fatalf("required artifact is not produced: %#v", artifact)
 		}
 	}
+	if manifest.Consistency != "service-specific-consistency-boundaries" || len(manifest.ConsistencyBoundaries) != 1 {
+		t.Fatalf("consistency contract = %#v / %#v", manifest.Consistency, manifest.ConsistencyBoundaries)
+	}
+	if boundary := manifest.ConsistencyBoundaries[0]; boundary.Service != "gitea" || boundary.Method != "application-already-stopped-postgresql-dump-and-filesystem-copy" {
+		t.Fatalf("Gitea consistency boundary = %#v", boundary)
+	}
 }
 
 func TestRunFailsWhenActiveOpenBaoSnapshotTokenIsMissing(t *testing.T) {
@@ -436,6 +443,250 @@ func TestCopyPathStillRestrictsNonStackArtifacts(t *testing.T) {
 	}
 	assertBackupMode(t, target, 0o700)
 	assertBackupMode(t, filepath.Join(target, "artifact"), 0o600)
+}
+
+func TestBackupGiteaQuiescesWritesAcrossDumpAndFilesystemCopy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	root := t.TempDir()
+	source := filepath.Join(root, "gitea-stack")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(source, "state")
+	if err := os.WriteFile(statePath, []byte("before\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "docker.log")
+	installGiteaBoundaryDocker(t, root, logPath, statePath)
+
+	times := []time.Time{
+		time.Date(2026, 8, 8, 10, 0, 0, 0, time.UTC),
+		time.Date(2026, 8, 8, 10, 0, 2, 0, time.UTC),
+	}
+	nextTime := func() time.Time {
+		value := times[0]
+		times = times[1:]
+		return value
+	}
+	target := filepath.Join(root, "backup")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	boundary, err := backupGitea(context.Background(), config.Config{
+		GiteaStackPath:            source,
+		SnapshotRoot:              filepath.Join(root, "snapshots"),
+		GiteaBackupQuiesceTimeout: time.Minute,
+	}, target, "20260808-100000", nextTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if boundary.Service != "gitea" || boundary.Method != "application-quiesced-postgresql-dump-and-filesystem-copy" {
+		t.Fatalf("boundary = %#v", boundary)
+	}
+	if !boundary.StartedAt.Equal(time.Date(2026, 8, 8, 10, 0, 0, 0, time.UTC)) || !boundary.CompletedAt.Equal(time.Date(2026, 8, 8, 10, 0, 2, 0, time.UTC)) {
+		t.Fatalf("boundary timestamps = %#v", boundary)
+	}
+	backupState, err := os.ReadFile(filepath.Join(target, "gitea-stack/state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(backupState) != "before\n" {
+		t.Fatalf("backup state = %q, want pre-restart state", backupState)
+	}
+	liveState, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(liveState) != "after\n" {
+		t.Fatalf("live state = %q, want post-restart write", liveState)
+	}
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logText := string(logData)
+	stopAt := strings.Index(logText, "stop --time 60 gitea")
+	dumpAt := strings.Index(logText, "exec gitea-db pg_dump")
+	startAt := strings.Index(logText, "start gitea")
+	if stopAt < 0 || dumpAt <= stopAt || startAt <= dumpAt {
+		t.Fatalf("unexpected consistency command order:\n%s", logText)
+	}
+}
+
+func TestBackupGiteaAttemptsRestartAfterBoundaryFailures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake docker script is unix-specific")
+	}
+	for _, test := range []struct {
+		name          string
+		failStop      bool
+		failStart     bool
+		invalidSource bool
+	}{
+		{name: "enter boundary", failStop: true},
+		{name: "capture filesystem", invalidSource: true},
+		{name: "leave boundary", failStart: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			source := filepath.Join(root, "gitea-stack")
+			if err := os.MkdirAll(source, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			statePath := filepath.Join(source, "state")
+			if err := os.WriteFile(statePath, []byte("before\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if test.invalidSource {
+				if err := os.Symlink(filepath.Join(root, "outside"), filepath.Join(source, "escape")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			logPath := filepath.Join(root, "docker.log")
+			installGiteaBoundaryDocker(t, root, logPath, statePath)
+			t.Setenv("FAIL_GITEA_STOP", strconv.FormatBool(test.failStop))
+			t.Setenv("FAIL_GITEA_START", strconv.FormatBool(test.failStart))
+			target := filepath.Join(root, "backup")
+			if err := os.MkdirAll(target, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			_, err := backupGitea(context.Background(), config.Config{
+				GiteaStackPath:            source,
+				SnapshotRoot:              filepath.Join(root, "snapshots"),
+				GiteaBackupQuiesceTimeout: time.Minute,
+			}, target, "20260808-100000", time.Now)
+			if err == nil {
+				t.Fatal("expected injected boundary failure")
+			}
+			logData, readErr := os.ReadFile(logPath)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if !strings.Contains(string(logData), "start gitea") {
+				t.Fatalf("Gitea restart was not attempted after failure:\n%s", logData)
+			}
+		})
+	}
+}
+
+func TestVerifyRejectsUnprovenGiteaConsistencyClaim(t *testing.T) {
+	root := t.TempDir()
+	backupID := "20260808-100000"
+	backupDir := filepath.Join(root, backupID)
+	if err := os.MkdirAll(filepath.Join(backupDir, "stack-definitions", "gitea"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, "stack-definitions", "gitea", "compose.yaml"), []byte("services: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files, err := BuildManifestFiles(backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdAt := time.Date(2026, 8, 8, 10, 1, 0, 0, time.UTC)
+	manifest := Manifest{
+		Version: ManifestVersion, ID: backupID, CreatedAt: createdAt,
+		ActiveStacks: []string{"gitea"}, StackDefinitions: true,
+		Consistency: "logical-online", Complete: true, Files: files,
+	}
+	if err := WriteManifest(backupDir, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(backupDir); err == nil || !strings.Contains(err.Error(), "requires a Gitea consistency boundary") {
+		t.Fatalf("error = %v, want downgraded Gitea consistency refusal", err)
+	}
+	manifest.Consistency = "service-specific-consistency-boundaries"
+	if err := WriteManifest(backupDir, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(backupDir); err == nil || !strings.Contains(err.Error(), "exactly one Gitea boundary") {
+		t.Fatalf("error = %v, want missing Gitea boundary refusal", err)
+	}
+	manifest.ConsistencyBoundaries = []ConsistencyBoundary{{
+		Service: "gitea", Method: "unproven-copy",
+		StartedAt: createdAt.Add(-time.Minute), CompletedAt: createdAt,
+	}}
+	if err := WriteManifest(backupDir, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(backupDir); err == nil || !strings.Contains(err.Error(), "unsupported consistency boundary") {
+		t.Fatalf("error = %v, want unsupported boundary refusal", err)
+	}
+}
+
+func TestVerifyKeepsLegacyV2GiteaRecoveryPointsReadable(t *testing.T) {
+	root := t.TempDir()
+	backupID := "20260808-100000"
+	backupDir := filepath.Join(root, backupID)
+	if err := os.MkdirAll(filepath.Join(backupDir, "stack-definitions", "gitea"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, "stack-definitions", "gitea", "compose.yaml"), []byte("services: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files, err := BuildManifestFiles(backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := Manifest{
+		Version: LegacyManifestVersion, ID: backupID,
+		CreatedAt:    time.Date(2026, 8, 8, 10, 1, 0, 0, time.UTC),
+		ActiveStacks: []string{"gitea"}, StackDefinitions: true,
+		Consistency: "logical-online", Complete: true, Files: files,
+	}
+	if err := WriteManifest(backupDir, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(backupDir); err != nil {
+		t.Fatalf("legacy v2 Gitea recovery point is no longer readable: %v", err)
+	}
+}
+
+func installGiteaBoundaryDocker(t *testing.T, root, logPath, statePath string) {
+	t.Helper()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$GITEA_BOUNDARY_LOG"
+if [[ "${1:-} ${2:-}" == "ps --format" ]]; then
+  printf 'gitea-db\ngitea\n'
+  exit 0
+fi
+if [[ "${1:-}" == "stop" ]]; then
+  [[ "${FAIL_GITEA_STOP:-false}" != "true" ]]
+  exit
+fi
+if [[ "${1:-} ${2:-} ${3:-}" == "exec gitea-db pg_dump" ]]; then
+  printf 'database-before\n'
+  exit 0
+fi
+if [[ "${1:-} ${2:-}" == "start gitea" ]]; then
+  if [[ "${FAIL_GITEA_START:-false}" == "true" ]]; then
+    exit 1
+  fi
+  printf 'after\n' > "$GITEA_BOUNDARY_STATE"
+  exit 0
+fi
+if [[ "${1:-}" == "inspect" && "${*: -1}" == "gitea" ]]; then
+  printf 'true healthy\n'
+  exit 0
+fi
+printf 'unexpected docker command: %s\n' "$*" >&2
+exit 1
+`
+	if err := os.WriteFile(filepath.Join(binDir, "docker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GITEA_BOUNDARY_LOG", logPath)
+	t.Setenv("GITEA_BOUNDARY_STATE", statePath)
+	t.Setenv("FAIL_GITEA_STOP", "false")
+	t.Setenv("FAIL_GITEA_START", "false")
 }
 
 func TestRotateLocalKeepsNewest(t *testing.T) {

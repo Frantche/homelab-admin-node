@@ -1361,7 +1361,7 @@ func sealBackupV2(t *testing.T, dir, id string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = backup.WriteManifest(dir, backup.Manifest{Version: backup.ManifestVersion, ID: id, CreatedAt: time.Now().UTC(), Complete: true, Consistency: "test", Files: files})
+	err = backup.WriteManifest(dir, backup.Manifest{Version: backup.LegacyManifestVersion, ID: id, CreatedAt: time.Now().UTC(), Complete: true, Consistency: "test", Files: files})
 	if err != nil {
 		t.Fatal(err)
 	}

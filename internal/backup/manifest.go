@@ -15,7 +15,15 @@ import (
 )
 
 const ManifestName = "manifest.json"
-const ManifestVersion = 2
+
+const (
+	LegacyManifestVersion = 2
+	ManifestVersion       = 3
+)
+
+func SupportedManifestVersion(version int) bool {
+	return version == LegacyManifestVersion || version == ManifestVersion
+}
 
 type ManifestFile struct {
 	Path   string `json:"path"`
@@ -42,22 +50,30 @@ type ManifestArtifact struct {
 	External bool   `json:"external,omitempty"`
 }
 
+type ConsistencyBoundary struct {
+	Service     string    `json:"service"`
+	Method      string    `json:"method"`
+	StartedAt   time.Time `json:"started_at"`
+	CompletedAt time.Time `json:"completed_at"`
+}
+
 type Manifest struct {
-	Version              int                   `json:"version"`
-	ID                   string                `json:"id"`
-	CreatedAt            time.Time             `json:"created_at"`
-	Hostname             string                `json:"hostname"`
-	CLIRevision          string                `json:"cli_revision,omitempty"`
-	OfflineImages        bool                  `json:"offline_images"`
-	Images               []string              `json:"images,omitempty"`
-	OfflineImageArchives []OfflineImageArchive `json:"offline_image_archives,omitempty"`
-	ActiveStacks         []string              `json:"active_stacks,omitempty"`
-	StackDefinitions     bool                  `json:"stack_definitions,omitempty"`
-	RepositoryBundle     bool                  `json:"repository_bundle,omitempty"`
-	Artifacts            []ManifestArtifact    `json:"artifacts,omitempty"`
-	Consistency          string                `json:"consistency"`
-	Complete             bool                  `json:"complete"`
-	Files                []ManifestFile        `json:"files"`
+	Version               int                   `json:"version"`
+	ID                    string                `json:"id"`
+	CreatedAt             time.Time             `json:"created_at"`
+	Hostname              string                `json:"hostname"`
+	CLIRevision           string                `json:"cli_revision,omitempty"`
+	OfflineImages         bool                  `json:"offline_images"`
+	Images                []string              `json:"images,omitempty"`
+	OfflineImageArchives  []OfflineImageArchive `json:"offline_image_archives,omitempty"`
+	ActiveStacks          []string              `json:"active_stacks,omitempty"`
+	StackDefinitions      bool                  `json:"stack_definitions,omitempty"`
+	RepositoryBundle      bool                  `json:"repository_bundle,omitempty"`
+	Artifacts             []ManifestArtifact    `json:"artifacts,omitempty"`
+	Consistency           string                `json:"consistency"`
+	ConsistencyBoundaries []ConsistencyBoundary `json:"consistency_boundaries,omitempty"`
+	Complete              bool                  `json:"complete"`
+	Files                 []ManifestFile        `json:"files"`
 }
 
 func WriteManifest(dir string, manifest Manifest) error {
@@ -117,11 +133,44 @@ func Verify(dir string) (Manifest, error) {
 	if !ok {
 		return Manifest{}, fmt.Errorf("manifest is required")
 	}
-	if manifest.Version != ManifestVersion || !manifest.Complete {
+	if !SupportedManifestVersion(manifest.Version) || !manifest.Complete {
 		return Manifest{}, fmt.Errorf("unsupported or incomplete manifest version %d", manifest.Version)
 	}
 	if manifest.ID == "" || filepath.Base(manifest.ID) != manifest.ID || strings.Contains(manifest.ID, "..") {
 		return Manifest{}, fmt.Errorf("invalid manifest id")
+	}
+	seenBoundaries := map[string]struct{}{}
+	for _, boundary := range manifest.ConsistencyBoundaries {
+		if strings.TrimSpace(boundary.Service) == "" || strings.TrimSpace(boundary.Method) == "" {
+			return Manifest{}, fmt.Errorf("invalid consistency boundary identity")
+		}
+		if boundary.StartedAt.IsZero() || boundary.CompletedAt.IsZero() || boundary.CompletedAt.Before(boundary.StartedAt) {
+			return Manifest{}, fmt.Errorf("invalid consistency boundary timestamps for %s", boundary.Service)
+		}
+		if boundary.CompletedAt.After(manifest.CreatedAt) {
+			return Manifest{}, fmt.Errorf("consistency boundary for %s completes after manifest creation", boundary.Service)
+		}
+		if _, exists := seenBoundaries[boundary.Service]; exists {
+			return Manifest{}, fmt.Errorf("duplicate consistency boundary for %s", boundary.Service)
+		}
+		seenBoundaries[boundary.Service] = struct{}{}
+		if boundary.Service != "gitea" || (boundary.Method != "application-quiesced-postgresql-dump-and-btrfs-snapshot" && boundary.Method != "application-quiesced-postgresql-dump-and-filesystem-copy" && boundary.Method != "application-already-stopped-postgresql-dump-and-btrfs-snapshot" && boundary.Method != "application-already-stopped-postgresql-dump-and-filesystem-copy") {
+			return Manifest{}, fmt.Errorf("unsupported consistency boundary %s/%s", boundary.Service, boundary.Method)
+		}
+	}
+	hasActiveGitea := stackscope.Contains(manifest.ActiveStacks, "gitea")
+	if manifest.Version == ManifestVersion && hasActiveGitea && manifest.Consistency != "service-specific-consistency-boundaries" {
+		return Manifest{}, fmt.Errorf("manifest version %d requires a Gitea consistency boundary", manifest.Version)
+	}
+	if manifest.Consistency == "service-specific-consistency-boundaries" {
+		if !hasActiveGitea {
+			return Manifest{}, fmt.Errorf("service-specific consistency requires an active Gitea stack")
+		}
+		if _, exists := seenBoundaries["gitea"]; !exists || len(seenBoundaries) != 1 {
+			return Manifest{}, fmt.Errorf("service-specific consistency requires exactly one Gitea boundary")
+		}
+	} else if len(manifest.ConsistencyBoundaries) > 0 {
+		return Manifest{}, fmt.Errorf("consistency boundaries require service-specific consistency")
 	}
 	if manifest.ActiveStacks != nil {
 		if err := validateActiveStacks(manifest, dir); err != nil {
