@@ -5,13 +5,16 @@ import argparse
 import json
 import re
 import subprocess
+from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 RELEASE_TAG = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
+VERSION = re.compile(r"^[0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]+)?$")
 IMAGE_LINE = re.compile(r"^\s*image:\s*[\"']?([^\"'\s]+)", re.MULTILINE)
 DIGEST_IMAGE = re.compile(r"[a-zA-Z0-9./_-]+:[^\"'\s]+@sha256:[0-9a-f]{64}")
 
@@ -31,6 +34,12 @@ def require(mapping: dict, path: str):
     if value in (None, "", []):
         raise ValueError(f"empty required field: {path}")
     return value
+
+
+def require_https(value: str, path: str) -> None:
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError(f"{path} must be an absolute HTTPS URL")
 
 
 def validate(path: Path, expected_commit: str) -> None:
@@ -57,15 +66,26 @@ def validate(path: Path, expected_commit: str) -> None:
         raise ValueError(
             f"manifest config schema {schema} does not match repository {repository_schema}"
         )
-    require(document, "release.qualified_at")
-    require(document, "platform.arch_image_url")
+    qualified_at = require(document, "release.qualified_at")
+    try:
+        datetime.fromisoformat(qualified_at.replace("Z", "+00:00"))
+    except (AttributeError, ValueError) as exc:
+        raise ValueError("release.qualified_at must be an ISO-8601 timestamp") from exc
+    arch_image_url = require(document, "platform.arch_image_url")
+    require_https(arch_image_url, "platform.arch_image_url")
     image_checksum = require(document, "platform.arch_image_sha256")
     if not SHA256.fullmatch(image_checksum):
         raise ValueError("platform.arch_image_sha256 must be a lowercase SHA-256")
     require(document, "platform.package_strategy")
-    require(document, "platform.package_state_artifact")
-    require(document, "dependencies.ansible_core")
-    require(document, "dependencies.python")
+    package_artifact = require(document, "platform.package_state_artifact")
+    require_https(package_artifact, "platform.package_state_artifact")
+    package_checksum = require(document, "platform.package_state_sha256")
+    if not SHA256.fullmatch(package_checksum):
+        raise ValueError("platform.package_state_sha256 must be a lowercase SHA-256")
+    for dependency in ("ansible_core", "python"):
+        version = require(document, f"dependencies.{dependency}")
+        if not VERSION.fullmatch(version):
+            raise ValueError(f"dependencies.{dependency} must be a version number")
     collections = require(document, "dependencies.collections")
     recorded_collections = {item.get("name"): item.get("version") for item in collections}
     requirements = yaml.safe_load(Path("ansible/requirements.yml").read_text())
@@ -76,6 +96,8 @@ def validate(path: Path, expected_commit: str) -> None:
         raise ValueError("Ansible collection versions do not match requirements.yml")
 
     images = require(document, "container_images")
+    if len(images) != len(set(images)):
+        raise ValueError("container_images must not contain duplicates")
     if not all(re.search(r"@sha256:[0-9a-f]{64}$", image) for image in images):
         raise ValueError("every container image must be pinned by sha256 digest")
     repository_images = set()
@@ -86,11 +108,14 @@ def validate(path: Path, expected_commit: str) -> None:
             Path("ansible/roles/docker/defaults/main.yml").read_text()
         )
     )
-    missing_images = sorted(repository_images - set(images))
-    if missing_images:
+    recorded_images = set(images)
+    missing_images = sorted(repository_images - recorded_images)
+    unexpected_images = sorted(recorded_images - repository_images)
+    if missing_images or unexpected_images:
         raise ValueError(
-            "manifest does not record repository container images: "
-            + ", ".join(missing_images)
+            "manifest container images differ from repository"
+            f"; missing: {', '.join(missing_images) or 'none'}"
+            f"; unexpected: {', '.join(unexpected_images) or 'none'}"
         )
 
     bootstrap = require(document, "evidence.bootstrap")
@@ -100,7 +125,8 @@ def validate(path: Path, expected_commit: str) -> None:
     for item in bootstrap:
         if item.get("commit") != commit or item.get("result") != "passed":
             raise ValueError("bootstrap evidence must pass for the exact release commit")
-        require(item, "artifact")
+        artifact = require(item, "artifact")
+        require_https(artifact, "evidence.bootstrap.artifact")
         inventory = require(item, "component_inventory_sha256")
         if not SHA256.fullmatch(inventory):
             raise ValueError("component inventory checksum must be SHA-256")
@@ -108,15 +134,29 @@ def validate(path: Path, expected_commit: str) -> None:
     if len(inventories) != 1:
         raise ValueError("fresh-node component inventories do not match")
 
-    dr = require(document, "evidence.disaster_recovery")
-    if dr.get("commit") != commit or dr.get("result") != "passed":
-        raise ValueError("disaster-recovery evidence must pass for the exact commit")
-    require(dr, "artifact")
+    dr_entries = require(document, "evidence.disaster_recovery")
+    if not isinstance(dr_entries, list) or len(dr_entries) != 2:
+        raise ValueError("exactly two disaster-recovery evidence entries are required")
+    dr_variants = set()
+    for dr in dr_entries:
+        if not isinstance(dr, dict):
+            raise ValueError("disaster-recovery evidence entries must be objects")
+        variant = require(dr, "variant")
+        if variant not in {"standard", "offline-images"} or variant in dr_variants:
+            raise ValueError("disaster-recovery evidence must contain standard and offline-images exactly once")
+        dr_variants.add(variant)
+        if dr.get("commit") != commit or dr.get("result") != "passed":
+            raise ValueError("disaster-recovery evidence must pass for the exact commit")
+        artifact = require(dr, "artifact")
+        require_https(artifact, "evidence.disaster_recovery.artifact")
+    if dr_variants != {"standard", "offline-images"}:
+        raise ValueError("disaster-recovery evidence must contain standard and offline-images")
     for name in ("upgrade", "rollback"):
         evidence = require(document, f"evidence.{name}")
         if evidence.get("result") != "passed":
             raise ValueError(f"{name} evidence must pass")
-        require(evidence, "artifact")
+        artifact = require(evidence, "artifact")
+        require_https(artifact, f"evidence.{name}.artifact")
     require(document, "evidence.upgrade.from_release")
 
 

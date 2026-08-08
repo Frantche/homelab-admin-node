@@ -88,8 +88,10 @@ func Run(ctx context.Context, opts Options) error {
 func updateAdminRepository(ctx context.Context, opts Options) error {
 	desiredBytes, err := os.ReadFile(opts.ReleaseRefFile)
 	if os.IsNotExist(err) {
-		fmt.Printf("[admin-converge] release pin %s is absent; using legacy branch update\n", opts.ReleaseRefFile)
-		return updateGitRepository(ctx, opts.RepoDir, "admin repo")
+		return fmt.Errorf(
+			"release pin %s is missing; install a full qualified commit SHA or explicitly select main as the development channel",
+			opts.ReleaseRefFile,
+		)
 	}
 	if err != nil {
 		return fmt.Errorf("read release pin %s: %w", opts.ReleaseRefFile, err)
