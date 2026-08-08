@@ -377,6 +377,37 @@ func TestRunStandardBackupIncludesActiveStackDefinitions(t *testing.T) {
 	}
 }
 
+func TestHarborAdminCredentialsUseOnlyExplicitManagedKeys(t *testing.T) {
+	envFile := filepath.Join(t.TempDir(), "backup.env")
+	if err := os.WriteFile(envFile, []byte(`RESTIC_PASSWORD="unrelated-secret"
+HARBOR_ADMIN_USER="managed-admin"
+HARBOR_ADMIN_PASSWORD='managed-password'
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HARBOR_ADMIN_USER", "")
+	t.Setenv("HARBOR_ADMIN_PASSWORD", "")
+
+	user, password := harborAdminCredentials(config.Config{BackupEnvFile: envFile})
+	if user != "managed-admin" || password != "managed-password" {
+		t.Fatalf("credentials = %q/%q", user, password)
+	}
+}
+
+func TestHarborAdminCredentialsPreferProcessEnvironment(t *testing.T) {
+	envFile := filepath.Join(t.TempDir(), "backup.env")
+	if err := os.WriteFile(envFile, []byte("HARBOR_ADMIN_USER=managed-admin\nHARBOR_ADMIN_PASSWORD=managed-password\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HARBOR_ADMIN_USER", "explicit-admin")
+	t.Setenv("HARBOR_ADMIN_PASSWORD", "explicit-password")
+
+	user, password := harborAdminCredentials(config.Config{BackupEnvFile: envFile})
+	if user != "explicit-admin" || password != "explicit-password" {
+		t.Fatalf("credentials = %q/%q", user, password)
+	}
+}
+
 func TestCopyActiveStackDefinitionsPreservesRenderedModes(t *testing.T) {
 	root := t.TempDir()
 	adminRoot := filepath.Join(root, "admin")
