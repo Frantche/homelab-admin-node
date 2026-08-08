@@ -15,6 +15,7 @@ workflow="$repo_root/.github/workflows/bootstrap-user-journey.yml"
 grep -F "contains(github.event.pull_request.labels.*.name, 'release-candidate')" "$workflow" >/dev/null
 grep -F 'inputs.candidate_sha || github.event.pull_request.head.sha || github.sha' "$workflow" >/dev/null
 grep -F 'needs: [main-to-candidate-disaster-recovery]' "$workflow" >/dev/null
+grep -F 'github.ref_name == github.event.repository.default_branch' "$workflow" >/dev/null
 
 test_root="$(mktemp -d /tmp/admin-dr-promotion-test.XXXXXX)"
 trap 'rm -rf "$test_root"' EXIT
@@ -41,3 +42,16 @@ if "$repo_root/ci/validate-dr-promotion.sh" "$candidate_sha" "$test_root" >/dev/
 fi
 write_evidence offline-images "$candidate_sha"
 "$repo_root/ci/validate-dr-promotion.sh" "$candidate_sha" "$test_root" >/dev/null
+
+mkdir -p "$test_root/duplicate"
+cp "$test_root/evidence-standard.json" "$test_root/duplicate/evidence-standard.json"
+if "$repo_root/ci/validate-dr-promotion.sh" "$candidate_sha" "$test_root" >/dev/null 2>&1; then
+  echo "promotion unexpectedly accepted ambiguous duplicate evidence" >&2
+  exit 1
+fi
+
+grep -F "ref: \"\${{ github.sha }}\"" "$workflow" >/dev/null
+if sed -n '/promote-tested-candidate:/,$p' "$workflow" | grep -F "ref: \"\${{ inputs.candidate_sha || github.sha }}\"" >/dev/null; then
+  echo "promotion job must not execute candidate-controlled tooling with write permission" >&2
+  exit 1
+fi

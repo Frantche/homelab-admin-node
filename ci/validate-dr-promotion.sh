@@ -14,11 +14,18 @@ if [[ ! -d "$evidence_dir" ]]; then
 fi
 
 for variant in standard offline-images; do
-  evidence="$(find "$evidence_dir" -type f -name "evidence-$variant.json" -print -quit)"
-  if [[ -z "$evidence" ]]; then
+  mapfile -d '' evidence_files < <(
+    find "$evidence_dir" -type f -name "evidence-$variant.json" -print0
+  )
+  if (( ${#evidence_files[@]} == 0 )); then
     echo "current-run DR evidence is missing for $variant" >&2
     exit 1
   fi
+  if (( ${#evidence_files[@]} != 1 )); then
+    echo "current-run DR evidence is ambiguous for $variant: expected exactly one file" >&2
+    exit 1
+  fi
+  evidence="${evidence_files[0]}"
   jq -e \
     --arg sha "$candidate_sha" \
     --arg variant "$variant" \

@@ -52,12 +52,19 @@ the tested commit, variant, backup manifest, and restore validation summary.
 Large diagnostic logs retain their shorter lifecycle.
 
 To promote, manually dispatch `bootstrap-user-journey`, choose
-`disaster-recovery`, provide the full candidate SHA, and enable `promote`.
+the default branch as the workflow ref, select `disaster-recovery`, provide the
+full candidate SHA, and enable `promote`. Promotion is refused from any other
+workflow ref.
 The promotion job runs only after both `standard` and `offline-images` succeed,
 then revalidates that both current-run evidence files and embedded manifests
 match the candidate. Only then can it create the immutable
 `homelab-production-<12-character-SHA>` tag. Missing, stale, skipped, or
 mismatched evidence fails closed and creates no marker.
+
+The write-enabled promotion job always executes tooling from the default-branch
+revision that defined the manually dispatched workflow. Candidate-controlled
+scripts are never executed with `contents: write`; the candidate is identified
+only as an immutable Git object after its evidence has been validated.
 
 Run locally:
 

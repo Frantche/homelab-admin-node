@@ -653,7 +653,10 @@ jobs:
 
   promote-tested-candidate:
     name: Promote tested candidate
-    if: github.event_name == 'workflow_dispatch' && inputs.promote == true
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.promote == true &&
+      github.ref_name == github.event.repository.default_branch
     needs: [main-to-candidate-disaster-recovery]
     runs-on: ubuntu-24.04
     permissions:
@@ -663,10 +666,13 @@ jobs:
       CANDIDATE_SHA: "${{ inputs.candidate_sha || github.sha }}"
       GH_TOKEN: "${{ github.token }}"
     steps:
-      - name: Checkout promotion tooling at candidate
+      - name: Checkout trusted promotion tooling
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: "${{ inputs.candidate_sha || github.sha }}"
+          # workflow_dispatch always resolves this workflow from the default
+          # branch. Keep every command executed with contents:write on that
+          # trusted revision, never on the candidate being promoted.
+          ref: "${{ github.sha }}"
           fetch-depth: 0
 
       - name: Download current-run DR evidence
@@ -677,7 +683,8 @@ jobs:
 
       - name: Create immutable production marker
         run: |
-          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "$CANDIDATE_SHA^{commit}"
           marker="homelab-production-${CANDIDATE_SHA:0:12}"
           if git ls-remote --exit-code --tags origin "refs/tags/$marker" >/dev/null 2>&1; then
             remote_commit="$(git ls-remote origin "refs/tags/$marker^{}" | awk 'NR == 1 {print $1}')"
