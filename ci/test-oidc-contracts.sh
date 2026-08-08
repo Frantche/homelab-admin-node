@@ -10,6 +10,9 @@ GITEA_MISSING_SECRET_PLAYBOOK="$REPO_ROOT/ci/playbooks/oidc-contracts-gitea-miss
 export ANSIBLE_NOCOLOR=1
 export ANSIBLE_ROLES_PATH="$REPO_ROOT/ansible/roles"
 
+grep -F 'CI_MODE: "{{ (ci_mode | default(false) | bool) | ternary('\''true'\'', '\''false'\'') }}"' \
+  "$REPO_ROOT/ansible/roles/gitea_config/tasks/main.yml" >/dev/null
+
 echo "[oidc-contracts] non-CI success scenario"
 ansible-playbook -i localhost, "$SUCCESS_PLAYBOOK"
 

@@ -257,6 +257,7 @@
 - name: Validate Gitea API and admin authentication
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node validate gitea
   environment:
+    CI_MODE: "{{ (ci_mode | default(false) | bool) | ternary('true', 'false') }}"
     GITEA_DOMAIN: "{{ service_domains.gitea | default('git.example.com') }}"
     GITEA_ADMIN_USER: "{{ gitea_runtime.admin_user }}"
     GITEA_ADMIN_PASSWORD: "{{ gitea_runtime.admin_password }}"
