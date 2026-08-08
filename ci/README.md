@@ -22,13 +22,17 @@ idempotente par etape GitHub Actions. GitHub Actions execute deux variantes :
 - `offline-images`, avec `DR_INCLUDE_IMAGES=true`, qui archive les images et le
   commit Git, bloque les registries sur la VM cible et impose un restore sans pull.
 
-Ces variantes ne s'executent pas sur les pull requests ni sur les push. Elles
-sont lancees manuellement avec `workflow_dispatch` en choisissant le scope
+Ces variantes ne s'executent pas sur les pull requests ordinaires ni sur les
+push. Le label `release-candidate` declenche les deux variantes pour le SHA head
+exact de la pull request. Elles sont aussi lancees manuellement avec
+`workflow_dispatch` en choisissant le scope
 `disaster-recovery`, selectionne par defaut, ou automatiquement chaque dimanche
 a `03:00 UTC`. Le cron hebdomadaire n'execute pas le job `bootstrap` separe,
 mais conserve `ci-quality` et les contrats OIDC requis par le scenario DR. Le
 scenario DR execute lui-meme le parcours bootstrap avant la mise a niveau.
 Le lancement manuel propose aussi les scopes `bootstrap` et `all`.
+Une promotion demandee manuellement ne cree le tag immutable de production
+qu'apres validation des preuves `standard` et `offline-images` du run courant.
 
 Chaque variante :
 

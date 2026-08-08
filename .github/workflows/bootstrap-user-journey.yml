@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches:
       - main
@@ -18,6 +19,15 @@ on:
           - disaster-recovery
           - bootstrap
           - all
+      candidate_sha:
+        description: Immutable candidate commit (defaults to the triggering SHA)
+        required: false
+        type: string
+      promote:
+        description: Create the production marker after both DR variants pass
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: "0 3 * * 0"
 
@@ -85,6 +95,7 @@ jobs:
   bootstrap:
     if: >-
       github.event_name != 'schedule' &&
+      github.event.action != 'labeled' &&
       (github.event_name != 'workflow_dispatch' ||
        inputs.scope == 'bootstrap' ||
        inputs.scope == 'all')
@@ -507,7 +518,9 @@ jobs:
     if: >-
       github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' &&
-       (inputs.scope == 'disaster-recovery' || inputs.scope == 'all'))
+       (inputs.scope == 'disaster-recovery' || inputs.scope == 'all')) ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'release-candidate'))
     needs: [quality, oidc-contracts]
     runs-on: ubuntu-24.04
     timeout-minutes: 180
@@ -521,7 +534,7 @@ jobs:
             include_images: "true"
     env:
       MAIN_SHA: "${{ github.event.pull_request.base.sha || github.sha }}"
-      CANDIDATE_SHA: "${{ github.event.pull_request.head.sha || github.sha }}"
+      CANDIDATE_SHA: "${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}"
       MAIN_REPO_URL: "${{ github.event.pull_request.base.repo.clone_url || format('https://github.com/{0}.git', github.repository) }}"
       CANDIDATE_REPO_URL: "${{ github.event.pull_request.head.repo.clone_url || format('https://github.com/{0}.git', github.repository) }}"
       SSH_PORT: "2222"
@@ -530,6 +543,14 @@ jobs:
     steps:
       - name: Checkout candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: "${{ github.event.pull_request.head.repo.full_name || github.repository }}"
+          ref: "${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}"
+
+      - name: Pin exact candidate commit
+        run: |
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
 
       - name: Install host dependencies
         run: |
@@ -592,12 +613,34 @@ jobs:
       - name: Validate final restored data and rotated secrets
         run: make ci-dr-action DR_ACTION=validate-final-candidate
 
+      - name: Publish immutable DR evidence
+        run: |
+          manifest=.ci/artifacts/disaster-recovery/post-rotation-manifest.json
+          test -s "$manifest"
+          jq -n \
+            --arg tested_commit "$CANDIDATE_SHA" \
+            --arg variant "${{ matrix.mode }}" \
+            --slurpfile backup_manifest "$manifest" \
+            '{schema_version: 1, tested_commit: $tested_commit, variant: $variant,
+              backup_manifest: $backup_manifest[0],
+              restore_validation: {status: "passed", sentinels: "passed", rotated_secrets: "passed", service_validations: "passed"}}' \
+            > ".ci/artifacts/disaster-recovery/evidence-${{ matrix.mode }}.json"
+
       - name: Destroy final recovery VM
         run: make ci-dr-action DR_ACTION=destroy-final-target
 
       - name: Clean up recovery resources
         if: always()
         run: make ci-dr-action DR_ACTION=cleanup
+
+      - name: Upload immutable DR evidence
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: disaster-recovery-evidence-${{ matrix.mode }}
+          path: .ci/artifacts/disaster-recovery/evidence-${{ matrix.mode }}.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Upload disaster recovery logs
         if: always()
@@ -607,3 +650,48 @@ jobs:
           path: .ci/artifacts/disaster-recovery
           if-no-files-found: ignore
           retention-days: 2
+
+  promote-tested-candidate:
+    name: Promote tested candidate
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.promote == true &&
+      github.ref_name == github.event.repository.default_branch
+    needs: [main-to-candidate-disaster-recovery]
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    env:
+      CANDIDATE_SHA: "${{ inputs.candidate_sha || github.sha }}"
+      GH_TOKEN: "${{ github.token }}"
+    steps:
+      - name: Checkout trusted promotion tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # workflow_dispatch always resolves this workflow from the default
+          # branch. Keep every command executed with contents:write on that
+          # trusted revision, never on the candidate being promoted.
+          ref: "${{ github.sha }}"
+          fetch-depth: 0
+
+      - name: Download current-run DR evidence
+        run: gh run download "$GITHUB_RUN_ID" --pattern 'disaster-recovery-evidence-*' --dir .ci/dr-evidence
+
+      - name: Refuse stale or incomplete evidence
+        run: make validate-dr-promotion DR_EVIDENCE_DIR=.ci/dr-evidence
+
+      - name: Create immutable production marker
+        run: |
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "$CANDIDATE_SHA^{commit}"
+          marker="homelab-production-${CANDIDATE_SHA:0:12}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$marker" >/dev/null 2>&1; then
+            remote_commit="$(git ls-remote origin "refs/tags/$marker^{}" | awk 'NR == 1 {print $1}')"
+            test "$remote_commit" = "$CANDIDATE_SHA"
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git tag -a "$marker" "$CANDIDATE_SHA" -m "Homelab production candidate validated by DR run $GITHUB_RUN_ID"
+          git push origin "refs/tags/$marker"
