@@ -24,10 +24,12 @@ make validate-release MANIFEST=/path/to/qualification.json RELEASE_COMMIT=v1.2.0
 
 The manifest binds the tag and full commit to the configuration schema, dated
 Arch cloud image and checksum, `pacman -Q` package-state artifact, Python and
-Ansible dependencies, container digests, and evidence URLs. Qualification is
+Ansible dependencies, container digests, and evidence URLs. The package-state
+artifact has its own SHA-256 so its contents cannot be replaced silently. Qualification is
 valid only when two fresh nodes built from the same release have identical
 component-inventory checksums, and bootstrap, disaster recovery, upgrade, and
-rollback all passed. Evidence must test the exact release commit. Publish these
+rollback all passed. Disaster-recovery evidence must include both the `standard`
+and `offline-images` variants exactly once. Evidence must test the exact release commit. Publish these
 artifacts and notable changes, migrations, known limitations, and the previous
 supported release in the GitHub release notes.
 
@@ -35,6 +37,11 @@ The validator also compares `container_images` with every literal image used by
 `stacks/*/compose.yaml*`; copy the complete digest-pinned set into the manifest.
 
 ## Supported upgrade
+
+Before the first convergence after adopting this release policy, create
+`/etc/admin-node/release-ref`. Its absence is a hard failure; there is no legacy
+fallback to a moving branch. Use a qualified full commit for production, or the
+literal value `main` only when deliberately selecting the development channel.
 
 1. Read the target release notes and confirm that the current release is listed
    as a supported upgrade source. Apply documented config-schema migrations in

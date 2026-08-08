@@ -92,6 +92,16 @@ func TestUpdateAdminRepositoryKeepsImmutableCommitPin(t *testing.T) {
 	}
 }
 
+func TestUpdateAdminRepositoryRefusesMissingReleasePin(t *testing.T) {
+	err := updateAdminRepository(context.Background(), Options{
+		RepoDir:        initGitRepo(t),
+		ReleaseRefFile: filepath.Join(t.TempDir(), "missing-release-ref"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "release pin") {
+		t.Fatalf("missing release pin error = %v", err)
+	}
+}
+
 func TestPersistInstalledState(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "release/config-schema-version", "3\n", "schema")

@@ -5,7 +5,9 @@ admin_git_ref_file: "/etc/admin-node/git-ref"
 admin_release_ref_file: "/etc/admin-node/release-ref"
 admin_release_name_file: "/etc/admin-node/release-name"
 admin_config_schema_file: "/etc/admin-node/config-schema-version"
-admin_config_schema_version: "1"
+# Must be declared by the private config repository. An empty default prevents
+# an old, unmigrated repository from inheriting the release schema silently.
+admin_config_schema_version: ""
 admin_node_lan_ip: "192.168.1.10"
 admin_node_fqdn: ""
 acme_email: "admin@example.com"
