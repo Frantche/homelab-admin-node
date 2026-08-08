@@ -22,6 +22,12 @@ The backup manifest contains an `artifacts` inventory. Required entries must be
 `disabled` during a standard backup. `admin-node backup verify` checks this
 inventory in addition to file hashes.
 
+Failed runs retain a non-restorable artifact inventory under
+`/srv/admin/backups/local/.failed/<backup-id>/manifest.json`. This record shows
+which required artifacts were produced or failed without publishing a partial
+recovery point. Required remote delivery is tagged uniquely, queried back from
+each Restic repository, and recorded locally only after the snapshot is visible.
+
 When `backup.gitea_process.enabled` is true, a separate
 `admin-gitea-process-backup.timer` also runs daily at 03:30 by default using
 `Frantche/gitea-backup-restore-process`. The schedule is configurable through

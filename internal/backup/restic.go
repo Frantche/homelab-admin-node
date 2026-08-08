@@ -3,6 +3,7 @@ package backup
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type resticConfig struct {
@@ -210,12 +212,16 @@ func runResticRepo(ctx context.Context, cfg resticConfig, id string) error {
 		return err
 	}
 	fmt.Printf("[restic] backing up to repository '%s'\n", id)
-	backupArgs := append(append([]string{}, options...), "backup", "--tag", "admin-node-v2")
+	verificationTag := fmt.Sprintf("admin-node-run:%d", time.Now().UTC().UnixNano())
+	backupArgs := append(append([]string{}, options...), "backup", "--tag", "admin-node-v2", "--tag", verificationTag)
 	if backupID := backupIDFromPaths(cfg.BackupPaths); backupID != "" {
 		backupArgs = append(backupArgs, "--tag", "backup-id:"+backupID)
 	}
 	if err := restic(ctx, env, append(backupArgs, cfg.BackupPaths...)...); err != nil {
 		return err
+	}
+	if err := verifyResticSnapshot(ctx, env, options, verificationTag); err != nil {
+		return fmt.Errorf("verify repository '%s' delivery: %w", id, err)
 	}
 	forgetArgs := values["RESTIC_FORGET_ARGS"]
 	if forgetArgs == "" {
@@ -292,10 +298,38 @@ func runResticLegacy(ctx context.Context, cfg resticConfig) error {
 		return err
 	}
 	fmt.Println("[restic] backing up to legacy RESTIC_REPOSITORY")
-	if err := restic(ctx, env, append([]string{"backup"}, cfg.BackupPaths...)...); err != nil {
+	verificationTag := fmt.Sprintf("admin-node-run:%d", time.Now().UTC().UnixNano())
+	backupArgs := []string{"backup", "--tag", "admin-node-v2", "--tag", verificationTag}
+	if backupID := backupIDFromPaths(cfg.BackupPaths); backupID != "" {
+		backupArgs = append(backupArgs, "--tag", "backup-id:"+backupID)
+	}
+	if err := restic(ctx, env, append(backupArgs, cfg.BackupPaths...)...); err != nil {
 		return err
 	}
+	if err := verifyResticSnapshot(ctx, env, nil, verificationTag); err != nil {
+		return fmt.Errorf("verify legacy repository delivery: %w", err)
+	}
 	return forgetRestic(ctx, env, options, cfg.DefaultForgetArgs)
+}
+
+func verifyResticSnapshot(ctx context.Context, env, options []string, tag string) error {
+	args := append(append([]string{}, options...), "snapshots", "--json", "--tag", tag)
+	cmd := exec.CommandContext(ctx, "restic", args...)
+	cmd.Env = env
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("query tagged snapshot: %w", err)
+	}
+	var snapshots []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(output, &snapshots); err != nil {
+		return fmt.Errorf("decode tagged snapshot inventory: %w", err)
+	}
+	if len(snapshots) != 1 || snapshots[0].ID == "" {
+		return fmt.Errorf("expected exactly one tagged snapshot, found %d", len(snapshots))
+	}
+	return nil
 }
 
 func initRestic(ctx context.Context, cfg resticConfig, env []string, options []string, id string) error {

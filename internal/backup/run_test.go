@@ -149,6 +149,9 @@ echo "$*" >> "`+resticLog+`"
 if [[ "$*" == "cat config" ]]; then
   exit 1
 fi
+if [[ "${1:-}" == "snapshots" ]]; then
+  printf '[{"id":"verified-snapshot"}]\n'
+fi
 exit 0
 `), 0o755); err != nil {
 		t.Fatal(err)
@@ -257,8 +260,23 @@ func TestRunFailsWhenActiveOpenBaoSnapshotTokenIsMissing(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "snapshot token") {
 		t.Fatalf("error = %v, want missing OpenBao snapshot token", err)
 	}
-	if entries, readErr := os.ReadDir(filepath.Join(root, "backups")); readErr == nil && len(entries) != 0 {
-		t.Fatalf("incomplete backup artifacts were retained: %v", entries)
+	failureManifestPath := filepath.Join(root, "backups", ".failed")
+	failureIDs, readErr := os.ReadDir(failureManifestPath)
+	if readErr != nil || len(failureIDs) != 1 {
+		t.Fatalf("failed artifact inventory was not retained: entries=%v error=%v", failureIDs, readErr)
+	}
+	failureManifest, ok, readErr := ReadManifest(filepath.Join(failureManifestPath, failureIDs[0].Name()))
+	if readErr != nil || !ok || failureManifest.Complete {
+		t.Fatalf("invalid failed artifact inventory: manifest=%#v ok=%t error=%v", failureManifest, ok, readErr)
+	}
+	foundOpenBaoFailure := false
+	for _, artifact := range failureManifest.Artifacts {
+		if artifact.Path == "openbao.snap" && artifact.Status == ArtifactFailed {
+			foundOpenBaoFailure = true
+		}
+	}
+	if !foundOpenBaoFailure {
+		t.Fatalf("OpenBao failure is absent from artifact inventory: %#v", failureManifest.Artifacts)
 	}
 }
 

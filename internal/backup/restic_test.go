@@ -140,3 +140,15 @@ RESTIC_PASSWORD_LOCAL=test-password
 		t.Fatalf("error = %v, want required remote repository failure", err)
 	}
 }
+
+func TestVerifyResticSnapshotFailsWhenDeliveryCannotBeObserved(t *testing.T) {
+	root := t.TempDir()
+	resticPath := filepath.Join(root, "restic")
+	if err := os.WriteFile(resticPath, []byte("#!/bin/bash\nset -euo pipefail\nprintf '[]\\n'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", root)
+	if err := verifyResticSnapshot(context.Background(), os.Environ(), nil, "admin-node-run:test"); err == nil || !strings.Contains(err.Error(), "found 0") {
+		t.Fatalf("error = %v, want missing snapshot failure", err)
+	}
+}

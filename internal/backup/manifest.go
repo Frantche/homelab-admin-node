@@ -32,12 +32,14 @@ type OfflineImageArchive struct {
 const (
 	ArtifactProduced = "produced"
 	ArtifactDisabled = "disabled"
+	ArtifactFailed   = "failed"
 )
 
 type ManifestArtifact struct {
 	Path     string `json:"path"`
 	Required bool   `json:"required"`
 	Status   string `json:"status"`
+	External bool   `json:"external,omitempty"`
 }
 
 type Manifest struct {
@@ -158,12 +160,19 @@ func validateManifestArtifacts(manifest Manifest, dir string) error {
 		seen[artifact.Path] = struct{}{}
 		switch artifact.Status {
 		case ArtifactProduced:
+			if artifact.External {
+				continue
+			}
 			if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(artifact.Path))); err != nil {
 				return fmt.Errorf("produced artifact is missing: %s", artifact.Path)
 			}
 		case ArtifactDisabled:
 			if artifact.Required {
 				return fmt.Errorf("required artifact is disabled: %s", artifact.Path)
+			}
+		case ArtifactFailed:
+			if manifest.Complete {
+				return fmt.Errorf("complete manifest contains failed artifact: %s", artifact.Path)
 			}
 		default:
 			return fmt.Errorf("invalid status %q for artifact %s", artifact.Status, artifact.Path)
