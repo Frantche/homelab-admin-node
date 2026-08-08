@@ -32,7 +32,8 @@ When `backup.gitea_process.enabled` is true, a separate
 `admin-gitea-process-backup.timer` also runs daily at 03:30 by default using
 `Frantche/gitea-backup-restore-process`. The schedule is configurable through
 `backup.gitea_process.on_calendar`. It runs only when both `gitea-db` and `gitea`
-report `healthy`; otherwise that execution is skipped. The helper joins the
+report `healthy`; otherwise the service fails, emits a systemd failure event,
+and does not refresh its success marker. The helper joins the
 isolated `gitea-db` Docker network to resolve PostgreSQL and `admin-edge` for
 DNS and remote backup egress. Gitea data stays read-only during backup; helper
 history is stored under `/srv/admin/backups/gitea-process`. S3 uploads use
@@ -63,6 +64,26 @@ Useful checks:
 ```bash
 make test-restic-config
 sudo /opt/homelab-admin-node/bin/admin-node validate apis
+sudo /opt/homelab-admin-node/bin/admin-node backup status
+```
+
+`backup status` reports the last standard, remote, Gitea-process,
+offline-image, and repository-integrity successes. It exits non-zero when a
+required class is missing or older than its configured threshold, so it can be
+used directly by monitoring. The command reads only secret-free marker files.
+
+Run an integrity check immediately when needed:
+
+```bash
+sudo /opt/homelab-admin-node/bin/admin-node backup restic-check
+```
+
+The scheduled `admin-backup-integrity.timer` runs the same check weekly. Inspect
+failures with:
+
+```bash
+journalctl -t admin-node-backup --since today
+systemctl status admin-backup-status.service admin-backup-integrity.service
 ```
 
 ## Restore

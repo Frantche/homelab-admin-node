@@ -10,6 +10,7 @@ BACKUP_MAX_RETENTION={{ backup.gitea_process.max_retention | default(5) }}
 BACKUP_TMP_FOLDER={{ backup.gitea_process.tmp_folder | default('/srv/admin/backups/gitea-process/tmp') }}
 RESTORE_TMP_FOLDER={{ backup.gitea_process.restore_tmp_folder | default('/srv/admin/backups/gitea-process/restore-tmp') }}
 BACKUP_FILE_LOG={{ backup.gitea_process.backup_file_log | default('/srv/admin/backups/gitea-process/history/backupFileLog.txt') }}
+BACKUP_STATUS_ROOT={{ (admin_node_root ~ '/backups/status') | quote }}
 {% if backup.gitea_process.method == 's3' %}
 ENDPOINT_URL={{ backup.gitea_process.endpoint_url }}
 AWS_ACCESS_KEY_ID={{ backup.gitea_process.aws_access_key_id }}

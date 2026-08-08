@@ -1,6 +1,7 @@
 [Unit]
-Description=Admin backup job
+Description=Check admin Restic repository integrity
 After=network-online.target
+Wants=network-online.target
 ConditionPathExists=/etc/admin-node/mode
 OnFailure=admin-backup-failure@%n.service
 
@@ -17,4 +18,4 @@ RestrictSUIDSGID=true
 LockPersonality=true
 EnvironmentFile=-/srv/admin/env/backup.env
 ExecCondition=/opt/homelab-admin-node/bin/admin-node mode check --allow normal
-ExecStart=/opt/homelab-admin-node/bin/admin-node backup run
+ExecStart=/usr/bin/flock -w 1800 /run/admin-node-operation.lock /opt/homelab-admin-node/bin/admin-node backup restic-check

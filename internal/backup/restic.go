@@ -26,22 +26,28 @@ type resticConfig struct {
 	RequireRemote      bool
 }
 
+type ResticResult struct {
+	Configured      bool
+	RemoteDelivered bool
+	RepositoryCount int
+}
+
 const defaultResticCacheHome = "/var/cache/admin-node/restic"
 
-func RunRestic(ctx context.Context, envFile string, backupPaths []string) error {
+func RunRestic(ctx context.Context, envFile string, backupPaths []string) (ResticResult, error) {
 	cfg, err := loadResticConfig(envFile)
 	if err != nil {
-		return err
+		return ResticResult{}, err
 	}
 	if _, err := exec.LookPath("restic"); err != nil {
 		if cfg.RequireRemote {
-			return fmt.Errorf("restic is required by BACKUP_REQUIRE_REMOTE_REPOSITORY but is not installed")
+			return ResticResult{}, fmt.Errorf("restic is required by BACKUP_REQUIRE_REMOTE_REPOSITORY but is not installed")
 		}
 		fmt.Println("[restic] restic is not installed, skipping optional repository backups")
-		return nil
+		return ResticResult{}, nil
 	}
 	if err := ensureResticCacheEnv(); err != nil {
-		return err
+		return ResticResult{}, err
 	}
 	if len(backupPaths) > 0 {
 		cfg.BackupPaths = backupPaths
@@ -56,16 +62,65 @@ func RunRestic(ctx context.Context, envFile string, backupPaths []string) error 
 	if len(cfg.Repositories) > 0 {
 		for _, repoID := range cfg.Repositories {
 			if err := runResticRepo(ctx, cfg, repoID); err != nil {
-				return err
+				return ResticResult{}, err
 			}
 		}
-		return nil
+		return ResticResult{Configured: true, RemoteDelivered: hasRemoteRepository(cfg), RepositoryCount: len(cfg.Repositories)}, nil
 	}
 	if cfg.Repository != "" {
-		return runResticLegacy(ctx, cfg)
+		if err := runResticLegacy(ctx, cfg); err != nil {
+			return ResticResult{}, err
+		}
+		return ResticResult{Configured: true, RemoteDelivered: hasRemoteRepository(cfg), RepositoryCount: 1}, nil
 	}
 	fmt.Println("[restic] no repositories configured, skipping remote backup")
-	return nil
+	return ResticResult{}, nil
+}
+
+func CheckRestic(ctx context.Context, envFile string) (ResticResult, error) {
+	if _, err := exec.LookPath("restic"); err != nil {
+		return ResticResult{}, fmt.Errorf("restic is required for integrity checks")
+	}
+	if err := ensureResticCacheEnv(); err != nil {
+		return ResticResult{}, err
+	}
+	cfg, err := loadResticConfig(envFile)
+	if err != nil {
+		return ResticResult{}, err
+	}
+	if len(cfg.Repositories) == 0 && cfg.Repository == "" {
+		fmt.Println("[restic] no repositories configured, skipping integrity check")
+		return ResticResult{}, nil
+	}
+	for _, repoID := range cfg.Repositories {
+		values := cfg.RepoValues[sanitizeRepoID(repoID)]
+		repo, password := values["RESTIC_REPOSITORY"], values["RESTIC_PASSWORD"]
+		if repo == "" || password == "" {
+			return ResticResult{}, fmt.Errorf("incomplete restic repository %q", repoID)
+		}
+		if err := validateSecureRepository(repo, cfg.RequireSecureRepos); err != nil {
+			return ResticResult{}, err
+		}
+		fmt.Printf("[restic] checking repository '%s'\n", repoID)
+		if err := restic(ctx, repoEnv(values, repo, password), append(fields(values["RESTIC_OPTIONS"]), "check")...); err != nil {
+			return ResticResult{}, fmt.Errorf("check restic repository %q: %w", repoID, err)
+		}
+	}
+	if cfg.Repository != "" {
+		if cfg.Password == "" {
+			return ResticResult{}, fmt.Errorf("RESTIC_PASSWORD is required when RESTIC_REPOSITORY is set")
+		}
+		fmt.Println("[restic] checking legacy repository")
+		env := append(os.Environ(), "RESTIC_REPOSITORY="+cfg.Repository, "RESTIC_PASSWORD="+cfg.Password)
+		if err := restic(ctx, env, "check"); err != nil {
+			return ResticResult{}, fmt.Errorf("check legacy restic repository: %w", err)
+		}
+	}
+	count := len(cfg.Repositories)
+	if cfg.Repository != "" {
+		count++
+	}
+	return ResticResult{Configured: true, RemoteDelivered: hasRemoteRepository(cfg), RepositoryCount: count}, nil
 }
 
 func ensureResticCacheEnv() error {

@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic admin backup freshness validation
+
+[Timer]
+OnActiveSec=30m
+OnUnitActiveSec=1h
+Persistent=true
+Unit=admin-backup-status.service
+
+[Install]
+WantedBy=timers.target

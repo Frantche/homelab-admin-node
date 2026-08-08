@@ -1,0 +1,12 @@
+[Unit]
+Description=Weekly admin Restic repository integrity check
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00
+OnActiveSec=10m
+Persistent=true
+RandomizedDelaySec=30m
+Unit=admin-backup-integrity.service
+
+[Install]
+WantedBy=timers.target

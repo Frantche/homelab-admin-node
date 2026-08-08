@@ -1,0 +1,6 @@
+[Unit]
+Description=Report admin backup unit failure for %i
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemd-cat -t admin-node-backup /usr/bin/printf "backup unit %i failed; inspect journalctl -u %i"

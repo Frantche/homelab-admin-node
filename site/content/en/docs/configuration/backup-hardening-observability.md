@@ -40,6 +40,29 @@ Repositories can be local, SFTP, S3, or any restic-supported backend.
 | `backup.require_remote_repository` | `true` | Requires at least one non-local repository and makes a missing Restic binary, configuration, credential, or delivery failure fatal. Set explicitly to `false` for a local-only deployment. |
 | `backup.restic_backup_paths` | tool default | Optional explicit backup path list passed to the backup environment. |
 | `backup.operation_lock_timeout` | `30m` | Maximum time a scheduled backup waits for another admin-node operation, such as convergence, to release the global lock. |
+| `backup.standard_max_age` | `36h` | Maximum age accepted for the last successful standard backup. |
+| `backup.gitea_process.max_age` | `36h` | Maximum age accepted for the separate Gitea process backup when enabled. |
+| `backup.remote_max_age` | `36h` | Maximum age accepted for a successful non-local Restic delivery when remote backup is required. |
+| `backup.offline_max_age` | `0` | Maximum age for offline-image backups. `0` keeps this class optional until an offline schedule is enabled. |
+| `backup.integrity_max_age` | `192h` | Maximum age accepted for the last successful Restic integrity check. |
+
+Successful backup classes write secret-free, mode `0600` markers below
+`/srv/admin/backups/status`. `admin-node backup status` checks the markers
+against the configured thresholds and exits non-zero when a required class is
+missing or stale. It never opens a repository or reads backup credentials.
+
+Two monitoring timers are enabled in `normal` mode:
+
+- `admin-backup-status.timer` validates freshness every hour, starting 30
+  minutes after the timer is activated;
+- `admin-backup-integrity.timer` runs `restic check` 10 minutes after activation
+  and weekly.
+
+Failures trigger `admin-backup-failure@.service`, which writes a stable
+`admin-node-backup` journal event suitable for forwarding to homelab alerting.
+After upgrading an existing node, run one standard backup, the optional Gitea
+process backup when enabled, and `admin-node backup restic-check` to initialize
+the markers immediately.
 
 Backup completion is fail-closed for active stateful stacks. An active Keycloak,
 Gitea, Harbor, or OpenBao stack must produce its required database/snapshot and
@@ -76,7 +99,8 @@ When enabled, Ansible starts `admin-gitea-process-backup.timer`, which runs dail
 at 03:30 by default. The systemd calendar can be customized with
 `backup.gitea_process.on_calendar`. The service checks that both `gitea-db` and `gitea` are healthy before
 running `ghcr.io/frantche/gitea-backup-restore-process:0.3.21`; if either
-container is not healthy, that execution is skipped.
+container is not healthy, the service fails, emits a systemd failure event,
+and does not refresh its success marker.
 
 | Variable | Default/example | Purpose |
 | --- | --- | --- |

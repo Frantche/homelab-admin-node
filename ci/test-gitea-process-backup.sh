@@ -17,6 +17,7 @@ mkdir -p \
   "$test_root/restore-parent/restore" \
   "$test_root/history-parent"
 docker_log="$test_root/docker.log"
+export BACKUP_STATUS_ROOT="$test_root/status"
 
 assert_docker_arg_pair() {
   local first="$1"
@@ -58,6 +59,11 @@ BACKUP_FILE_LOG="$test_root/scratch/backupFileLog.txt" \
 assert_docker_arg_pair "--network" "gitea-db"
 assert_docker_arg_pair "--network" "admin-edge"
 assert_network_count 2
+
+if [[ ! -s "$BACKUP_STATUS_ROOT/gitea-process.json" ]]; then
+  echo "successful Gitea process backup did not write its status marker" >&2
+  exit 1
+fi
 
 scratch_mount="$test_root/scratch:$test_root/scratch"
 if [[ "$(grep -Fxc "$scratch_mount" "$docker_log")" -ne 1 ]]; then
@@ -131,6 +137,25 @@ done
 
 if grep -Fqx "/srv/admin/data/gitea-stack/gitea:/data" "$docker_log"; then
   echo "Gitea data must remain read-only during backup" >&2
+  exit 1
+fi
+
+cat > "$test_root/bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "inspect" ]]; then
+  printf 'unhealthy\n'
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$test_root/bin/docker"
+if PATH="$test_root/bin:$PATH" \
+  BACKUP_TMP_FOLDER="$test_root/scratch/backup" \
+  RESTORE_TMP_FOLDER="$test_root/scratch/restore" \
+  BACKUP_FILE_LOG="$test_root/scratch/backupFileLog.txt" \
+  "$repo_root/scripts/gitea-process-backup.sh" >/dev/null 2>&1; then
+  echo "unhealthy Gitea containers must fail the backup service" >&2
   exit 1
 fi
 

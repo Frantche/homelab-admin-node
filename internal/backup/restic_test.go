@@ -106,7 +106,7 @@ RESTIC_PASSWORD_OFFSITE=test-password
 	}
 	t.Setenv("PATH", root)
 
-	err := RunRestic(context.Background(), envFile, []string{filepath.Join(root, "backup")})
+	_, err := RunRestic(context.Background(), envFile, []string{filepath.Join(root, "backup")})
 	if err == nil || !strings.Contains(err.Error(), "restic is required") {
 		t.Fatalf("error = %v, want required restic binary failure", err)
 	}
@@ -120,7 +120,7 @@ func TestRunResticAllowsMissingBinaryInExplicitLocalOnlyMode(t *testing.T) {
 	}
 	t.Setenv("PATH", root)
 
-	if err := RunRestic(context.Background(), envFile, []string{filepath.Join(root, "backup")}); err != nil {
+	if _, err := RunRestic(context.Background(), envFile, []string{filepath.Join(root, "backup")}); err != nil {
 		t.Fatal(err)
 	}
 }
