@@ -28,25 +28,21 @@ def main() -> None:
             pubkey if key == PLACEHOLDER_KEY else key for key in keys
         ]
 
+    replaced_install = False
     new_runcmd = []
     for cmd in data.get("runcmd", []):
-        if isinstance(cmd, list) and len(cmd) >= 3 and cmd[0] == "bash" and "REPO_URL" in cmd[-1]:
-            script = cmd[-1]
-            script = script.replace(
-                "https://github.com/Frantche/homelab-admin-node.git",
-                repo_url,
-            )
-            script = script.replace(
-                'git clone "$REPO_URL" /opt/homelab-admin-node',
-                (
-                    'git clone "$REPO_URL" /opt/homelab-admin-node'
-                    f" && git -C /opt/homelab-admin-node fetch origin {repo_ref}"
-                    " && git -C /opt/homelab-admin-node checkout --detach FETCH_HEAD"
-                ),
-            )
-            new_runcmd.append(cmd[:-1] + [script])
+        if (
+            isinstance(cmd, list)
+            and len(cmd) == 3
+            and cmd[0] == "/usr/local/bin/admin-node-install-release"
+        ):
+            new_runcmd.append([cmd[0], repo_url, repo_ref])
+            replaced_install = True
         else:
             new_runcmd.append(cmd)
+
+    if not replaced_install:
+        raise SystemExit("release installer command not found in cloud-init template")
 
     data["runcmd"] = new_runcmd
 

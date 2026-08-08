@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -82,6 +83,8 @@ func (a app) run(ctx context.Context, args []string) int {
 		return a.runOpenBao(ctx, args[1:])
 	case "ci":
 		return a.runCI(ctx, args[1:])
+	case "version":
+		return a.runVersion(args[1:])
 	default:
 		fmt.Fprintf(a.errOut, "unknown command: %s\n\n", args[0])
 		a.printRootUsage()
@@ -103,6 +106,40 @@ func (a app) printRootUsage() {
 	fmt.Fprintln(a.out, "  secret     Manage local secret material")
 	fmt.Fprintln(a.out, "  openbao    Initialize and unseal OpenBao")
 	fmt.Fprintln(a.out, "  ci         Run CI helper operations")
+	fmt.Fprintln(a.out, "  version    Show installed release and schema revisions")
+}
+
+func (a app) runVersion(args []string) int {
+	fs := flag.NewFlagSet("version", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	jsonOutput := fs.Bool("json", false, "print machine-readable JSON")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	read := func(path string) string {
+		value, err := os.ReadFile(path)
+		if err != nil {
+			return "unknown"
+		}
+		return strings.TrimSpace(string(value))
+	}
+	release := read(a.cfg.ReleaseNameFile)
+	pin := read(a.cfg.ReleaseRefFile)
+	revision := read(a.cfg.GitRefFile)
+	schema := read(a.cfg.SchemaVersionFile)
+	if *jsonOutput {
+		payload := map[string]string{
+			"release": release, "release_ref": pin,
+			"revision": revision, "config_schema": schema,
+		}
+		if err := json.NewEncoder(a.out).Encode(payload); err != nil {
+			fmt.Fprintf(a.errOut, "version: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	fmt.Fprintf(a.out, "release: %s\nrelease_ref: %s\nrevision: %s\nconfig_schema: %s\n", release, pin, revision, schema)
+	return 0
 }
 
 func (a app) runCI(ctx context.Context, args []string) int {
@@ -222,11 +259,15 @@ func (a app) runConverge(ctx context.Context, args []string) int {
 	inventory := getenv("INVENTORY_PATH", "/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini")
 	fmt.Fprintf(a.out, "[admin-converge] playbook=%s inventory=%s\n", playbook, inventory)
 	if err := converge.Run(ctx, converge.Options{
-		RepoDir:       a.cfg.RepoRoot,
-		InventoryPath: inventory,
-		PlaybookPath:  playbook,
-		SkipGitPull:   *skipGitPull,
-		ExtraArgs:     extraArgs,
+		RepoDir:        a.cfg.RepoRoot,
+		InventoryPath:  inventory,
+		PlaybookPath:   playbook,
+		SkipGitPull:    *skipGitPull,
+		ExtraArgs:      extraArgs,
+		ReleaseRefFile: a.cfg.ReleaseRefFile,
+		RevisionFile:   a.cfg.GitRefFile,
+		SchemaSource:   filepath.Join(a.cfg.RepoRoot, "release", "config-schema-version"),
+		SchemaFile:     a.cfg.SchemaVersionFile,
 	}); err != nil {
 		fmt.Fprintf(a.errOut, "converge run: %v\n", err)
 		return 1
@@ -390,10 +431,14 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 
 	if opts.RunConverge {
 		if err := converge.Run(ctx, converge.Options{
-			RepoDir:       a.cfg.RepoRoot,
-			InventoryPath: opts.Inventory,
-			PlaybookPath:  getenv("PLAYBOOK_PATH", a.cfg.RepoRoot+"/ansible/site.yml"),
-			SkipGitPull:   opts.SkipGitPull,
+			RepoDir:        a.cfg.RepoRoot,
+			InventoryPath:  opts.Inventory,
+			PlaybookPath:   getenv("PLAYBOOK_PATH", a.cfg.RepoRoot+"/ansible/site.yml"),
+			SkipGitPull:    opts.SkipGitPull,
+			ReleaseRefFile: a.cfg.ReleaseRefFile,
+			RevisionFile:   a.cfg.GitRefFile,
+			SchemaSource:   filepath.Join(a.cfg.RepoRoot, "release", "config-schema-version"),
+			SchemaFile:     a.cfg.SchemaVersionFile,
 		}); err != nil {
 			return fmt.Errorf("post-restore convergence: %w", err)
 		}

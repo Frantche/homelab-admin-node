@@ -9,27 +9,35 @@ import (
 )
 
 const (
-	DefaultRepoRoot       = "/opt/homelab-admin-node"
-	DefaultAdminRoot      = "/srv/admin"
-	DefaultModeFile       = "/etc/admin-node/mode"
-	DefaultRestoreIDFile  = "/etc/admin-node/restore-id"
-	DefaultBackupRoot     = "/srv/admin/backups/local"
-	DefaultBackupEnvFile  = "/srv/admin/env/backup.env"
-	DefaultOperationLock  = "/run/admin-node-operation.lock"
-	DefaultGiteaStackPath = "/srv/admin/data/gitea-stack"
-	DefaultSnapshotRoot   = "/srv/admin/backups/snapshots"
-	DefaultAdminNodeLANIP = "192.168.1.10"
-	DefaultKeycloakDomain = "keycloak.example.com"
-	DefaultHarborDomain   = "harbor.example.com"
-	DefaultGiteaDomain    = "git.example.com"
-	DefaultTraefikDomain  = "traefik.example.com"
-	DefaultOpenBaoDomain  = "bao.example.com"
+	DefaultRepoRoot        = "/opt/homelab-admin-node"
+	DefaultAdminRoot       = "/srv/admin"
+	DefaultModeFile        = "/etc/admin-node/mode"
+	DefaultReleaseRefFile  = "/etc/admin-node/release-ref"
+	DefaultReleaseNameFile = "/etc/admin-node/release-name"
+	DefaultGitRefFile      = "/etc/admin-node/git-ref"
+	DefaultSchemaFile      = "/etc/admin-node/config-schema-version"
+	DefaultRestoreIDFile   = "/etc/admin-node/restore-id"
+	DefaultBackupRoot      = "/srv/admin/backups/local"
+	DefaultBackupEnvFile   = "/srv/admin/env/backup.env"
+	DefaultOperationLock   = "/run/admin-node-operation.lock"
+	DefaultGiteaStackPath  = "/srv/admin/data/gitea-stack"
+	DefaultSnapshotRoot    = "/srv/admin/backups/snapshots"
+	DefaultAdminNodeLANIP  = "192.168.1.10"
+	DefaultKeycloakDomain  = "keycloak.example.com"
+	DefaultHarborDomain    = "harbor.example.com"
+	DefaultGiteaDomain     = "git.example.com"
+	DefaultTraefikDomain   = "traefik.example.com"
+	DefaultOpenBaoDomain   = "bao.example.com"
 )
 
 type Config struct {
 	RepoRoot                   string
 	AdminRoot                  string
 	ModeFile                   string
+	ReleaseRefFile             string
+	ReleaseNameFile            string
+	GitRefFile                 string
+	SchemaVersionFile          string
 	RestoreIDFile              string
 	BackupRoot                 string
 	BackupEnvFile              string
@@ -63,6 +71,10 @@ func FromEnv() Config {
 		RepoRoot:                   getenv("ADMIN_NODE_REPO_ROOT", DefaultRepoRoot),
 		AdminRoot:                  getenv("ADMIN_NODE_ROOT", DefaultAdminRoot),
 		ModeFile:                   getenv("ADMIN_MODE_FILE", DefaultModeFile),
+		ReleaseRefFile:             getenv("ADMIN_RELEASE_REF_FILE", DefaultReleaseRefFile),
+		ReleaseNameFile:            getenv("ADMIN_RELEASE_NAME_FILE", DefaultReleaseNameFile),
+		GitRefFile:                 getenv("ADMIN_GIT_REF_FILE", DefaultGitRefFile),
+		SchemaVersionFile:          getenv("ADMIN_CONFIG_SCHEMA_FILE", DefaultSchemaFile),
 		RestoreIDFile:              getenv("ADMIN_RESTORE_ID_FILE", DefaultRestoreIDFile),
 		BackupRoot:                 getenv("ADMIN_BACKUP_ROOT", DefaultBackupRoot),
 		BackupEnvFile:              backupEnvFile,

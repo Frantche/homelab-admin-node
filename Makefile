@@ -10,7 +10,7 @@ SHELL := /usr/bin/env bash
 	test-harbor-mirror-validation test-image-security-policy test-image-security-scanner \
 	test-make-entrypoints test-offline-images test-oidc-contracts test-openbao-internal-tls \
 	test-repo-permissions test-restic-config test-secret-rotation test-traefik-external-services \
-	test-traefik-security validate validate-apis validate-cloudflare-tunnel validate-compose \
+	test-traefik-security validate validate-apis validate-cloudflare-tunnel validate-compose validate-release \
 	validate-dns validate-dr-promotion validate-grafana-dashboards validate-hardening \
 	validate-observability validate-systemd
 
@@ -168,6 +168,10 @@ validate-compose:
 
 validate-systemd:
 	@./ci/validate-systemd-units.sh
+
+validate-release:
+	@if [[ -z "$(MANIFEST)" ]]; then echo "MANIFEST is required" >&2; exit 2; fi
+	@python3 ./scripts/validate-release-qualification.py "$(MANIFEST)" $${RELEASE_COMMIT:+--commit "$$RELEASE_COMMIT"}
 
 validate-grafana-dashboards:
 	@./ci/validate-grafana-dashboards.sh
