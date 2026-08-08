@@ -131,6 +131,7 @@ func Verify(dir string) (Manifest, error) {
 	if manifest.ID == "" || filepath.Base(manifest.ID) != manifest.ID || strings.Contains(manifest.ID, "..") {
 		return Manifest{}, fmt.Errorf("invalid manifest id")
 	}
+	seenBoundaries := map[string]struct{}{}
 	for _, boundary := range manifest.ConsistencyBoundaries {
 		if strings.TrimSpace(boundary.Service) == "" || strings.TrimSpace(boundary.Method) == "" {
 			return Manifest{}, fmt.Errorf("invalid consistency boundary identity")
@@ -138,6 +139,26 @@ func Verify(dir string) (Manifest, error) {
 		if boundary.StartedAt.IsZero() || boundary.CompletedAt.IsZero() || boundary.CompletedAt.Before(boundary.StartedAt) {
 			return Manifest{}, fmt.Errorf("invalid consistency boundary timestamps for %s", boundary.Service)
 		}
+		if boundary.CompletedAt.After(manifest.CreatedAt) {
+			return Manifest{}, fmt.Errorf("consistency boundary for %s completes after manifest creation", boundary.Service)
+		}
+		if _, exists := seenBoundaries[boundary.Service]; exists {
+			return Manifest{}, fmt.Errorf("duplicate consistency boundary for %s", boundary.Service)
+		}
+		seenBoundaries[boundary.Service] = struct{}{}
+		if boundary.Service != "gitea" || (boundary.Method != "application-quiesced-postgresql-dump-and-btrfs-snapshot" && boundary.Method != "application-quiesced-postgresql-dump-and-filesystem-copy" && boundary.Method != "application-already-stopped-postgresql-dump-and-btrfs-snapshot" && boundary.Method != "application-already-stopped-postgresql-dump-and-filesystem-copy") {
+			return Manifest{}, fmt.Errorf("unsupported consistency boundary %s/%s", boundary.Service, boundary.Method)
+		}
+	}
+	if manifest.Consistency == "service-specific-consistency-boundaries" {
+		if !stackscope.Contains(manifest.ActiveStacks, "gitea") {
+			return Manifest{}, fmt.Errorf("service-specific consistency requires an active Gitea stack")
+		}
+		if _, exists := seenBoundaries["gitea"]; !exists || len(seenBoundaries) != 1 {
+			return Manifest{}, fmt.Errorf("service-specific consistency requires exactly one Gitea boundary")
+		}
+	} else if len(manifest.ConsistencyBoundaries) > 0 {
+		return Manifest{}, fmt.Errorf("consistency boundaries require service-specific consistency")
 	}
 	if manifest.ActiveStacks != nil {
 		if err := validateActiveStacks(manifest, dir); err != nil {

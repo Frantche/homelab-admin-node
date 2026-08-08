@@ -571,6 +571,44 @@ func TestBackupGiteaAttemptsRestartAfterBoundaryFailures(t *testing.T) {
 	}
 }
 
+func TestVerifyRejectsUnprovenGiteaConsistencyClaim(t *testing.T) {
+	root := t.TempDir()
+	backupID := "20260808-100000"
+	backupDir := filepath.Join(root, backupID)
+	if err := os.MkdirAll(filepath.Join(backupDir, "stack-definitions", "gitea"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, "stack-definitions", "gitea", "compose.yaml"), []byte("services: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files, err := BuildManifestFiles(backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdAt := time.Date(2026, 8, 8, 10, 1, 0, 0, time.UTC)
+	manifest := Manifest{
+		Version: ManifestVersion, ID: backupID, CreatedAt: createdAt,
+		ActiveStacks: []string{"gitea"}, StackDefinitions: true,
+		Consistency: "service-specific-consistency-boundaries", Complete: true, Files: files,
+	}
+	if err := WriteManifest(backupDir, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(backupDir); err == nil || !strings.Contains(err.Error(), "exactly one Gitea boundary") {
+		t.Fatalf("error = %v, want missing Gitea boundary refusal", err)
+	}
+	manifest.ConsistencyBoundaries = []ConsistencyBoundary{{
+		Service: "gitea", Method: "unproven-copy",
+		StartedAt: createdAt.Add(-time.Minute), CompletedAt: createdAt,
+	}}
+	if err := WriteManifest(backupDir, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(backupDir); err == nil || !strings.Contains(err.Error(), "unsupported consistency boundary") {
+		t.Fatalf("error = %v, want unsupported boundary refusal", err)
+	}
+}
+
 func installGiteaBoundaryDocker(t *testing.T, root, logPath, statePath string) {
 	t.Helper()
 	binDir := filepath.Join(root, "bin")
