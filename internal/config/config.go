@@ -1,11 +1,9 @@
 package config
 
 import (
-	"bufio"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -58,70 +56,129 @@ type Config struct {
 	SkipPublicURLValidation    bool
 	CISkipPublicURLValidation  bool
 	ValidateMockAll            bool
+	ManagedRuntimeFileLoaded   bool
 }
 
 func FromEnv() Config {
-	backupEnvFile := getenv("RESTIC_BACKUP_ENV_FILE", DefaultBackupEnvFile)
-	adminRoot := getenv("ADMIN_NODE_ROOT", DefaultAdminRoot)
-	backupStatusRoot := os.Getenv("BACKUP_STATUS_ROOT")
-	if backupStatusRoot == "" {
-		backupStatusRoot = filepath.Join(adminRoot, "backups/status")
+	cfg, err := Load()
+	if err == nil {
+		return cfg
 	}
+	cfg, _ = load(nil, false)
+	return cfg
+}
+
+func Load() (Config, error) {
+	backupEnvFile := getenv("RESTIC_BACKUP_ENV_FILE", DefaultBackupEnvFile)
+	values, loaded, err := readManagedRuntimeFile(backupEnvFile)
+	if err != nil {
+		return Config{}, err
+	}
+	return load(values, loaded)
+}
+
+func load(values map[string]string, loaded bool) (Config, error) {
+	resolve := func(key, fallback string) string {
+		if value := os.Getenv(key); value != "" {
+			return value
+		}
+		if value := values[key]; value != "" {
+			return value
+		}
+		return fallback
+	}
+	resolveBool := func(key string, fallback bool) (bool, error) {
+		value := resolve(key, "")
+		if value == "" {
+			return fallback, nil
+		}
+		return strconv.ParseBool(value)
+	}
+	resolveInt := func(key string, fallback int) (int, error) {
+		value := resolve(key, "")
+		if value == "" {
+			return fallback, nil
+		}
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 {
+			return 0, invalidManagedValue(key)
+		}
+		return parsed, nil
+	}
+	resolveDuration := func(key string, fallback time.Duration) (time.Duration, error) {
+		value := resolve(key, "")
+		if value == "" {
+			return fallback, nil
+		}
+		parsed, err := time.ParseDuration(value)
+		if err != nil || parsed <= 0 {
+			return 0, invalidManagedValue(key)
+		}
+		return parsed, nil
+	}
+
+	requireBtrfs, err := resolveBool("BACKUP_REQUIRE_BTRFS_HOT", false)
+	if err != nil {
+		return Config{}, invalidManagedValue("BACKUP_REQUIRE_BTRFS_HOT")
+	}
+	requireHarborReadOnly, err := resolveBool("BACKUP_REQUIRE_HARBOR_READ_ONLY", false)
+	if err != nil {
+		return Config{}, invalidManagedValue("BACKUP_REQUIRE_HARBOR_READ_ONLY")
+	}
+	localRetention, err := resolveInt("BACKUP_LOCAL_RETENTION", 3)
+	if err != nil {
+		return Config{}, err
+	}
+	lockTimeout, err := resolveDuration("BACKUP_OPERATION_LOCK_TIMEOUT", 30*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+	piholeEnabled, err := resolveBool("PIHOLE_ENABLED", true)
+	if err != nil {
+		return Config{}, invalidManagedValue("PIHOLE_ENABLED")
+	}
+	cloudflareEnabled, err := resolveBool("CLOUDFLARE_ENABLED", true)
+	if err != nil {
+		return Config{}, invalidManagedValue("CLOUDFLARE_ENABLED")
+	}
+	observabilityEnabled, err := resolveBool("OBSERVABILITY_ENABLED", false)
+	if err != nil {
+		return Config{}, invalidManagedValue("OBSERVABILITY_ENABLED")
+	}
+	adminRoot := resolve("ADMIN_NODE_ROOT", DefaultAdminRoot)
+
 	return Config{
-		RepoRoot:                   getenv("ADMIN_NODE_REPO_ROOT", DefaultRepoRoot),
+		RepoRoot:                   resolve("ADMIN_NODE_REPO_ROOT", DefaultRepoRoot),
 		AdminRoot:                  adminRoot,
-		ModeFile:                   getenv("ADMIN_MODE_FILE", DefaultModeFile),
-		RestoreIDFile:              getenv("ADMIN_RESTORE_ID_FILE", DefaultRestoreIDFile),
-		BackupRoot:                 getenv("ADMIN_BACKUP_ROOT", DefaultBackupRoot),
-		BackupEnvFile:              backupEnvFile,
-		OperationLock:              getenv("ADMIN_OPERATION_LOCK", DefaultOperationLock),
-		GiteaStackPath:             getenv("GITEA_STACK_PATH", DefaultGiteaStackPath),
-		SnapshotRoot:               getenv("ADMIN_SNAPSHOT_ROOT", DefaultSnapshotRoot),
-		BackupStatusRoot:           backupStatusRoot,
-		RequireBtrfsHotBackup:      getenvBool("BACKUP_REQUIRE_BTRFS_HOT", false),
-		RequireHarborReadOnly:      getenvBool("BACKUP_REQUIRE_HARBOR_READ_ONLY", false),
-		LocalBackupRetention:       getenvInt("BACKUP_LOCAL_RETENTION", 3),
-		BackupOperationLockTimeout: getenvDuration("BACKUP_OPERATION_LOCK_TIMEOUT", 30*time.Minute),
-		AdminNodeLANIP:             getenv("ADMIN_NODE_LAN_IP", DefaultAdminNodeLANIP),
-		KeycloakDomain:             getenv("KEYCLOAK_DOMAIN", DefaultKeycloakDomain),
-		HarborDomain:               getenv("HARBOR_DOMAIN", DefaultHarborDomain),
-		GiteaDomain:                getenv("GITEA_DOMAIN", DefaultGiteaDomain),
-		TraefikDomain:              getenv("TRAEFIK_DOMAIN", DefaultTraefikDomain),
-		OpenBaoDomain:              getenv("OPENBAO_DOMAIN", DefaultOpenBaoDomain),
+		ModeFile:                   resolve("ADMIN_MODE_FILE", DefaultModeFile),
+		RestoreIDFile:              resolve("ADMIN_RESTORE_ID_FILE", DefaultRestoreIDFile),
+		BackupRoot:                 resolve("ADMIN_BACKUP_ROOT", DefaultBackupRoot),
+		BackupEnvFile:              resolve("RESTIC_BACKUP_ENV_FILE", DefaultBackupEnvFile),
+		OperationLock:              resolve("ADMIN_OPERATION_LOCK", DefaultOperationLock),
+		GiteaStackPath:             resolve("GITEA_STACK_PATH", DefaultGiteaStackPath),
+		SnapshotRoot:               resolve("ADMIN_SNAPSHOT_ROOT", DefaultSnapshotRoot),
+		BackupStatusRoot:           resolve("BACKUP_STATUS_ROOT", filepath.Join(adminRoot, "backups/status")),
+		RequireBtrfsHotBackup:      requireBtrfs,
+		RequireHarborReadOnly:      requireHarborReadOnly,
+		LocalBackupRetention:       localRetention,
+		BackupOperationLockTimeout: lockTimeout,
+		AdminNodeLANIP:             resolve("ADMIN_NODE_LAN_IP", DefaultAdminNodeLANIP),
+		KeycloakDomain:             resolve("KEYCLOAK_DOMAIN", DefaultKeycloakDomain),
+		HarborDomain:               resolve("HARBOR_DOMAIN", DefaultHarborDomain),
+		GiteaDomain:                resolve("GITEA_DOMAIN", DefaultGiteaDomain),
+		TraefikDomain:              resolve("TRAEFIK_DOMAIN", DefaultTraefikDomain),
+		OpenBaoDomain:              resolve("OPENBAO_DOMAIN", DefaultOpenBaoDomain),
 		CIMode:                     getenvBool("CI_MODE", false),
 		CIMockPihole:               getenvBool("CI_MOCK_PIHOLE", false),
 		CIMockCloudflareTunnel:     getenvBool("CI_MOCK_CLOUDFLARE_TUNNEL", false),
-		PiholeDisabled:             !getenvBoolFromFile("PIHOLE_ENABLED", backupEnvFile, true),
-		CloudflareDisabled:         !getenvBoolFromFile("CLOUDFLARE_ENABLED", backupEnvFile, true),
-		ObservabilityDisabled:      !getenvBoolFromFile("OBSERVABILITY_ENABLED", backupEnvFile, false),
+		PiholeDisabled:             !piholeEnabled,
+		CloudflareDisabled:         !cloudflareEnabled,
+		ObservabilityDisabled:      !observabilityEnabled,
 		SkipPublicURLValidation:    getenvBool("SKIP_PUBLIC_URL_VALIDATION", false),
 		CISkipPublicURLValidation:  getenvBool("CI_SKIP_PUBLIC_URL_VALIDATION", false),
 		ValidateMockAll:            getenvBool("ADMIN_NODE_VALIDATE_MOCK_ALL", false),
-	}
-}
-
-func getenvDuration(key string, fallback time.Duration) time.Duration {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	parsed, err := time.ParseDuration(value)
-	if err != nil || parsed <= 0 {
-		return fallback
-	}
-	return parsed
-}
-
-func getenvInt(key string, fallback int) int {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil || parsed < 1 {
-		return fallback
-	}
-	return parsed
+		ManagedRuntimeFileLoaded:   loaded,
+	}, nil
 }
 
 func getenv(key, fallback string) string {
@@ -142,32 +199,4 @@ func getenvBool(key string, fallback bool) bool {
 		return fallback
 	}
 	return parsed
-}
-
-func getenvBoolFromFile(key, path string, fallback bool) bool {
-	if _, exists := os.LookupEnv(key); exists {
-		return getenvBool(key, fallback)
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return fallback
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		name, value, ok := strings.Cut(strings.TrimSpace(scanner.Text()), "=")
-		if !ok || strings.TrimSpace(name) != key {
-			continue
-		}
-		value = strings.TrimSpace(value)
-		if decoded, err := strconv.Unquote(value); err == nil {
-			value = decoded
-		}
-		parsed, err := strconv.ParseBool(value)
-		if err == nil {
-			return parsed
-		}
-		return fallback
-	}
-	return fallback
 }

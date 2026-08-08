@@ -11,6 +11,11 @@ Run a backup:
 sudo /opt/homelab-admin-node/bin/admin-node backup run
 ```
 
+Manual invocations automatically use the same managed non-secret runtime
+configuration as the systemd service. Do not source
+`/srv/admin/env/backup.env`; explicit process environment values remain
+available as the highest-precedence override.
+
 The backup flow validates service health, prepares local backup data, and
 applies restic retention to configured repositories. A successful command means
 that every artifact required by the active stateful stacks was produced. It

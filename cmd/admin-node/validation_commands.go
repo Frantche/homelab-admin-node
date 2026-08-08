@@ -16,6 +16,9 @@ func (a app) runValidate(ctx context.Context, args []string) int {
 	if err := fs.Parse(rest); err != nil {
 		return 2
 	}
+	if !a.requireOperationalConfig() {
+		return 1
+	}
 
 	validator := validate.NewValidator(a.cfg, a.runner)
 	var results []validate.CheckResult
@@ -52,6 +55,9 @@ func (a app) runTest(ctx context.Context, args []string) int {
 	output := fs.String("output", "text", "output format: text or json")
 	if err := fs.Parse(rest); err != nil {
 		return 2
+	}
+	if !a.requireOperationalConfig() {
+		return 1
 	}
 
 	validator := validate.NewValidator(a.cfg, a.runner)
