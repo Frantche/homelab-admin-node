@@ -45,6 +45,7 @@ Repositories can be local, SFTP, S3, or any restic-supported backend.
 | `backup.remote_max_age` | `36h` | Maximum age accepted for a successful non-local Restic delivery when remote backup is required. |
 | `backup.offline_max_age` | `0` | Maximum age for offline-image backups. `0` keeps this class optional until an offline schedule is enabled. |
 | `backup.integrity_max_age` | `192h` | Maximum age accepted for the last successful Restic integrity check. |
+| `backup.gitea_quiesce_timeout` | `10m` | Maximum Gitea capture time while the standard backup creates its database/filesystem consistency boundary; restart has a separate two-minute health timeout. |
 
 Successful backup classes write secret-free, mode `0600` markers below
 `/srv/admin/backups/status`. `admin-node backup status` checks the markers
@@ -63,6 +64,12 @@ Failures trigger `admin-backup-failure@.service`, which writes a stable
 After upgrading an existing node, run one standard backup, the optional Gitea
 process backup when enabled, and `admin-node backup restic-check` to initialize
 the markers immediately.
+
+The standard backup stops only the Gitea application container, keeps
+`gitea-db` available for `pg_dump`, captures the database and files while writes
+are quiesced, and restores the application's previous running state. The
+manifest records the method and boundary timestamps. If stopping, capturing,
+or restarting fails—or if the timeout expires—the backup is not published.
 
 Backup completion is fail-closed for active stateful stacks. An active Keycloak,
 Gitea, Harbor, or OpenBao stack must produce its required database/snapshot and

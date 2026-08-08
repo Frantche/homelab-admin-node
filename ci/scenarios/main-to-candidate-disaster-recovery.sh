@@ -204,6 +204,13 @@ case "$ACTION" in
     post_id="$(vm_ssh "sudo find /srv/admin/backups/local -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tail -n1")"
     [[ "$post_id" =~ ^[0-9]{8}-[0-9]{6}$ ]] || { echo "invalid backup ID: $post_id" >&2; exit 1; }
     [[ "$(vm_ssh "sudo jq -r .cli_revision /srv/admin/backups/local/$post_id/manifest.json")" == "$CANDIDATE_SHA" ]]
+    vm_ssh "sudo jq -e '.consistency == \"service-specific-consistency-boundaries\" and
+        ([.consistency_boundaries[] | select(
+          .service == \"gitea\" and
+          (.method | startswith(\"application-quiesced-postgresql-dump-and-\")) and
+          (.started_at | length > 0) and
+          (.completed_at | length > 0)
+        )] | length == 1)' /srv/admin/backups/local/$post_id/manifest.json >/dev/null"
     if [[ "$DR_INCLUDE_IMAGES" == "true" ]]; then
       vm_ssh "sudo jq -e '.offline_images == true and .stack_definitions == true and .repository_bundle == true and \
           (.active_stacks | index(\"cloudflared\") | not) and (.active_stacks | index(\"observability\") != null) and \

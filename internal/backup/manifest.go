@@ -42,22 +42,30 @@ type ManifestArtifact struct {
 	External bool   `json:"external,omitempty"`
 }
 
+type ConsistencyBoundary struct {
+	Service     string    `json:"service"`
+	Method      string    `json:"method"`
+	StartedAt   time.Time `json:"started_at"`
+	CompletedAt time.Time `json:"completed_at"`
+}
+
 type Manifest struct {
-	Version              int                   `json:"version"`
-	ID                   string                `json:"id"`
-	CreatedAt            time.Time             `json:"created_at"`
-	Hostname             string                `json:"hostname"`
-	CLIRevision          string                `json:"cli_revision,omitempty"`
-	OfflineImages        bool                  `json:"offline_images"`
-	Images               []string              `json:"images,omitempty"`
-	OfflineImageArchives []OfflineImageArchive `json:"offline_image_archives,omitempty"`
-	ActiveStacks         []string              `json:"active_stacks,omitempty"`
-	StackDefinitions     bool                  `json:"stack_definitions,omitempty"`
-	RepositoryBundle     bool                  `json:"repository_bundle,omitempty"`
-	Artifacts            []ManifestArtifact    `json:"artifacts,omitempty"`
-	Consistency          string                `json:"consistency"`
-	Complete             bool                  `json:"complete"`
-	Files                []ManifestFile        `json:"files"`
+	Version               int                   `json:"version"`
+	ID                    string                `json:"id"`
+	CreatedAt             time.Time             `json:"created_at"`
+	Hostname              string                `json:"hostname"`
+	CLIRevision           string                `json:"cli_revision,omitempty"`
+	OfflineImages         bool                  `json:"offline_images"`
+	Images                []string              `json:"images,omitempty"`
+	OfflineImageArchives  []OfflineImageArchive `json:"offline_image_archives,omitempty"`
+	ActiveStacks          []string              `json:"active_stacks,omitempty"`
+	StackDefinitions      bool                  `json:"stack_definitions,omitempty"`
+	RepositoryBundle      bool                  `json:"repository_bundle,omitempty"`
+	Artifacts             []ManifestArtifact    `json:"artifacts,omitempty"`
+	Consistency           string                `json:"consistency"`
+	ConsistencyBoundaries []ConsistencyBoundary `json:"consistency_boundaries,omitempty"`
+	Complete              bool                  `json:"complete"`
+	Files                 []ManifestFile        `json:"files"`
 }
 
 func WriteManifest(dir string, manifest Manifest) error {
@@ -122,6 +130,14 @@ func Verify(dir string) (Manifest, error) {
 	}
 	if manifest.ID == "" || filepath.Base(manifest.ID) != manifest.ID || strings.Contains(manifest.ID, "..") {
 		return Manifest{}, fmt.Errorf("invalid manifest id")
+	}
+	for _, boundary := range manifest.ConsistencyBoundaries {
+		if strings.TrimSpace(boundary.Service) == "" || strings.TrimSpace(boundary.Method) == "" {
+			return Manifest{}, fmt.Errorf("invalid consistency boundary identity")
+		}
+		if boundary.StartedAt.IsZero() || boundary.CompletedAt.IsZero() || boundary.CompletedAt.Before(boundary.StartedAt) {
+			return Manifest{}, fmt.Errorf("invalid consistency boundary timestamps for %s", boundary.Service)
+		}
 	}
 	if manifest.ActiveStacks != nil {
 		if err := validateActiveStacks(manifest, dir); err != nil {

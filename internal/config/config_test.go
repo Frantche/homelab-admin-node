@@ -27,6 +27,9 @@ func TestFromEnvDefaults(t *testing.T) {
 	if cfg.BackupOperationLockTimeout != 30*time.Minute {
 		t.Fatalf("BackupOperationLockTimeout = %s, want 30m", cfg.BackupOperationLockTimeout)
 	}
+	if cfg.GiteaBackupQuiesceTimeout != 10*time.Minute {
+		t.Fatalf("GiteaBackupQuiesceTimeout = %s, want 10m", cfg.GiteaBackupQuiesceTimeout)
+	}
 	if cfg.CIMode {
 		t.Fatal("CIMode = true, want false")
 	}
@@ -78,6 +81,7 @@ func TestFromEnvOverrides(t *testing.T) {
 	t.Setenv("OBSERVABILITY_ENABLED", "true")
 	t.Setenv("ADMIN_NODE_VALIDATE_MOCK_ALL", "true")
 	t.Setenv("BACKUP_OPERATION_LOCK_TIMEOUT", "45m")
+	t.Setenv("BACKUP_GITEA_QUIESCE_TIMEOUT", "8m")
 
 	cfg := FromEnv()
 
@@ -116,5 +120,8 @@ func TestFromEnvOverrides(t *testing.T) {
 	}
 	if cfg.BackupOperationLockTimeout != 45*time.Minute {
 		t.Fatalf("BackupOperationLockTimeout = %s, want 45m", cfg.BackupOperationLockTimeout)
+	}
+	if cfg.GiteaBackupQuiesceTimeout != 8*time.Minute {
+		t.Fatalf("GiteaBackupQuiesceTimeout = %s, want 8m", cfg.GiteaBackupQuiesceTimeout)
 	}
 }

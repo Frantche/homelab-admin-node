@@ -43,6 +43,7 @@ type Config struct {
 	RequireHarborReadOnly      bool
 	LocalBackupRetention       int
 	BackupOperationLockTimeout time.Duration
+	GiteaBackupQuiesceTimeout  time.Duration
 	AdminNodeLANIP             string
 	KeycloakDomain             string
 	HarborDomain               string
@@ -82,6 +83,7 @@ func FromEnv() Config {
 		RequireHarborReadOnly:      getenvBool("BACKUP_REQUIRE_HARBOR_READ_ONLY", false),
 		LocalBackupRetention:       getenvInt("BACKUP_LOCAL_RETENTION", 3),
 		BackupOperationLockTimeout: getenvDuration("BACKUP_OPERATION_LOCK_TIMEOUT", 30*time.Minute),
+		GiteaBackupQuiesceTimeout:  getenvDuration("BACKUP_GITEA_QUIESCE_TIMEOUT", 10*time.Minute),
 		AdminNodeLANIP:             getenv("ADMIN_NODE_LAN_IP", DefaultAdminNodeLANIP),
 		KeycloakDomain:             getenv("KEYCLOAK_DOMAIN", DefaultKeycloakDomain),
 		HarborDomain:               getenv("HARBOR_DOMAIN", DefaultHarborDomain),
