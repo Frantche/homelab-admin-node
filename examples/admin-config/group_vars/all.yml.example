@@ -38,6 +38,23 @@ service_domains:
 cloudflare:
   enabled: true
 
+backup:
+  offline:
+    enabled: false
+    on_calendar: "Sun *-*-* 04:00:00"
+    randomized_delay_sec: "30m"
+    retention: 2
+    max_age: "192h"
+    minimum_free_bytes: 32212254720
+    recovery_kit_max_age: "2160h"
+    recovery_kit:
+      last_verified_at: "2026-01-01T00:00:00Z"
+      age_identity_offsite: false
+      config_repo_access_tested: false
+      restic_access_offsite: false
+      openbao_recovery_offsite: false
+      separation_of_duties_verified: false
+
 traefik:
   external_services: []
 

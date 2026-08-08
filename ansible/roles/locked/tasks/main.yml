@@ -33,3 +33,4 @@
   loop:
     - admin-backup.timer
     - admin-gitea-process-backup.timer
+    - admin-offline-backup.timer
