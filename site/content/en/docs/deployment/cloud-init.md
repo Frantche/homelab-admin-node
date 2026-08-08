@@ -20,3 +20,22 @@ cloud-init is responsible for the first irreversible bootstrap step:
 6. Leave the node in `locked` mode until secrets and config are provided.
 
 The user-data file must not contain production secrets. The secret zero is installed later with `admin-node secret install-age-key`.
+
+## Select a release before booting
+
+The checked-in user-data intentionally contains `RELEASE_REF_REPLACE_ME` and
+refuses to bootstrap until it is replaced. For production, replace it with a
+published immutable tag such as `v1.2.0`, or with the exact 40-character commit
+from that release. Also pin the dated Arch image URL and verify its checksum as
+recorded in the release qualification manifest; do not use the moving `latest`
+image for a production rebuild.
+
+The installer resolves a tag once, checks out the commit detached, and records:
+
+- the requested tag in `/etc/admin-node/release-name`;
+- the immutable commit pin in `/etc/admin-node/release-ref`;
+- the installed commit in `/etc/admin-node/git-ref`;
+- the configuration schema in `/etc/admin-node/config-schema-version`.
+
+Replacing the placeholder with `main` is supported only as the development
+channel. In that mode periodic convergence continues to fast-forward the branch.

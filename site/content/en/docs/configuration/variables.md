@@ -11,6 +11,10 @@ The most important non-secret variables are:
 | `admin_node_root` | `/srv/admin` | Runtime root for stack data, copied Compose files, env files, backups, and generated certificates. |
 | `admin_mode_file` | `/etc/admin-node/mode` | File that records the lifecycle mode used by the admin-node workflow. |
 | `admin_git_ref_file` | `/etc/admin-node/git-ref` | File that records the deployed Git reference. |
+| `admin_release_ref_file` | `/etc/admin-node/release-ref` | Immutable commit pin enforced by convergence, or `main` for the development channel. |
+| `admin_release_name_file` | `/etc/admin-node/release-name` | Operator-selected release tag or commit. |
+| `admin_config_schema_file` | `/etc/admin-node/config-schema-version` | Installed private-config compatibility schema. |
+| `admin_config_schema_version` | `1` | Schema declared by the private config repository; convergence refuses incompatible values. |
 | `admin_node_lan_ip` | `192.168.1.10` | LAN IP used by DNS records and local certificate SANs. |
 | `admin_node_fqdn` | empty string | Optional node FQDN for inventory-specific references. |
 | `acme_email` | `admin@example.com` | Email used when Traefik can request ACME certificates. |

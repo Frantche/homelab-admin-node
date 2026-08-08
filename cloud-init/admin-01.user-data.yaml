@@ -39,6 +39,40 @@ write_files:
     permissions: '0644'
     content: |
       locked
+  - path: /usr/local/bin/admin-node-install-release
+    owner: root:root
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      repo_url="${1:?repository URL is required}"
+      requested_ref="${2:?release tag or commit is required}"
+      repo_dir="${REPO_DIR:-/opt/homelab-admin-node}"
+      if [[ "$requested_ref" == "RELEASE_REF_REPLACE_ME" ]]; then
+        echo "[cloud-init] replace RELEASE_REF_REPLACE_ME with an immutable release tag or full commit SHA" >&2
+        exit 2
+      fi
+      if [[ ! -d "$repo_dir/.git" ]]; then
+        git clone --no-checkout "$repo_url" "$repo_dir" || {
+          echo "[cloud-init] initial clone failed for $repo_dir using $repo_url" >&2
+          echo "[cloud-init] verify repository access/authentication and network connectivity" >&2
+          exit 1
+        }
+      fi
+      git -C "$repo_dir" fetch origin "$requested_ref"
+      resolved_ref="$(git -C "$repo_dir" rev-parse 'FETCH_HEAD^{commit}')"
+      if [[ "$requested_ref" == "main" ]]; then
+        git -C "$repo_dir" checkout -B main "$resolved_ref"
+        git -C "$repo_dir" branch --set-upstream-to origin/main main
+        persisted_ref="main"
+      else
+        git -C "$repo_dir" checkout --detach "$resolved_ref"
+        persisted_ref="$resolved_ref"
+      fi
+      printf '%s\n' "$requested_ref" > /etc/admin-node/release-name
+      printf '%s\n' "$persisted_ref" > /etc/admin-node/release-ref
+      printf '%s\n' "$resolved_ref" > /etc/admin-node/git-ref
+      install -m 0644 "$repo_dir/release/config-schema-version" /etc/admin-node/config-schema-version
   - path: /usr/local/bin/admin-node-converge
     owner: root:root
     permissions: '0755'
@@ -90,7 +124,7 @@ write_files:
 
 runcmd:
   - [ mkdir, -p, /etc/admin-node ]
-  - [ bash, -lc, 'REPO_URL="${REPO_URL:-https://github.com/Frantche/homelab-admin-node.git}"; if [ ! -d /opt/homelab-admin-node/.git ]; then git clone "$REPO_URL" /opt/homelab-admin-node || { echo "[cloud-init] initial clone failed for /opt/homelab-admin-node using $REPO_URL" >&2; echo "[cloud-init] verify repository access/authentication and network connectivity" >&2; exit 1; }; fi' ]
+  - [ /usr/local/bin/admin-node-install-release, 'https://github.com/Frantche/homelab-admin-node.git', 'RELEASE_REF_REPLACE_ME' ]
   - [ ansible-galaxy, collection, install, -r, /opt/homelab-admin-node/ansible/requirements.yml ]
   - [ systemctl, daemon-reload ]
   - [ systemctl, enable, --now, sshd ]

@@ -21,6 +21,7 @@ def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
         "admin_node_root": "/srv/admin",
         "admin_mode_file": "/etc/admin-node/mode",
         "admin_git_ref_file": "/etc/admin-node/git-ref",
+        "admin_config_schema_version": "1",
         "admin_node_lan_ip": "127.0.0.1",
         "harbor_validation_scan_project": "dockerhub",
         "harbor_validation_scan_repository": "library/busybox",

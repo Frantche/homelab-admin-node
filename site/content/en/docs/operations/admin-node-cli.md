@@ -39,6 +39,7 @@ Commands:
 | `secret` | Install local secret material. |
 | `openbao` | Initialize and unseal OpenBao. |
 | `ci` | Run CI helper operations. |
+| `version` | Show the selected release, immutable pin, installed revision, and config schema. |
 
 Common examples:
 
@@ -48,6 +49,7 @@ sudo ./bin/admin-node converge run
 sudo ./bin/admin-node validate all
 sudo ./bin/admin-node backup run
 sudo ./bin/admin-node restore run
+sudo ./bin/admin-node version --json
 ```
 
 Validation supports text and JSON:

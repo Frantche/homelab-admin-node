@@ -157,6 +157,40 @@ func TestUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestVersionReportsPersistedReleaseState(t *testing.T) {
+	dir := t.TempDir()
+	paths := []struct {
+		name  string
+		value string
+	}{
+		{"release-name", "v1.2.3\n"},
+		{"release-ref", strings.Repeat("a", 40) + "\n"},
+		{"git-ref", strings.Repeat("a", 40) + "\n"},
+		{"schema", "2\n"},
+	}
+	for _, item := range paths {
+		if err := os.WriteFile(filepath.Join(dir, item.name), []byte(item.value), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := config.FromEnv()
+	cfg.ReleaseNameFile = filepath.Join(dir, "release-name")
+	cfg.ReleaseRefFile = filepath.Join(dir, "release-ref")
+	cfg.GitRefFile = filepath.Join(dir, "git-ref")
+	cfg.SchemaVersionFile = filepath.Join(dir, "schema")
+	var out, errOut bytes.Buffer
+	a := app{out: &out, errOut: &errOut, cfg: cfg}
+
+	if code := a.run(context.Background(), []string{"version", "--json"}); code != 0 {
+		t.Fatalf("code = %d, stderr=%q", code, errOut.String())
+	}
+	for _, expected := range []string{`"release":"v1.2.3"`, `"config_schema":"2"`} {
+		if !strings.Contains(out.String(), expected) {
+			t.Fatalf("version output %q does not contain %q", out.String(), expected)
+		}
+	}
+}
+
 func TestSubcommandsExist(t *testing.T) {
 	tests := [][]string{
 		{"backup", "list"},

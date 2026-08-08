@@ -1,0 +1,59 @@
+{
+  "release": {
+    "tag": "v1.0.0",
+    "commit": "0123456789abcdef0123456789abcdef01234567",
+    "config_schema": "1",
+    "qualified_at": "2026-08-08T12:00:00Z"
+  },
+  "platform": {
+    "arch_image_url": "https://geo.mirror.pkgbuild.com/images/2026.08.01/Arch-Linux-x86_64-cloudimg.qcow2",
+    "arch_image_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "package_strategy": "Full pacman upgrade qualified on 2026-08-08; package list attached to the release",
+    "package_state_artifact": "https://github.example/releases/download/v1.0.0/pacman-Q.txt"
+  },
+  "dependencies": {
+    "ansible_core": "2.20.0",
+    "python": "3.14.0",
+    "collections": [
+      {"name": "community.general", "version": "13.1.0"},
+      {"name": "community.docker", "version": "5.2.1"},
+      {"name": "community.hashi_vault", "version": "7.1.0"},
+      {"name": "ansible.posix", "version": "2.2.0"}
+    ]
+  },
+  "container_images": [
+    "REPLACE_WITH_EVERY_DIGEST_PINNED_IMAGE_FROM_STACKS"
+  ],
+  "evidence": {
+    "bootstrap": [
+      {
+        "node": "qualification-a",
+        "commit": "0123456789abcdef0123456789abcdef01234567",
+        "result": "passed",
+        "component_inventory_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "artifact": "https://github.example/actions/runs/1"
+      },
+      {
+        "node": "qualification-b",
+        "commit": "0123456789abcdef0123456789abcdef01234567",
+        "result": "passed",
+        "component_inventory_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "artifact": "https://github.example/actions/runs/2"
+      }
+    ],
+    "disaster_recovery": {
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "result": "passed",
+      "artifact": "https://github.example/actions/runs/3"
+    },
+    "upgrade": {
+      "from_release": "v0.9.0",
+      "result": "passed",
+      "artifact": "https://github.example/actions/runs/4"
+    },
+    "rollback": {
+      "result": "passed",
+      "artifact": "https://github.example/actions/runs/5"
+    }
+  }
+}

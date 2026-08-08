@@ -11,6 +11,10 @@ const (
 	DefaultRepoRoot         = "/opt/homelab-admin-node"
 	DefaultAdminRoot        = "/srv/admin"
 	DefaultModeFile         = "/etc/admin-node/mode"
+	DefaultReleaseRefFile   = "/etc/admin-node/release-ref"
+	DefaultReleaseNameFile  = "/etc/admin-node/release-name"
+	DefaultGitRefFile       = "/etc/admin-node/git-ref"
+	DefaultSchemaFile       = "/etc/admin-node/config-schema-version"
 	DefaultRestoreIDFile    = "/etc/admin-node/restore-id"
 	DefaultBackupRoot       = "/srv/admin/backups/local"
 	DefaultBackupEnvFile    = "/srv/admin/env/backup.env"
@@ -30,6 +34,10 @@ type Config struct {
 	RepoRoot                   string
 	AdminRoot                  string
 	ModeFile                   string
+	ReleaseRefFile             string
+	ReleaseNameFile            string
+	GitRefFile                 string
+	SchemaVersionFile          string
 	RestoreIDFile              string
 	BackupRoot                 string
 	BackupEnvFile              string
@@ -210,6 +218,10 @@ func load(values map[string]string, loaded bool) (Config, error) {
 		RepoRoot:                   repoRoot,
 		AdminRoot:                  adminRoot,
 		ModeFile:                   resolve("ADMIN_MODE_FILE", DefaultModeFile),
+		ReleaseRefFile:             resolve("ADMIN_RELEASE_REF_FILE", DefaultReleaseRefFile),
+		ReleaseNameFile:            resolve("ADMIN_RELEASE_NAME_FILE", DefaultReleaseNameFile),
+		GitRefFile:                 resolve("ADMIN_GIT_REF_FILE", DefaultGitRefFile),
+		SchemaVersionFile:          resolve("ADMIN_CONFIG_SCHEMA_FILE", DefaultSchemaFile),
 		RestoreIDFile:              resolve("ADMIN_RESTORE_ID_FILE", DefaultRestoreIDFile),
 		BackupRoot:                 resolve("ADMIN_BACKUP_ROOT", DefaultBackupRoot),
 		BackupEnvFile:              resolve("RESTIC_BACKUP_ENV_FILE", DefaultBackupEnvFile),

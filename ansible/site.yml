@@ -14,6 +14,16 @@
         file: "{{ inventory_dir }}/group_vars/all.yml"
       when: inventory_config_file.stat.exists
 
+    - name: Validate private configuration schema compatibility
+      ansible.builtin.assert:
+        that:
+          - (admin_config_schema_version | string) == (lookup('ansible.builtin.file', playbook_dir + '/../release/config-schema-version') | trim)
+        fail_msg: >-
+          Private configuration schema {{ admin_config_schema_version | default('missing') }}
+          is incompatible with release schema
+          {{ lookup('ansible.builtin.file', playbook_dir + '/../release/config-schema-version') | trim }}.
+          Apply the release migration before convergence.
+
     - name: Check encrypted inventory secrets
       ansible.builtin.stat:
         path: "{{ inventory_dir }}/group_vars/secrets.sops.yaml"
