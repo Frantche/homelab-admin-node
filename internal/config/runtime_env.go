@@ -10,6 +10,7 @@ import (
 )
 
 var managedRuntimeKeys = map[string]struct{}{
+	"CI_MODE":                         {},
 	"ADMIN_NODE_REPO_ROOT":            {},
 	"ADMIN_NODE_ROOT":                 {},
 	"ADMIN_BACKUP_ROOT":               {},
