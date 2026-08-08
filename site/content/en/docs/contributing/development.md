@@ -11,7 +11,8 @@ make lint
 make ansible-syntax
 make shellcheck
 make validate
-make test-ci-fast
+make ci-quality
+make ci-bootstrap
 ```
 
 Some commands require local tools such as Ansible, ShellCheck, SOPS, Docker, QEMU, or Hugo.

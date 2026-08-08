@@ -19,7 +19,6 @@ Describe the operator-visible outcome and the reason for the change.
 
 ## Validation
 
-- [ ] `go test -race ./...`
-- [ ] `make lint`
+- [ ] `make ci-quality`
 - [ ] `make docs-check`
 - [ ] Relevant integration journey, or an explanation of why it was not run

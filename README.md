@@ -86,7 +86,8 @@ Useful checks:
 make build-admin-node
 make lint
 make validate
-make test-ci-fast
+make ci-quality
+make ci-bootstrap
 ```
 
 Some targets require local tools such as Ansible, ShellCheck, SOPS, Docker, QEMU, or Hugo.

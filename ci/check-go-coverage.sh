@@ -6,7 +6,7 @@ coverage_file="$(mktemp /tmp/admin-node-go-coverage.XXXXXX)"
 trap 'rm -f "$coverage_file"' EXIT
 
 cd "$repo_root"
-go test -coverprofile="$coverage_file" ./... >/dev/null
+go test -race -coverprofile="$coverage_file" ./... >/dev/null
 
 total="$(go tool cover -func="$coverage_file" | awk '/^total:/ {gsub(/%/, "", $3); print $3}')"
 minimum="${GO_COVERAGE_MINIMUM:-50}"

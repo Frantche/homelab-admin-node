@@ -7,4 +7,3 @@ export ANSIBLE_NOCOLOR=1
 export ANSIBLE_ROLES_PATH="$REPO_ROOT/ansible/roles"
 
 ansible-playbook -i localhost, "$REPO_ROOT/ci/playbooks/traefik-external-services.yml"
-"$REPO_ROOT/ci/test-traefik-security-runtime.sh"

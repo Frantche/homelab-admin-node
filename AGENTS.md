@@ -78,15 +78,16 @@ make ansible-syntax
 make shellcheck
 make validate
 make test-oidc-contracts
-make test-ci-fast
-make test-ci-full
+make ci-quality
+make ci-bootstrap
+make ci-full
 ```
 
 - Pour un changement shell: lancer au moins `make shellcheck`.
 - Pour un changement Ansible: lancer au moins `make ansible-syntax`.
 - Pour DNS, Cloudflare Tunnel ou validations API: lancer `make validate` ou la cible precise.
-- Pour OIDC/Keycloak/Harbor/OpenBao/Gitea: lancer `make test-oidc-contracts` et envisager `make test-ci-fast`.
-- Pour backup, restore, cloud-init, systemd ou orchestration globale: envisager `make test-ci-full`.
+- Pour OIDC/Keycloak/Harbor/OpenBao/Gitea: lancer `make test-oidc-contracts` et envisager `make ci-bootstrap`.
+- Pour backup, restore, cloud-init, systemd ou orchestration globale: envisager `make ci-full`.
 
 Si une commande ne peut pas etre lancee localement faute de dependance ou de contexte VM, le signaler clairement dans le compte rendu avec la raison.
 

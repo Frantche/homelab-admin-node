@@ -25,6 +25,7 @@ packages:
   - restic
   - jq
   - curl
+  - make
   - python
   - sudo
   - nftables

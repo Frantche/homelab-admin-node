@@ -1,19 +1,22 @@
 SHELL := /usr/bin/env bash
 
 .PHONY: \
-	build-admin-node dev-deps lint quality check-tools go-test go-vet govulncheck \
-	ansible-lint ansible-syntax sops-check shellcheck actionlint python-check \
-	test-build-admin-node-cache test-container-hardening \
-	test-harbor-mirror-validation \
-	test-openbao-internal-tls test-repo-permissions test-secret-rotation \
-	test-docker-api-isolation test-gitea-process-backup go-coverage validate-compose validate-systemd \
-	test-disaster-recovery-actions test-ci-full
+	actionlint ansible-lint ansible-syntax build-admin-node check-ci-tools check-tools clean \
+	ci-bootstrap ci-continuous ci-disaster-recovery ci-dr-action ci-full ci-quality \
+	dev-deps docs docs-build docs-check docs-deps docs-serve govulncheck lint \
+	python-lint python-test render scan-container-images shellcheck sops-check \
+	test-build-admin-node-cache test-container-hardening test-disaster-recovery-actions \
+	test-docker-api-isolation test-gitea-process-backup test-go test-grafana-dashboard-import \
+	test-harbor-mirror-validation test-image-security-policy test-image-security-scanner \
+	test-make-entrypoints test-offline-images test-oidc-contracts test-openbao-internal-tls \
+	test-repo-permissions test-restic-config test-secret-rotation test-traefik-external-services \
+	test-traefik-security validate validate-apis validate-cloudflare-tunnel validate-compose \
+	validate-dns validate-grafana-dashboards validate-hardening validate-observability validate-systemd
+
+.NOTPARALLEL: ci-quality ci-continuous ci-disaster-recovery ci-full
 
 build-admin-node:
 	@./scripts/build-admin-node.sh
-
-go-coverage:
-	@./ci/check-go-coverage.sh
 
 dev-deps:
 	@./scripts/check-tools.sh python3
@@ -28,15 +31,24 @@ dev-deps:
 check-tools:
 	@./scripts/check-tools.sh go python3 shellcheck actionlint ansible-playbook ansible-lint
 
-lint: go-vet shellcheck actionlint python-check ansible-lint ansible-syntax sops-check
+check-ci-tools: check-tools
+	@./scripts/check-tools.sh curl docker govulncheck jq restic rg ssh sshd systemd-analyze
 
-quality: check-tools go-test lint test-build-admin-node-cache \
-	test-container-hardening test-repo-permissions test-secret-rotation \
-	test-docker-api-isolation test-gitea-process-backup test-harbor-mirror-validation \
-	test-openbao-internal-tls
+lint: go-vet shellcheck actionlint python-lint ansible-lint ansible-syntax sops-check
 
-go-test:
-	@go test -race ./...
+ci-quality: check-ci-tools test-go lint govulncheck python-test \
+	test-build-admin-node-cache test-repo-permissions test-secret-rotation \
+	test-docker-api-isolation test-gitea-process-backup test-openbao-internal-tls \
+	test-restic-config test-offline-images test-image-security-scanner \
+	test-disaster-recovery-actions test-make-entrypoints validate-compose \
+	validate-systemd validate-grafana-dashboards
+
+ci-continuous: ci-quality test-oidc-contracts
+
+ci-full: ci-continuous ci-disaster-recovery
+
+test-go:
+	@./ci/check-go-coverage.sh
 
 go-vet:
 	@go vet ./...
@@ -81,13 +93,13 @@ validate-observability:
 test-oidc-contracts:
 	@./ci/test-oidc-contracts.sh
 
-test-traefik-external-services:
+test-traefik-external-services: test-traefik-security
 	@./ci/test-traefik-external-services.sh
 
 test-traefik-security:
 	@./ci/test-traefik-security-runtime.sh
 
-test-docker-api-isolation:
+test-docker-api-isolation: test-traefik-external-services
 	@./ci/test-docker-api-isolation.sh
 
 test-gitea-process-backup:
@@ -102,7 +114,7 @@ test-build-admin-node-cache:
 test-container-hardening:
 	@python3 ./ci/test_container_hardening.py
 
-test-openbao-internal-tls:
+test-openbao-internal-tls: test-traefik-external-services
 	@./ci/test-openbao-internal-tls.sh
 
 test-repo-permissions:
@@ -119,18 +131,27 @@ test-offline-images:
 
 test-image-security-policy:
 	@python3 ./ci/test_image_security_policy.py
+
+test-image-security-scanner:
 	@./ci/test-scan-container-images.sh
 
 scan-container-images:
 	@./ci/scan-container-images.sh
 
-test-ci-fast:
+ci-bootstrap:
 	@./ci/scenarios/bootstrap-user-journey.sh
 
 test-disaster-recovery-actions:
 	@./ci/test-disaster-recovery-actions.sh
 
-test-ci-full:
+test-make-entrypoints:
+	@./ci/test-make-entrypoints.sh
+
+ci-dr-action:
+	@if [[ -z "$(DR_ACTION)" ]]; then echo "DR_ACTION is required" >&2; exit 2; fi
+	@./ci/scenarios/main-to-candidate-disaster-recovery.sh "$(DR_ACTION)"
+
+ci-disaster-recovery:
 	@MAIN_SHA="$${MAIN_SHA:-$$(git rev-parse origin/main)}" \
 	 CANDIDATE_SHA="$${CANDIDATE_SHA:-$$(git rev-parse HEAD)}" \
 	 MAIN_REPO_URL="$${MAIN_REPO_URL:-https://github.com/Frantche/homelab-admin-node.git}" \
@@ -142,6 +163,12 @@ validate-compose:
 
 validate-systemd:
 	@./ci/validate-systemd-units.sh
+
+validate-grafana-dashboards:
+	@./ci/validate-grafana-dashboards.sh
+
+test-grafana-dashboard-import:
+	@./ci/test-grafana-dashboard-import.sh
 
 render:
 	@echo "Render is managed by Ansible templates/tasks"
@@ -192,9 +219,12 @@ actionlint:
 	@./scripts/check-tools.sh actionlint
 	@actionlint -shellcheck=
 
-python-check:
+python-lint:
 	@./scripts/check-tools.sh python3 ruff
 	@ruff check scripts ci
+
+python-test:
+	@./scripts/check-tools.sh python3
 	@python3 -m unittest discover -s ci -p 'test_*.py'
 
 clean:

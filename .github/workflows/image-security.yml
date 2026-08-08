@@ -4,9 +4,11 @@ on:
   pull_request:
     paths:
       - "stacks/**/compose.yaml*"
+      - "Makefile"
       - "security/**"
       - "scripts/image_security_policy.py"
       - "ci/scan-container-images.sh"
+      - "ci/test-scan-container-images.sh"
       - "ci/test_image_security_policy.py"
       - "renovate.json"
   schedule:
@@ -26,9 +28,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Validate inventory, policy, and exception expiry
-        run: python3 ci/test_image_security_policy.py
+        run: make test-image-security-policy
       - name: Verify the scanner evaluates every image before failing
-        run: ./ci/test-scan-container-images.sh
+        run: make test-image-security-scanner
 
   scan:
     runs-on: ubuntu-24.04
@@ -50,7 +52,7 @@ jobs:
           sudo tar -xzf "trivy_${version}_Linux-64bit.tar.gz" -C /usr/local/bin trivy
 
       - name: Scan pinned runtime images and generate CycloneDX SBOMs
-        run: ./ci/scan-container-images.sh
+        run: make scan-container-images
 
       - name: Upload reports and SBOMs
         if: always()

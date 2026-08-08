@@ -6,12 +6,11 @@ never commit real credentials.
 Before opening a pull request, run:
 
 ```bash
-go test -race ./...
-make lint
+make ci-quality
 make docs-check
 ```
 
-Run `make test-oidc-contracts` for identity changes and `make test-ci-full` for
+Run `make test-oidc-contracts` for identity changes and `make ci-full` for
 backup, restore, cloud-init, systemd, or lifecycle changes. If a required tool
 or environment is unavailable, list the skipped validation and its reason in
 the pull request.

@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - .github/workflows/grafana-dashboard-import.yml
+      - Makefile
       - ci/test-grafana-dashboard-import.sh
+      - ci/validate-grafana-dashboards.sh
       - docs/observability.md
       - site/content/en/docs/configuration/backup-hardening-observability.md
       - stacks/observability/grafana/dashboards/**
@@ -29,13 +31,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Validate dashboard JSON
-        run: |
-          find stacks/observability/grafana/dashboards \
-            -maxdepth 1 \
-            -type f \
-            -name '*.json' \
-            -print \
-            -exec jq empty {} \;
+        run: make validate-grafana-dashboards
 
       - name: Start Grafana
         run: |
@@ -48,7 +44,7 @@ jobs:
             "${GRAFANA_IMAGE}"
 
       - name: Import dashboards
-        run: ./ci/test-grafana-dashboard-import.sh
+        run: make test-grafana-dashboard-import
 
       - name: Show Grafana logs on failure
         if: failure()

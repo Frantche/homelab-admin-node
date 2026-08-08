@@ -28,7 +28,7 @@ services:
       - ./dynamic:/etc/traefik/dynamic:ro
       - /srv/admin/data/traefik/letsencrypt:/letsencrypt
       - /srv/admin/certs:/certs:ro
-    env_file: /srv/admin/env/traefik.env
+    env_file: "{{ admin_node_root }}/env/traefik.env"
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 5s
