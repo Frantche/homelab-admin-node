@@ -33,21 +33,27 @@ import (
 var giteaProcessBackupFilenamePattern = regexp.MustCompile(`^gitea-backup-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}\.zip$`)
 
 type app struct {
-	out    io.Writer
-	errOut io.Writer
-	cfg    config.Config
-	runner runner.Runner
+	out       io.Writer
+	errOut    io.Writer
+	cfg       config.Config
+	configErr error
+	runner    runner.Runner
 }
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	cfg, configErr := config.Load()
+	if configErr != nil {
+		cfg = config.FromEnv()
+	}
 	a := app{
-		out:    os.Stdout,
-		errOut: os.Stderr,
-		cfg:    config.FromEnv(),
-		runner: runner.ExecRunner{},
+		out:       os.Stdout,
+		errOut:    os.Stderr,
+		cfg:       cfg,
+		configErr: configErr,
+		runner:    runner.ExecRunner{},
 	}
 	os.Exit(a.run(ctx, os.Args[1:]))
 }
@@ -103,6 +109,20 @@ func (a app) printRootUsage() {
 	fmt.Fprintln(a.out, "  secret     Manage local secret material")
 	fmt.Fprintln(a.out, "  openbao    Initialize and unseal OpenBao")
 	fmt.Fprintln(a.out, "  ci         Run CI helper operations")
+	fmt.Fprintln(a.out)
+	fmt.Fprintln(a.out, "Runtime configuration: process environment, then /srv/admin/env/backup.env, then safe defaults.")
+}
+
+func (a app) requireOperationalConfig() bool {
+	if a.configErr != nil {
+		fmt.Fprintf(a.errOut, "runtime configuration: %v\n", a.configErr)
+		return false
+	}
+	if err := a.cfg.ValidateOperational(); err != nil {
+		fmt.Fprintf(a.errOut, "runtime configuration: %v\n", err)
+		return false
+	}
+	return true
 }
 
 func (a app) runCI(ctx context.Context, args []string) int {
@@ -256,6 +276,9 @@ func (a app) runGitea(ctx context.Context, args []string) int {
 	if *backupFilename == "" {
 		fmt.Fprintln(a.errOut, "usage: admin-node gitea restore-process --backup-filename <gitea-backup-YYYY-MM-DD-HH-MM-SS.zip>")
 		return 2
+	}
+	if !a.requireOperationalConfig() {
+		return 1
 	}
 	if err := a.runGiteaProcessRestore(ctx, giteaProcessRestoreOptions{
 		BackupFilename: *backupFilename,
@@ -669,6 +692,9 @@ func (a app) runBackup(ctx context.Context, args []string) int {
 
 	switch subcommand {
 	case "run":
+		if !a.requireOperationalConfig() {
+			return 1
+		}
 		info, err := backup.Run(ctx, a.cfg, backup.RunOptions{
 			IncludeImages: *includeImages,
 			Validate: func(ctx context.Context) error {
@@ -822,6 +848,9 @@ func (a app) runRestore(ctx context.Context, args []string) int {
 
 	switch subcommand {
 	case "run":
+		if !a.requireOperationalConfig() {
+			return 1
+		}
 		if *repositoryID != "" {
 			if *restoreID == "" || *restoreID == "latest" {
 				fmt.Fprintln(a.errOut, "restore run: --repository requires an explicit --id")

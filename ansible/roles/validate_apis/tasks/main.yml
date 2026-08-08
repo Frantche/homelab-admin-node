@@ -2,6 +2,7 @@
 - name: Validate local APIs
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node validate apis
   environment:
+    CI_MODE: "{{ (ci_mode | default(false) | bool) | ternary('true', 'false') }}"
     ADMIN_NODE_LAN_IP: "{{ admin_node_lan_ip }}"
     HARBOR_DOMAIN: "{{ service_domains.harbor }}"
     OPENBAO_DOMAIN: "{{ service_domains.openbao }}"
@@ -18,6 +19,7 @@
 - name: Run active Harbor scanner test in CI
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node test harbor-scanner
   environment:
+    CI_MODE: "{{ (ci_mode | default(false) | bool) | ternary('true', 'false') }}"
     HARBOR_DOMAIN: "{{ service_domains.harbor }}"
     HARBOR_VALIDATION_SCAN_PROJECT: "{{ harbor_validation_scan_project | default('dockerhub') }}"
     HARBOR_VALIDATION_SCAN_REPOSITORY: "{{ harbor_validation_scan_repository | default('library/busybox') }}"
@@ -28,6 +30,7 @@
 - name: Validate local DNS
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node validate dns
   environment:
+    CI_MODE: "{{ (ci_mode | default(false) | bool) | ternary('true', 'false') }}"
     ADMIN_NODE_LAN_IP: "{{ admin_node_lan_ip }}"
     HARBOR_DOMAIN: "{{ service_domains.harbor }}"
     OPENBAO_DOMAIN: "{{ service_domains.openbao }}"
@@ -42,6 +45,7 @@
 - name: Validate cloudflare tunnel
   ansible.builtin.command: /opt/homelab-admin-node/bin/admin-node validate tunnel
   environment:
+    CI_MODE: "{{ (ci_mode | default(false) | bool) | ternary('true', 'false') }}"
     HARBOR_DOMAIN: "{{ service_domains.harbor }}"
     OPENBAO_DOMAIN: "{{ service_domains.openbao }}"
     KEYCLOAK_DOMAIN: "{{ service_domains.keycloak }}"
