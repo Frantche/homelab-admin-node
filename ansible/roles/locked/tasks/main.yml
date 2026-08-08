@@ -33,3 +33,5 @@
   loop:
     - admin-backup.timer
     - admin-gitea-process-backup.timer
+    - admin-backup-status.timer
+    - admin-backup-integrity.timer

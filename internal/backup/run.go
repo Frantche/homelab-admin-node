@@ -284,7 +284,8 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		}
 		return Info{}, fmt.Errorf("restic backup: %w", resticConfigErr)
 	}
-	if err := RunRestic(ctx, cfg.BackupEnvFile, []string{target}); err != nil {
+	resticResult, err := RunRestic(ctx, cfg.BackupEnvFile, []string{target})
+	if err != nil {
 		if remoteRequired {
 			_ = recordRemoteDelivery(target, ArtifactFailed, false)
 		}
@@ -301,6 +302,24 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	}
 	if err := rotateLocal(cfg.BackupRoot, retention); err != nil {
 		return Info{}, err
+	}
+	completedAt := now().UTC()
+	statusRoot := cfg.BackupStatusRoot
+	if statusRoot == "" {
+		statusRoot = filepath.Join(filepath.Dir(cfg.BackupRoot), "status")
+	}
+	if err := WriteSuccessStatus(statusRoot, StatusStandard, stamp, completedAt); err != nil {
+		return Info{}, err
+	}
+	if opts.IncludeImages {
+		if err := WriteSuccessStatus(statusRoot, StatusOfflineImages, stamp, completedAt); err != nil {
+			return Info{}, err
+		}
+	}
+	if resticResult.RemoteDelivered {
+		if err := WriteSuccessStatus(statusRoot, StatusRemote, stamp, completedAt); err != nil {
+			return Info{}, err
+		}
 	}
 	info, err := inspect(target, stamp)
 	if err != nil {

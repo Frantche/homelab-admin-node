@@ -731,8 +731,53 @@ func (a app) runBackup(ctx context.Context, args []string) int {
 		return 0
 	case "restic":
 		paths := fs.Args()
-		if err := backup.RunRestic(ctx, a.cfg.BackupEnvFile, paths); err != nil {
+		if _, err := backup.RunRestic(ctx, a.cfg.BackupEnvFile, paths); err != nil {
 			fmt.Fprintf(a.errOut, "backup restic: %v\n", err)
+			return 1
+		}
+		return 0
+	case "restic-check":
+		result, err := backup.CheckRestic(ctx, a.cfg.BackupEnvFile)
+		if err != nil {
+			fmt.Fprintf(a.errOut, "backup restic-check: %v\n", err)
+			return 1
+		}
+		if result.Configured {
+			if err := backup.WriteSuccessStatus(a.cfg.BackupStatusRoot, backup.StatusIntegrityCheck, "", time.Now()); err != nil {
+				fmt.Fprintf(a.errOut, "backup restic-check: %v\n", err)
+				return 1
+			}
+		}
+		return 0
+	case "status":
+		results, err := backup.CheckFreshness(time.Now(), a.cfg.BackupEnvFile, a.cfg.BackupStatusRoot)
+		if err != nil {
+			fmt.Fprintf(a.errOut, "backup status: %v\n", err)
+			return 1
+		}
+		writer := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(writer, "KIND\tREQUIRED\tSTATE\tAGE\tMAX_AGE\tBACKUP_ID")
+		for _, result := range results {
+			state := "missing"
+			age := "-"
+			if result.Present {
+				state = "fresh"
+				age = backup.FormatFreshnessAge(result.Age)
+				if !result.Fresh {
+					state = "stale"
+				}
+			} else if !result.Required {
+				state = "optional"
+			}
+			maxAge := "disabled"
+			if result.MaxAge > 0 {
+				maxAge = result.MaxAge.String()
+			}
+			fmt.Fprintf(writer, "%s\t%t\t%s\t%s\t%s\t%s\n", result.Kind, result.Required, state, age, maxAge, result.BackupID)
+		}
+		writer.Flush()
+		if backup.FreshnessFailed(results) {
+			fmt.Fprintln(a.errOut, "backup status: one or more required backups are missing or stale")
 			return 1
 		}
 		return 0
@@ -799,6 +844,8 @@ func (a app) runRestore(ctx context.Context, args []string) int {
 				"admin-converge.timer",
 				"admin-backup.timer",
 				"admin-gitea-process-backup.timer",
+				"admin-backup-status.timer",
+				"admin-backup-integrity.timer",
 			},
 			Validate: func(ctx context.Context) error {
 				ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)

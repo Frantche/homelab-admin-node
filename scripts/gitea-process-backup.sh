@@ -10,8 +10,8 @@ require_healthy() {
   local health
   health="$(container_health "$name")"
   if [[ "$health" != "healthy" ]]; then
-    echo "[gitea-process-backup] skipping backup: container '$name' health is '$health'" >&2
-    exit 0
+    echo "[gitea-process-backup] backup failed: container '$name' health is '$health'" >&2
+    exit 1
   fi
 }
 
@@ -72,3 +72,16 @@ docker run --rm \
   "${scratch_mounts[@]}" \
   "$image" \
   gitea-backup
+
+status_root="${BACKUP_STATUS_ROOT:-/srv/admin/backups/status}"
+status_path="$status_root/gitea-process.json"
+install -d -m 0700 "$status_root"
+status_tmp="$(mktemp "$status_root/.gitea-process.XXXXXX.tmp")"
+cleanup_status() {
+  rm -f -- "$status_tmp"
+}
+trap cleanup_status EXIT
+printf '{"kind":"gitea-process","completed_at":"%s"}\n' "$(date --utc +%Y-%m-%dT%H:%M:%SZ)" > "$status_tmp"
+chmod 0600 "$status_tmp"
+mv -f -- "$status_tmp" "$status_path"
+trap - EXIT

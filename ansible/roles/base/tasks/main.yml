@@ -125,6 +125,11 @@
     - admin-converge.service
     - admin-backup.service
     - admin-backup.timer
+    - admin-backup-status.service
+    - admin-backup-status.timer
+    - admin-backup-integrity.service
+    - admin-backup-integrity.timer
+    - admin-backup-failure@.service
     - admin-gitea-process-backup.service
     - admin-unlock.path
   notify: systemd daemon-reload
@@ -179,6 +184,16 @@
     name: admin-backup.timer
     enabled: "{{ admin_mode == 'normal' }}"
     state: "{{ (admin_mode == 'normal') | ternary('started', 'stopped') }}"
+
+- name: Enable backup monitoring timers
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: "{{ admin_mode == 'normal' }}"
+    state: "{{ (admin_mode == 'normal') | ternary('started', 'stopped') }}"
+    daemon_reload: true
+  loop:
+    - admin-backup-status.timer
+    - admin-backup-integrity.timer
 
 - name: Configure Gitea process backup timer
   ansible.builtin.systemd:

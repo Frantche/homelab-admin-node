@@ -1,5 +1,5 @@
 [Unit]
-Description=Admin backup job
+Description=Validate admin backup freshness
 After=network-online.target
 ConditionPathExists=/etc/admin-node/mode
 OnFailure=admin-backup-failure@%n.service
@@ -17,4 +17,4 @@ RestrictSUIDSGID=true
 LockPersonality=true
 EnvironmentFile=-/srv/admin/env/backup.env
 ExecCondition=/opt/homelab-admin-node/bin/admin-node mode check --allow normal
-ExecStart=/opt/homelab-admin-node/bin/admin-node backup run
+ExecStart=/opt/homelab-admin-node/bin/admin-node backup status
