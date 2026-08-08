@@ -39,6 +39,26 @@ CI is organized around operator journeys:
 The recovery journey preserves every password under `keycloak_config.users`.
 Only client, administrator, and database credentials are rotated.
 
+## Release-candidate promotion
+
+Adding the `release-candidate` label to a pull request runs both DR variants for
+that pull request's exact 40-character head SHA. A scheduled weekly run remains
+an environment-health check for the then-current `main`; it is never evidence
+for a later commit. Ordinary pull requests and pushes intentionally skip the
+expensive DR matrix.
+
+Each successful variant retains a small 90-day JSON evidence artifact containing
+the tested commit, variant, backup manifest, and restore validation summary.
+Large diagnostic logs retain their shorter lifecycle.
+
+To promote, manually dispatch `bootstrap-user-journey`, choose
+`disaster-recovery`, provide the full candidate SHA, and enable `promote`.
+The promotion job runs only after both `standard` and `offline-images` succeed,
+then revalidates that both current-run evidence files and embedded manifests
+match the candidate. Only then can it create the immutable
+`homelab-production-<12-character-SHA>` tag. Missing, stale, skipped, or
+mismatched evidence fails closed and creates no marker.
+
 Run locally:
 
 ```bash

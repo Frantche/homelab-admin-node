@@ -11,7 +11,8 @@ SHELL := /usr/bin/env bash
 	test-make-entrypoints test-offline-images test-oidc-contracts test-openbao-internal-tls \
 	test-repo-permissions test-restic-config test-secret-rotation test-traefik-external-services \
 	test-traefik-security validate validate-apis validate-cloudflare-tunnel validate-compose \
-	validate-dns validate-grafana-dashboards validate-hardening validate-observability validate-systemd
+	validate-dns validate-dr-promotion validate-grafana-dashboards validate-hardening \
+	validate-observability validate-systemd
 
 .NOTPARALLEL: ci-quality ci-continuous ci-disaster-recovery ci-full
 
@@ -143,6 +144,10 @@ ci-bootstrap:
 
 test-disaster-recovery-actions:
 	@./ci/test-disaster-recovery-actions.sh
+
+validate-dr-promotion:
+	@if [[ -z "$(CANDIDATE_SHA)" ]]; then echo "CANDIDATE_SHA is required" >&2; exit 2; fi
+	@./ci/validate-dr-promotion.sh "$(CANDIDATE_SHA)" "$(DR_EVIDENCE_DIR)"
 
 test-make-entrypoints:
 	@./ci/test-make-entrypoints.sh
