@@ -130,6 +130,7 @@ func TestFromEnvOverrides(t *testing.T) {
 func TestLoadUsesManagedRuntimeFileWithProcessPrecedence(t *testing.T) {
 	envFile := filepath.Join(t.TempDir(), "backup.env")
 	content := `# managed values
+CI_MODE=true
 ADMIN_NODE_REPO_ROOT='/managed/repo'
 ADMIN_NODE_ROOT="/managed/admin"
 ADMIN_BACKUP_ROOT=/managed/backups
@@ -166,6 +167,9 @@ HARBOR_ADMIN_PASSWORD="this deliberately unterminated secret is ignored
 	}
 	if !cfg.ManagedRuntimeFileLoaded {
 		t.Fatal("managed runtime file was not marked loaded")
+	}
+	if !cfg.CIMode {
+		t.Fatal("managed CI_MODE was not loaded")
 	}
 	if cfg.RepoRoot != "/managed/repo" || cfg.AdminRoot != "/managed/admin" || cfg.BackupRoot != "/managed/backups" {
 		t.Fatalf("managed paths not loaded: %#v", cfg)
@@ -216,6 +220,7 @@ func TestLoadRejectsMalformedManagedEntriesWithoutExposingValues(t *testing.T) {
 		{name: "missing assignment", content: "KEYCLOAK_DOMAIN\n", marker: "expected KEY=VALUE"},
 		{name: "malformed quote", content: "KEYCLOAK_DOMAIN=\"private-value\n", marker: "invalid double-quoted value"},
 		{name: "invalid boolean", content: "PIHOLE_ENABLED=private-invalid\n", marker: "invalid runtime configuration value for PIHOLE_ENABLED"},
+		{name: "invalid CI mode", content: "CI_MODE=private-invalid\n", marker: "invalid runtime configuration value for CI_MODE"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			envFile := filepath.Join(t.TempDir(), "backup.env")

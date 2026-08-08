@@ -1,4 +1,5 @@
 # Managed by Ansible.
+CI_MODE={{ ((ci_mode | default(false) | bool) | ternary('true', 'false')) | quote }}
 ADMIN_NODE_REPO_ROOT={{ admin_node_repo_root | default('/opt/homelab-admin-node') | quote }}
 ADMIN_NODE_ROOT={{ admin_node_root | quote }}
 ADMIN_BACKUP_ROOT={{ (admin_node_root ~ '/backups/local') | quote }}

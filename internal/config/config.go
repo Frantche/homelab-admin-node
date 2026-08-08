@@ -151,6 +151,10 @@ func load(values map[string]string, loaded bool) (Config, error) {
 		return Config{}, invalidManagedValue("OBSERVABILITY_ENABLED")
 	}
 	adminRoot := resolve("ADMIN_NODE_ROOT", DefaultAdminRoot)
+	ciMode, err := resolveBool("CI_MODE", false)
+	if err != nil {
+		return Config{}, invalidManagedValue("CI_MODE")
+	}
 
 	return Config{
 		RepoRoot:                   resolve("ADMIN_NODE_REPO_ROOT", DefaultRepoRoot),
@@ -174,7 +178,7 @@ func load(values map[string]string, loaded bool) (Config, error) {
 		GiteaDomain:                resolve("GITEA_DOMAIN", DefaultGiteaDomain),
 		TraefikDomain:              resolve("TRAEFIK_DOMAIN", DefaultTraefikDomain),
 		OpenBaoDomain:              resolve("OPENBAO_DOMAIN", DefaultOpenBaoDomain),
-		CIMode:                     getenvBool("CI_MODE", false),
+		CIMode:                     ciMode,
 		CIMockPihole:               getenvBool("CI_MOCK_PIHOLE", false),
 		CIMockCloudflareTunnel:     getenvBool("CI_MOCK_CLOUDFLARE_TUNNEL", false),
 		PiholeDisabled:             !piholeEnabled,

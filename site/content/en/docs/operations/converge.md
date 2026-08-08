@@ -50,8 +50,8 @@ For boot and timer runs, keep that setting in a systemd drop-in:
 Environment=INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/di/inventory.ini
 ```
 
-Service domains, the admin-node LAN address, runtime paths, feature flags, and
-backup policy are loaded automatically from the managed
+The explicit CI/production execution mode, service domains, the admin-node LAN
+address, runtime paths, feature flags, and backup policy are loaded from the managed
 `/srv/admin/env/backup.env`; they do not need to be duplicated in this drop-in.
 
 The convergence timer runs 5 minutes after boot, then 30 minutes after the previous activation by default. Override those intervals in inventory with:
