@@ -25,6 +25,20 @@ func restoreValidation(ctx context.Context, run runner.Runner) []validate.CheckR
 	}
 }
 
+func giteaProcessRestoreValidation(ctx context.Context, run runner.Runner) []validate.CheckResult {
+	if run == nil {
+		run = runner.ExecRunner{}
+	}
+	return []validate.CheckResult{
+		restoreDockerHealth(ctx, run, "Gitea database", "gitea-db"),
+		restoreDockerHealth(ctx, run, "Gitea", "gitea"),
+		restoreCommandCheck(ctx, run, "Gitea API", 120*time.Second, "docker", "exec", "gitea", "curl", "-fsS", "http://127.0.0.1:3000/api/v1/version"),
+		restoreCommandCheck(ctx, run, "Gitea database schema", 120*time.Second, "docker", "exec", "gitea-db", "psql", "-U", "gitea", "-d", "gitea", "-v", "ON_ERROR_STOP=1", "-Atqc", `DO $$ BEGIN IF to_regclass('public."user"') IS NULL OR to_regclass('public.repository') IS NULL THEN RAISE EXCEPTION 'required Gitea tables are missing'; END IF; END $$;`),
+		restoreCommandCheck(ctx, run, "Gitea users", 120*time.Second, "docker", "exec", "gitea-db", "psql", "-U", "gitea", "-d", "gitea", "-v", "ON_ERROR_STOP=1", "-Atqc", `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM "user") THEN RAISE EXCEPTION 'restored Gitea has no users'; END IF; END $$;`),
+		restoreCommandCheck(ctx, run, "Gitea repositories", 120*time.Second, "docker", "exec", "gitea", "test", "-d", "/data/git/repositories"),
+	}
+}
+
 func restoreDockerHealth(ctx context.Context, run runner.Runner, name, container string) validate.CheckResult {
 	return restoreWait(ctx, name, 120*time.Second, func(ctx context.Context) (validate.Status, string, bool) {
 		result := run.Run(ctx, "docker", "inspect", "-f", "{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}", container)

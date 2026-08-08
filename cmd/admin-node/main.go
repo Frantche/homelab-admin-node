@@ -282,6 +282,12 @@ type giteaProcessRestoreOptions struct {
 }
 
 func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestoreOptions) error {
+	unlock, err := operation.Acquire(a.cfg.OperationLock)
+	if err != nil {
+		return fmt.Errorf("acquire operation lock: %w", err)
+	}
+	defer unlock()
+
 	env, err := readEnvFile(opts.ProcessEnv)
 	if err != nil {
 		return err
@@ -293,19 +299,24 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 	backupFileLog := envValue(env, "BACKUP_FILE_LOG", "/srv/admin/backups/gitea-process/history/backupFileLog.txt")
 
 	fmt.Fprintf(a.out, "[gitea-restore-process] restoring %s\n", opts.BackupFilename)
-	if err := mode.Set(a.cfg.ModeFile, "locked"); err != nil {
-		return fmt.Errorf("set locked mode: %w", err)
+	if err := mode.Set(a.cfg.ModeFile, "restore"); err != nil {
+		return fmt.Errorf("set restore mode: %w", err)
 	}
 
 	restoreComplete := false
 	defer func() {
 		if !restoreComplete {
-			_ = mode.Set(a.cfg.ModeFile, "locked")
+			_ = mode.Set(a.cfg.ModeFile, "restore_failed")
 		}
 	}()
 
-	if err := a.execLogged(ctx, "systemctl", "stop", "admin-gitea-process-backup.timer"); err != nil {
-		fmt.Fprintf(a.errOut, "[gitea-restore-process] warning: %v\n", err)
+	resumeTimers, err := restore.SuspendSystemdTimers(ctx, []string{
+		"admin-converge.timer",
+		"admin-backup.timer",
+		"admin-gitea-process-backup.timer",
+	})
+	if err != nil {
+		return fmt.Errorf("suspend timers: %w", err)
 	}
 
 	restoreDockerCommand := []string{"docker", "run", "--rm"}
@@ -326,6 +337,16 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 		{"docker", "compose", "--env-file", opts.GiteaEnv, "-f", opts.GiteaCompose, "up", "-d", "gitea-db"},
 		{"docker", "compose", "--env-file", opts.GiteaEnv, "-f", opts.GiteaCompose, "stop", "gitea"},
 		{"install", "-d", "-m", "0700", opts.PreRestoreDir},
+	}
+	for _, command := range commands {
+		if err := a.execLogged(ctx, command[0], command[1:]...); err != nil {
+			return err
+		}
+	}
+	if err := a.backupGiteaProcessDatabase(ctx, filepath.Join(opts.PreRestoreDir, "gitea.dump")); err != nil {
+		return err
+	}
+	commands = [][]string{
 		{"rsync", "-a", "--delete", filepath.Join(a.cfg.GiteaStackPath, "gitea") + "/", filepath.Join(opts.PreRestoreDir, "gitea-data") + "/"},
 		{"find", filepath.Join(a.cfg.GiteaStackPath, "gitea/git/repositories"), "-mindepth", "1", "-maxdepth", "1", "-exec", "rm", "-rf", "{}", "+"},
 		{"find", filepath.Join(a.cfg.GiteaStackPath, "gitea/gitea/avatars"), "-mindepth", "1", "-maxdepth", "1", "-exec", "rm", "-rf", "{}", "+"},
@@ -349,21 +370,33 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 		return err
 	}
 
-	restoreComplete = true
+	validationCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	results := giteaProcessRestoreValidation(validationCtx, a.runner)
+	validate.WriteText(a.out, results)
+	if validate.HasFailure(results) {
+		return fmt.Errorf("restored Gitea validation failed")
+	}
+
 	if err := mode.Set(a.cfg.ModeFile, "normal"); err != nil {
 		return fmt.Errorf("set normal mode: %w", err)
 	}
-	fmt.Fprintln(a.out, "[gitea-restore-process] restore completed and mode set to normal")
 
-	if !opts.RunConverge {
-		return nil
+	if opts.RunConverge {
+		if err := converge.Run(ctx, converge.Options{
+			RepoDir:       a.cfg.RepoRoot,
+			InventoryPath: opts.Inventory,
+			PlaybookPath:  getenv("PLAYBOOK_PATH", a.cfg.RepoRoot+"/ansible/site.yml"),
+			SkipGitPull:   opts.SkipGitPull,
+		}); err != nil {
+			return fmt.Errorf("post-restore convergence: %w", err)
+		}
 	}
-	return converge.Run(ctx, converge.Options{
-		RepoDir:       a.cfg.RepoRoot,
-		InventoryPath: opts.Inventory,
-		PlaybookPath:  getenv("PLAYBOOK_PATH", a.cfg.RepoRoot+"/ansible/site.yml"),
-		SkipGitPull:   opts.SkipGitPull,
-	})
+
+	restoreComplete = true
+	resumeTimers()
+	fmt.Fprintln(a.out, "[gitea-restore-process] restore validated, mode set to normal, and timers resumed")
+	return nil
 }
 
 func giteaProcessNetworkArgs(databaseNetwork, egressNetwork string) []string {
@@ -399,6 +432,39 @@ func (a app) restoreGiteaProcessDatabase(ctx context.Context, dumpPath string) e
 	script := `sed -e 's/OWNER TO app/OWNER TO gitea/g' "$1" | docker exec -i gitea-db psql -U gitea -d gitea -v ON_ERROR_STOP=1`
 	if err := a.execLogged(ctx, "sh", "-c", script, "gitea-process-db-restore", dumpPath); err != nil {
 		return fmt.Errorf("restore gitea process database dump: %w", err)
+	}
+	return nil
+}
+
+func (a app) backupGiteaProcessDatabase(ctx context.Context, dumpPath string) error {
+	if !filepath.IsAbs(dumpPath) || filepath.Clean(dumpPath) == "/" {
+		return fmt.Errorf("pre-restore Gitea database dump path must be an absolute file path")
+	}
+	tmpPath := dumpPath + ".tmp"
+	file, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("create pre-restore Gitea database dump: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, "docker", "exec", "gitea-db", "pg_dump", "--format=custom", "--no-owner", "--no-privileges", "-U", "gitea", "-d", "gitea")
+	cmd.Stdout = file
+	cmd.Stderr = a.errOut
+	runErr := cmd.Run()
+	closeErr := file.Close()
+	if runErr != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("create pre-restore Gitea database dump: %w", runErr)
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("close pre-restore Gitea database dump: %w", closeErr)
+	}
+	if info, err := os.Stat(tmpPath); err != nil || info.Size() == 0 {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("pre-restore Gitea database dump is empty")
+	}
+	if err := os.Rename(tmpPath, dumpPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("publish pre-restore Gitea database dump: %w", err)
 	}
 	return nil
 }

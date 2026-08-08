@@ -49,7 +49,7 @@ func Run(ctx context.Context, cfg config.Config, opts Options) error {
 		return err
 	}
 	defer unlock()
-	resumeTimers, err := suspendSystemdTimers(ctx, opts.SystemdTimers)
+	resumeTimers, err := SuspendSystemdTimers(ctx, opts.SystemdTimers)
 	if err != nil {
 		writeMode(cfg.ModeFile, "restore_failed")
 		return err
@@ -669,7 +669,10 @@ func startStacks(ctx context.Context, cfg config.Config, set stacks) error {
 	return nil
 }
 
-func suspendSystemdTimers(ctx context.Context, timers []string) (func(), error) {
+// SuspendSystemdTimers stops timers that are active or enabled and returns a
+// callback that starts only those timers. Callers intentionally decide whether
+// the callback is safe to invoke after a restore failure.
+func SuspendSystemdTimers(ctx context.Context, timers []string) (func(), error) {
 	if len(timers) == 0 {
 		return func() {}, nil
 	}
