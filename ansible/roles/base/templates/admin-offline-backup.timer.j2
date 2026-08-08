@@ -1,0 +1,11 @@
+[Unit]
+Description=Scheduled offline-capable admin backup
+
+[Timer]
+OnCalendar={{ (backup | default({})).offline.on_calendar | default('Sun *-*-* 04:00:00') }}
+Persistent=true
+RandomizedDelaySec={{ (backup | default({})).offline.randomized_delay_sec | default('30m') }}
+Unit=admin-offline-backup.service
+
+[Install]
+WantedBy=timers.target

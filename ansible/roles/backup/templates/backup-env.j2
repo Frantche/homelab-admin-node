@@ -30,6 +30,11 @@ BACKUP_REQUIRE_BTRFS_HOT={{ ((backup.require_btrfs_hot | default(false) | bool) 
 BACKUP_REQUIRE_REMOTE_REPOSITORY={{ ((backup.require_remote_repository | default(true) | bool) | ternary('true', 'false')) | quote }}
 BACKUP_REQUIRE_HARBOR_READ_ONLY={{ ((backup.require_harbor_read_only | default(true) | bool) | ternary('true', 'false')) | quote }}
 BACKUP_LOCAL_RETENTION={{ backup.local_retention | default(3) | int }}
+BACKUP_OFFLINE_RETENTION={{ (backup.offline | default({})).retention | default(2) | int }}
+BACKUP_OFFLINE_MAX_AGE={{ (backup.offline | default({})).max_age | default('192h') | quote }}
+BACKUP_OFFLINE_MIN_FREE_BYTES={{ (backup.offline | default({})).minimum_free_bytes | default(32212254720) | int }}
+BACKUP_RECOVERY_KIT_INVENTORY=/etc/admin-node/recovery-kit-inventory.json
+BACKUP_RECOVERY_KIT_MAX_AGE={{ (backup.offline | default({})).recovery_kit_max_age | default('2160h') | quote }}
 HARBOR_ADMIN_USER={{ harbor.admin_user | default('admin') | to_json }}
 HARBOR_ADMIN_PASSWORD={{ harbor.admin_password | mandatory('harbor.admin_password is required') | to_json }}
 RESTIC_REPOSITORIES={{ (backup_restic_repositories_effective | map(attribute='name') | list | join(' ')) | quote }}

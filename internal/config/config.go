@@ -42,6 +42,14 @@ type Config struct {
 	LocalBackupRetention       int
 	BackupOperationLockTimeout time.Duration
 	GiteaBackupQuiesceTimeout  time.Duration
+	OfflineBackupRetention     int
+	OfflineBackupMaxAge        time.Duration
+	OfflineBackupMinFreeBytes  int64
+	RecoveryKitInventoryFile   string
+	RecoveryKitMaxAge          time.Duration
+	AgeKeyFile                 string
+	ConfigRepoRoot             string
+	OpenBaoRecoveryFile        string
 	AdminNodeLANIP             string
 	KeycloakDomain             string
 	HarborDomain               string
@@ -106,6 +114,17 @@ func load(values map[string]string, loaded bool) (Config, error) {
 		}
 		return parsed, nil
 	}
+	resolveInt64 := func(key string, fallback int64) (int64, error) {
+		value := resolve(key, "")
+		if value == "" {
+			return fallback, nil
+		}
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || parsed < 0 {
+			return 0, invalidManagedValue(key)
+		}
+		return parsed, nil
+	}
 	resolveDuration := func(key string, fallback time.Duration) (time.Duration, error) {
 		value := resolve(key, "")
 		if value == "" {
@@ -138,6 +157,22 @@ func load(values map[string]string, loaded bool) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	offlineRetention, err := resolveInt("BACKUP_OFFLINE_RETENTION", 2)
+	if err != nil {
+		return Config{}, err
+	}
+	offlineMaxAge, err := resolveDuration("BACKUP_OFFLINE_MAX_AGE", 8*24*time.Hour)
+	if err != nil {
+		return Config{}, err
+	}
+	offlineMinFreeBytes, err := resolveInt64("BACKUP_OFFLINE_MIN_FREE_BYTES", 0)
+	if err != nil {
+		return Config{}, err
+	}
+	recoveryKitMaxAge, err := resolveDuration("BACKUP_RECOVERY_KIT_MAX_AGE", 90*24*time.Hour)
+	if err != nil {
+		return Config{}, err
+	}
 	piholeEnabled, err := resolveBool("PIHOLE_ENABLED", true)
 	if err != nil {
 		return Config{}, invalidManagedValue("PIHOLE_ENABLED")
@@ -150,6 +185,7 @@ func load(values map[string]string, loaded bool) (Config, error) {
 	if err != nil {
 		return Config{}, invalidManagedValue("OBSERVABILITY_ENABLED")
 	}
+	repoRoot := resolve("ADMIN_NODE_REPO_ROOT", DefaultRepoRoot)
 	adminRoot := resolve("ADMIN_NODE_ROOT", DefaultAdminRoot)
 	ciMode, err := resolveBool("CI_MODE", false)
 	if err != nil {
@@ -157,7 +193,7 @@ func load(values map[string]string, loaded bool) (Config, error) {
 	}
 
 	return Config{
-		RepoRoot:                   resolve("ADMIN_NODE_REPO_ROOT", DefaultRepoRoot),
+		RepoRoot:                   repoRoot,
 		AdminRoot:                  adminRoot,
 		ModeFile:                   resolve("ADMIN_MODE_FILE", DefaultModeFile),
 		RestoreIDFile:              resolve("ADMIN_RESTORE_ID_FILE", DefaultRestoreIDFile),
@@ -172,6 +208,14 @@ func load(values map[string]string, loaded bool) (Config, error) {
 		LocalBackupRetention:       localRetention,
 		BackupOperationLockTimeout: lockTimeout,
 		GiteaBackupQuiesceTimeout:  giteaQuiesceTimeout,
+		OfflineBackupRetention:     offlineRetention,
+		OfflineBackupMaxAge:        offlineMaxAge,
+		OfflineBackupMinFreeBytes:  offlineMinFreeBytes,
+		RecoveryKitInventoryFile:   resolve("BACKUP_RECOVERY_KIT_INVENTORY", "/etc/admin-node/recovery-kit-inventory.json"),
+		RecoveryKitMaxAge:          recoveryKitMaxAge,
+		AgeKeyFile:                 resolve("SOPS_AGE_KEY_FILE", "/etc/sops/age/keys.txt"),
+		ConfigRepoRoot:             resolve("ADMIN_CONFIG_REPO_ROOT", "/etc/admin-config/homelab-node-admin-config"),
+		OpenBaoRecoveryFile:        resolve("OPENBAO_RECOVERY_FILE", filepath.Join(repoRoot, "secrets/openbao-unseal.sops.yaml")),
 		AdminNodeLANIP:             resolve("ADMIN_NODE_LAN_IP", DefaultAdminNodeLANIP),
 		KeycloakDomain:             resolve("KEYCLOAK_DOMAIN", DefaultKeycloakDomain),
 		HarborDomain:               resolve("HARBOR_DOMAIN", DefaultHarborDomain),

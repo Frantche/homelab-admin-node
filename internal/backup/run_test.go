@@ -738,6 +738,30 @@ func TestRotateLocalKeepsNewest(t *testing.T) {
 	}
 }
 
+func TestRotateLocalTypeKeepsStandardAndOfflineRetentionSeparate(t *testing.T) {
+	root := t.TempDir()
+	for index, id := range []string{"20260621-120000", "20260622-120000", "20260623-120000", "20260624-120000"} {
+		dir := filepath.Join(root, id)
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if index%2 == 0 {
+			if err := os.WriteFile(filepath.Join(dir, "offline-images.tar"), []byte("images"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := rotateLocalType(root, 1, true); err != nil {
+		t.Fatal(err)
+	}
+	if dirExists(filepath.Join(root, "20260621-120000")) || !dirExists(filepath.Join(root, "20260623-120000")) {
+		t.Fatal("offline retention did not keep only the newest offline point")
+	}
+	if !dirExists(filepath.Join(root, "20260622-120000")) || !dirExists(filepath.Join(root, "20260624-120000")) {
+		t.Fatal("offline retention removed a standard backup")
+	}
+}
+
 func TestDirectoryContentsPathPreservesDotSuffix(t *testing.T) {
 	got := directoryContentsPath(filepath.Join("tmp", "snapshot"))
 	want := filepath.Join("tmp", "snapshot") + string(os.PathSeparator) + "."
