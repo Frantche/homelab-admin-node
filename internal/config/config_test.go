@@ -234,6 +234,22 @@ func TestLoadMissingManagedRuntimeFileUsesSafeDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadAllowsDisabledOfflineFreshnessPolicy(t *testing.T) {
+	envFile := filepath.Join(t.TempDir(), "backup.env")
+	if err := os.WriteFile(envFile, []byte("BACKUP_OFFLINE_MAX_AGE=0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RESTIC_BACKUP_ENV_FILE", envFile)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.OfflineBackupMaxAge != 0 {
+		t.Fatalf("OfflineBackupMaxAge = %s, want disabled", cfg.OfflineBackupMaxAge)
+	}
+}
+
 func TestLoadRejectsMalformedManagedEntriesWithoutExposingValues(t *testing.T) {
 	for _, test := range []struct {
 		name    string

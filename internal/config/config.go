@@ -136,6 +136,20 @@ func load(values map[string]string, loaded bool) (Config, error) {
 		}
 		return parsed, nil
 	}
+	resolveNonNegativeDuration := func(key string, fallback time.Duration) (time.Duration, error) {
+		value := resolve(key, "")
+		if value == "" {
+			return fallback, nil
+		}
+		if value == "0" {
+			return 0, nil
+		}
+		parsed, err := time.ParseDuration(value)
+		if err != nil || parsed < 0 {
+			return 0, invalidManagedValue(key)
+		}
+		return parsed, nil
+	}
 
 	requireBtrfs, err := resolveBool("BACKUP_REQUIRE_BTRFS_HOT", false)
 	if err != nil {
@@ -161,7 +175,7 @@ func load(values map[string]string, loaded bool) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	offlineMaxAge, err := resolveDuration("BACKUP_OFFLINE_MAX_AGE", 8*24*time.Hour)
+	offlineMaxAge, err := resolveNonNegativeDuration("BACKUP_OFFLINE_MAX_AGE", 8*24*time.Hour)
 	if err != nil {
 		return Config{}, err
 	}

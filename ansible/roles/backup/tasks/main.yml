@@ -37,15 +37,26 @@
     that:
       - (backup.offline.retention | default(2) | int) >= 1
       - (backup.offline.minimum_free_bytes | default(32212254720) | int) >= 1073741824
-      - backup.offline.recovery_kit.last_verified_at | default('') | length > 0
+      - >-
+        ((backup.offline.recovery_kit | default({})).keys()
+        | difference([
+          'last_verified_at',
+          'age_identity_offsite',
+          'config_repo_access_tested',
+          'restic_access_offsite',
+          'openbao_recovery_offsite',
+          'separation_of_duties_verified'
+        ]) | length) == 0
+      - backup.offline.recovery_kit.last_verified_at | default('') is match('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$')
       - backup.offline.recovery_kit.age_identity_offsite | default(false) | bool
       - backup.offline.recovery_kit.config_repo_access_tested | default(false) | bool
       - backup.offline.recovery_kit.restic_access_offsite | default(false) | bool
       - backup.offline.recovery_kit.openbao_recovery_offsite | default(false) | bool
       - backup.offline.recovery_kit.separation_of_duties_verified | default(false) | bool
     fail_msg: >-
-      backup.offline is enabled but retention/capacity or the secret-free recovery-kit
-      attestations are incomplete. Complete the published offline recovery checklist first.
+      backup.offline is enabled but retention/capacity or the strictly secret-free
+      recovery-kit attestations are invalid. Complete the published offline recovery
+      checklist and remove every inventory key not documented there.
   when: backup.offline.enabled | default(false) | bool
 
 - name: Render secret-free recovery-kit inventory

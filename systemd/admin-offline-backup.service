@@ -2,6 +2,7 @@
 Description=Admin offline-capable recovery backup
 After=network-online.target
 ConditionPathExists=/etc/admin-node/mode
+OnFailure=admin-backup-failure@%n.service
 
 [Service]
 Type=oneshot
