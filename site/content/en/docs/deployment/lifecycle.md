@@ -76,9 +76,10 @@ sudo /opt/homelab-admin-node/bin/admin-node converge run --skip-git-pull
 ```
 
 On a production release, convergence enforces the full commit stored in
-`/etc/admin-node/release-ref`. It will fetch and detach at that commit if the
-working copy differs. `--skip-git-pull` deliberately bypasses this alignment for
-diagnostics, but still records the code and schema actually converged.
+`/etc/admin-node/release-ref` and refuses a checkout containing local changes.
+It will fetch and detach at that commit if the working copy differs.
+`--skip-git-pull` disables network updates but does not bypass the release pin:
+the repository must already be clean and detached at the pinned commit.
 
 ## Validate
 

@@ -81,7 +81,7 @@ func TestUpdateAdminRepositoryKeepsImmutableCommitPin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := updateAdminRepository(ctx, Options{RepoDir: local, ReleaseRefFile: refFile}); err != nil {
+	if err := updateAdminRepository(ctx, Options{RepoDir: local, ReleaseRefFile: refFile}, true); err != nil {
 		t.Fatal(err)
 	}
 	if got := gitOutput(t, local, "rev-parse", "HEAD"); got != pinned {
@@ -96,9 +96,86 @@ func TestUpdateAdminRepositoryRefusesMissingReleasePin(t *testing.T) {
 	err := updateAdminRepository(context.Background(), Options{
 		RepoDir:        initGitRepo(t),
 		ReleaseRefFile: filepath.Join(t.TempDir(), "missing-release-ref"),
-	})
+	}, true)
 	if err == nil || !strings.Contains(err.Error(), "release pin") {
 		t.Fatalf("missing release pin error = %v", err)
+	}
+}
+
+func TestUpdateAdminRepositorySkipPullStillEnforcesPin(t *testing.T) {
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "release/config-schema-version", "1\n", "initial")
+	pinned := gitOutput(t, repo, "rev-parse", "HEAD")
+	refFile := filepath.Join(t.TempDir(), "release-ref")
+	if err := os.WriteFile(refFile, []byte(pinned+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := updateAdminRepository(context.Background(), Options{RepoDir: repo, ReleaseRefFile: refFile}, false)
+	if err == nil || !strings.Contains(err.Error(), "not detached at release pin") {
+		t.Fatalf("skip-pull pin error = %v", err)
+	}
+
+	git(t, repo, "checkout", "--detach", pinned)
+	if err := updateAdminRepository(context.Background(), Options{RepoDir: repo, ReleaseRefFile: refFile}, false); err != nil {
+		t.Fatalf("aligned offline checkout rejected: %v", err)
+	}
+}
+
+func TestUpdateAdminRepositoryRefusesDirtyPinnedCheckout(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		path string
+	}{
+		{name: "tracked", path: "release/config-schema-version"},
+		{name: "untracked", path: "local-override.yml"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := initGitRepo(t)
+			writeAndCommit(t, repo, "release/config-schema-version", "1\n", "initial")
+			pinned := gitOutput(t, repo, "rev-parse", "HEAD")
+			git(t, repo, "checkout", "--detach", pinned)
+			if err := os.WriteFile(filepath.Join(repo, test.path), []byte("modified\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			refFile := filepath.Join(t.TempDir(), "release-ref")
+			if err := os.WriteFile(refFile, []byte(pinned+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			err := updateAdminRepository(context.Background(), Options{RepoDir: repo, ReleaseRefFile: refFile}, false)
+			if err == nil || !strings.Contains(err.Error(), "local changes") {
+				t.Fatalf("dirty checkout error = %v", err)
+			}
+		})
+	}
+}
+
+func TestUpdateAdminRepositoryMainDoesNotDiscardLocalCommits(t *testing.T) {
+	ctx := context.Background()
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	git(t, "", "init", "--bare", "--initial-branch=main", origin)
+	source := filepath.Join(t.TempDir(), "source")
+	git(t, "", "clone", origin, source)
+	configureGitUser(t, source)
+	writeAndCommit(t, source, "release/config-schema-version", "1\n", "initial")
+	git(t, source, "push", "-u", "origin", "main")
+
+	local := filepath.Join(t.TempDir(), "local")
+	git(t, "", "clone", origin, local)
+	configureGitUser(t, local)
+	writeAndCommit(t, local, "LOCAL.md", "keep me\n", "local development")
+	localCommit := gitOutput(t, local, "rev-parse", "HEAD")
+	refFile := filepath.Join(t.TempDir(), "release-ref")
+	if err := os.WriteFile(refFile, []byte("main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := updateAdminRepository(ctx, Options{RepoDir: local, ReleaseRefFile: refFile}, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitOutput(t, local, "rev-parse", "HEAD"); got != localCommit {
+		t.Fatalf("main update discarded local commit: HEAD=%s want=%s", got, localCommit)
 	}
 }
 
@@ -120,6 +197,24 @@ func TestPersistInstalledState(t *testing.T) {
 	}
 	if got := strings.TrimSpace(readFile(t, opts.SchemaFile)); got != "3" {
 		t.Fatalf("recorded schema = %q", got)
+	}
+}
+
+func TestPersistInstalledStateDoesNotRecordRevisionForInvalidSchema(t *testing.T) {
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "release/config-schema-version", "\n", "empty schema")
+	stateDir := t.TempDir()
+	opts := Options{
+		RepoDir:      repo,
+		RevisionFile: filepath.Join(stateDir, "git-ref"),
+		SchemaSource: filepath.Join(repo, "release/config-schema-version"),
+		SchemaFile:   filepath.Join(stateDir, "schema"),
+	}
+	if err := persistInstalledState(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "is empty") {
+		t.Fatalf("invalid schema error = %v", err)
+	}
+	if _, err := os.Stat(opts.RevisionFile); !os.IsNotExist(err) {
+		t.Fatalf("revision marker should not exist after invalid schema: %v", err)
 	}
 }
 

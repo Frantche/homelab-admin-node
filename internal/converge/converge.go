@@ -48,10 +48,10 @@ func Run(ctx context.Context, opts Options) error {
 	if stat, err := os.Stat(opts.RepoDir + "/.git"); err != nil || !stat.IsDir() {
 		return fmt.Errorf("git repository not found in %s", opts.RepoDir)
 	}
+	if err := updateAdminRepository(ctx, opts, !opts.SkipGitPull); err != nil {
+		return err
+	}
 	if !opts.SkipGitPull {
-		if err := updateAdminRepository(ctx, opts); err != nil {
-			return err
-		}
 		inventoryRepo, err := gitRootForPath(ctx, opts.InventoryPath)
 		if err != nil {
 			return fmt.Errorf("resolve inventory git repository: %w", err)
@@ -66,7 +66,7 @@ func Run(ctx context.Context, opts Options) error {
 			}
 		}
 	} else {
-		fmt.Println("[admin-converge] skipping git pull")
+		fmt.Println("[admin-converge] skipping inventory git pull; admin release pin was verified locally")
 	}
 	if _, err := os.Stat(opts.PlaybookPath); err != nil {
 		return fmt.Errorf("playbook not found: %s", opts.PlaybookPath)
@@ -85,7 +85,7 @@ func Run(ctx context.Context, opts Options) error {
 	return nil
 }
 
-func updateAdminRepository(ctx context.Context, opts Options) error {
+func updateAdminRepository(ctx context.Context, opts Options, allowUpdate bool) error {
 	desiredBytes, err := os.ReadFile(opts.ReleaseRefFile)
 	if os.IsNotExist(err) {
 		return fmt.Errorf(
@@ -102,11 +102,22 @@ func updateAdminRepository(ctx context.Context, opts Options) error {
 	}
 	if desired == "main" || desired == "refs/heads/main" {
 		fmt.Println("[admin-converge] development channel main selected")
+		if !allowUpdate {
+			branch, err := commandOutput(ctx, opts.RepoDir, "git", "symbolic-ref", "--quiet", "--short", "HEAD")
+			if err != nil || branch != "main" {
+				return fmt.Errorf("development channel main is selected but the local checkout is not on main; rerun without --skip-git-pull")
+			}
+			return nil
+		}
 		if err := run(ctx, opts.RepoDir, "git", "fetch", "origin", "main"); err != nil {
 			return fmt.Errorf("fetch development channel main: %w", err)
 		}
-		if err := run(ctx, opts.RepoDir, "git", "checkout", "-B", "main", "origin/main"); err != nil {
-			return fmt.Errorf("checkout development channel main: %w", err)
+		if err := exec.CommandContext(ctx, "git", "-C", opts.RepoDir, "show-ref", "--verify", "--quiet", "refs/heads/main").Run(); err == nil {
+			if err := run(ctx, opts.RepoDir, "git", "checkout", "main"); err != nil {
+				return fmt.Errorf("checkout existing development channel main: %w", err)
+			}
+		} else if err := run(ctx, opts.RepoDir, "git", "checkout", "--track", "-b", "main", "origin/main"); err != nil {
+			return fmt.Errorf("create development channel main: %w", err)
 		}
 		if err := run(ctx, opts.RepoDir, "git", "branch", "--set-upstream-to", "origin/main", "main"); err != nil {
 			return fmt.Errorf("track development channel main: %w", err)
@@ -122,8 +133,14 @@ func updateAdminRepository(ctx context.Context, opts Options) error {
 	}
 	_, branchErr := commandOutput(ctx, opts.RepoDir, "git", "symbolic-ref", "--quiet", "HEAD")
 	if current == desired && branchErr != nil {
+		if err := requireCleanReleaseCheckout(ctx, opts.RepoDir); err != nil {
+			return err
+		}
 		fmt.Printf("[admin-converge] admin repo pinned at %s\n", desired)
 		return nil
+	}
+	if !allowUpdate {
+		return fmt.Errorf("admin repo is not detached at release pin %s; rerun without --skip-git-pull", desired)
 	}
 	resolved, err := commandOutput(ctx, opts.RepoDir, "git", "rev-parse", desired+"^{commit}")
 	if err != nil {
@@ -138,6 +155,17 @@ func updateAdminRepository(ctx context.Context, opts Options) error {
 	if err := run(ctx, opts.RepoDir, "git", "checkout", "--detach", desired); err != nil {
 		return fmt.Errorf("checkout pinned admin revision %s: %w", desired, err)
 	}
+	return requireCleanReleaseCheckout(ctx, opts.RepoDir)
+}
+
+func requireCleanReleaseCheckout(ctx context.Context, repoDir string) error {
+	status, err := commandOutput(ctx, repoDir, "git", "status", "--porcelain=v1", "--untracked-files=all")
+	if err != nil {
+		return fmt.Errorf("inspect pinned admin checkout: %w", err)
+	}
+	if status != "" {
+		return fmt.Errorf("pinned admin checkout contains local changes; refusing to converge an unqualified tree:\n%s", status)
+	}
 	return nil
 }
 
@@ -146,15 +174,21 @@ func persistInstalledState(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("read installed admin revision: %w", err)
 	}
-	if err := writeStateFile(opts.RevisionFile, revision+"\n"); err != nil {
-		return fmt.Errorf("persist installed admin revision: %w", err)
-	}
 	schema, err := os.ReadFile(opts.SchemaSource)
 	if err != nil {
 		return fmt.Errorf("read configuration schema version: %w", err)
 	}
-	if err := writeStateFile(opts.SchemaFile, strings.TrimSpace(string(schema))+"\n"); err != nil {
+	schemaVersion := strings.TrimSpace(string(schema))
+	if schemaVersion == "" {
+		return fmt.Errorf("configuration schema version in %s is empty", opts.SchemaSource)
+	}
+	if err := writeStateFile(opts.SchemaFile, schemaVersion+"\n"); err != nil {
 		return fmt.Errorf("persist configuration schema version: %w", err)
+	}
+	// Write the revision last: it is the marker that this exact checkout
+	// completed convergence with the already-persisted schema.
+	if err := writeStateFile(opts.RevisionFile, revision+"\n"); err != nil {
+		return fmt.Errorf("persist installed admin revision: %w", err)
 	}
 	return nil
 }

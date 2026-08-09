@@ -191,6 +191,47 @@ func TestVersionReportsPersistedReleaseState(t *testing.T) {
 	}
 }
 
+func TestVersionFailsWhenPersistedReleaseStateIsIncompleteOrMismatched(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		pin      string
+		revision string
+		missing  bool
+	}{
+		{name: "missing state", missing: true},
+		{name: "mismatched production revision", pin: strings.Repeat("a", 40), revision: strings.Repeat("b", 40)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfg := config.FromEnv()
+			cfg.ReleaseNameFile = filepath.Join(dir, "release-name")
+			cfg.ReleaseRefFile = filepath.Join(dir, "release-ref")
+			cfg.GitRefFile = filepath.Join(dir, "git-ref")
+			cfg.SchemaVersionFile = filepath.Join(dir, "schema")
+			if !test.missing {
+				for path, value := range map[string]string{
+					cfg.ReleaseNameFile:   "v1.2.3\n",
+					cfg.ReleaseRefFile:    test.pin + "\n",
+					cfg.GitRefFile:        test.revision + "\n",
+					cfg.SchemaVersionFile: "1\n",
+				} {
+					if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			var out, errOut bytes.Buffer
+			a := app{out: &out, errOut: &errOut, cfg: cfg}
+			if code := a.run(context.Background(), []string{"version", "--json"}); code != 1 {
+				t.Fatalf("code = %d, want 1; stdout=%q stderr=%q", code, out.String(), errOut.String())
+			}
+			if !strings.Contains(errOut.String(), "version:") {
+				t.Fatalf("missing diagnostic: %q", errOut.String())
+			}
+		})
+	}
+}
+
 func TestSubcommandsExist(t *testing.T) {
 	tests := [][]string{
 		{"backup", "list"},

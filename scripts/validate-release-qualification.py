@@ -122,11 +122,20 @@ def validate(path: Path, expected_commit: str) -> None:
     if len(bootstrap) != 2:
         raise ValueError("exactly two fresh-node bootstrap evidence entries are required")
     inventories = set()
+    bootstrap_nodes = set()
+    bootstrap_artifacts = set()
     for item in bootstrap:
+        node = require(item, "node")
+        if node in bootstrap_nodes:
+            raise ValueError("fresh-node bootstrap evidence must use two distinct nodes")
+        bootstrap_nodes.add(node)
         if item.get("commit") != commit or item.get("result") != "passed":
             raise ValueError("bootstrap evidence must pass for the exact release commit")
         artifact = require(item, "artifact")
         require_https(artifact, "evidence.bootstrap.artifact")
+        if artifact in bootstrap_artifacts:
+            raise ValueError("fresh-node bootstrap evidence must use two distinct artifacts")
+        bootstrap_artifacts.add(artifact)
         inventory = require(item, "component_inventory_sha256")
         if not SHA256.fullmatch(inventory):
             raise ValueError("component inventory checksum must be SHA-256")

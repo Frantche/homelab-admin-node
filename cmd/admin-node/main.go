@@ -136,17 +136,27 @@ func (a app) runVersion(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	read := func(path string) string {
+	readErrors := make([]string, 0)
+	read := func(label, path string) string {
 		value, err := os.ReadFile(path)
 		if err != nil {
+			readErrors = append(readErrors, fmt.Sprintf("%s (%s): %v", label, path, err))
 			return "unknown"
 		}
-		return strings.TrimSpace(string(value))
+		trimmed := strings.TrimSpace(string(value))
+		if trimmed == "" {
+			readErrors = append(readErrors, fmt.Sprintf("%s (%s) is empty", label, path))
+			return "unknown"
+		}
+		return trimmed
 	}
-	release := read(a.cfg.ReleaseNameFile)
-	pin := read(a.cfg.ReleaseRefFile)
-	revision := read(a.cfg.GitRefFile)
-	schema := read(a.cfg.SchemaVersionFile)
+	release := read("release", a.cfg.ReleaseNameFile)
+	pin := read("release pin", a.cfg.ReleaseRefFile)
+	revision := read("installed revision", a.cfg.GitRefFile)
+	schema := read("configuration schema", a.cfg.SchemaVersionFile)
+	if len(readErrors) == 0 && pin != "main" && pin != revision {
+		readErrors = append(readErrors, fmt.Sprintf("release pin %s does not match installed revision %s", pin, revision))
+	}
 	if *jsonOutput {
 		payload := map[string]string{
 			"release": release, "release_ref": pin,
@@ -156,9 +166,15 @@ func (a app) runVersion(args []string) int {
 			fmt.Fprintf(a.errOut, "version: %v\n", err)
 			return 1
 		}
-		return 0
+	} else {
+		fmt.Fprintf(a.out, "release: %s\nrelease_ref: %s\nrevision: %s\nconfig_schema: %s\n", release, pin, revision, schema)
 	}
-	fmt.Fprintf(a.out, "release: %s\nrelease_ref: %s\nrevision: %s\nconfig_schema: %s\n", release, pin, revision, schema)
+	if len(readErrors) > 0 {
+		for _, message := range readErrors {
+			fmt.Fprintf(a.errOut, "version: %s\n", message)
+		}
+		return 1
+	}
 	return 0
 }
 
