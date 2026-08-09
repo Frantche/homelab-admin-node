@@ -17,6 +17,8 @@ var managedRuntimeKeys = map[string]struct{}{
 	"ADMIN_MODE_FILE":                  {},
 	"ADMIN_RELEASE_REF_FILE":           {},
 	"ADMIN_RELEASE_NAME_FILE":          {},
+	"ADMIN_RELEASE_CHANNEL_FILE":       {},
+	"ADMIN_QUALIFICATION_FILE":         {},
 	"ADMIN_GIT_REF_FILE":               {},
 	"ADMIN_CONFIG_SCHEMA_FILE":         {},
 	"ADMIN_PACKAGE_SNAPSHOT_FILE":      {},

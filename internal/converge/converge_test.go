@@ -289,6 +289,9 @@ func TestRunRestartsTargetBinaryBeforeAnsibleAfterReleaseChange(t *testing.T) {
 		PlaybookPath:            filepath.Join(t.TempDir(), "playbook-must-not-be-read"),
 		LockFile:                filepath.Join(t.TempDir(), "converge.lock"),
 		ReleaseRefFile:          refFile,
+		ReleaseNameFile:         filepath.Join(stateDir, "release-name"),
+		ReleaseChannelFile:      filepath.Join(stateDir, "release-channel"),
+		QualificationFile:       filepath.Join(stateDir, "qualification.json"),
 		RevisionFile:            filepath.Join(stateDir, "git-ref"),
 		SchemaSource:            filepath.Join(repo, "release/config-schema-version"),
 		SchemaFile:              filepath.Join(stateDir, "schema"),
@@ -299,6 +302,12 @@ func TestRunRestartsTargetBinaryBeforeAnsibleAfterReleaseChange(t *testing.T) {
 		PackageSnapshotSource:   filepath.Join(repo, "release/arch-package-snapshot"),
 		PackageSnapshotFile:     packageSnapshotFile,
 		PackageSnapshotModeFile: packageModeFile,
+	}
+	if err := os.WriteFile(opts.ReleaseNameFile, []byte(target+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(opts.ReleaseChannelFile, []byte("ci\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	err := Run(context.Background(), opts)
 	var restart *RestartRequiredError
@@ -383,6 +392,15 @@ func TestPrepareAnsibleCollectionsUsesRequirementsDigest(t *testing.T) {
 	if _, err := prepareAnsibleCollections(context.Background(), opts); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(first, "corruption"), []byte("unexpected\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareAnsibleCollections(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(first, "corruption")); !os.IsNotExist(err) {
+		t.Fatalf("corrupted cache content survived rebuild: %v", err)
+	}
 	if err := os.WriteFile(requirements, []byte("collections:\n- name: ansible.posix\n  version: 2.0.0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +412,7 @@ func TestPrepareAnsibleCollectionsUsesRequirementsDigest(t *testing.T) {
 		t.Fatal("different collection requirements reused the same prepared path")
 	}
 	logContent := strings.TrimSpace(readFile(t, logPath))
-	if got := strings.Count(logContent, "collection install --force"); got != 2 {
+	if got := strings.Count(logContent, "collection install --force"); got != 3 {
 		t.Fatalf("ansible-galaxy install count = %d, log=%q", got, logContent)
 	}
 }

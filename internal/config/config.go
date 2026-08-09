@@ -13,6 +13,8 @@ const (
 	DefaultModeFile                = "/etc/admin-node/mode"
 	DefaultReleaseRefFile          = "/etc/admin-node/release-ref"
 	DefaultReleaseNameFile         = "/etc/admin-node/release-name"
+	DefaultReleaseChannelFile      = "/etc/admin-node/release-channel"
+	DefaultQualificationFile       = "/etc/admin-node/qualification.json"
 	DefaultGitRefFile              = "/etc/admin-node/git-ref"
 	DefaultSchemaFile              = "/etc/admin-node/config-schema-version"
 	DefaultPackageSnapshotFile     = "/etc/admin-node/package-snapshot"
@@ -38,6 +40,8 @@ type Config struct {
 	ModeFile                   string
 	ReleaseRefFile             string
 	ReleaseNameFile            string
+	ReleaseChannelFile         string
+	QualificationFile          string
 	GitRefFile                 string
 	SchemaVersionFile          string
 	PackageSnapshotFile        string
@@ -224,6 +228,8 @@ func load(values map[string]string, loaded bool) (Config, error) {
 		ModeFile:                   resolve("ADMIN_MODE_FILE", DefaultModeFile),
 		ReleaseRefFile:             resolve("ADMIN_RELEASE_REF_FILE", DefaultReleaseRefFile),
 		ReleaseNameFile:            resolve("ADMIN_RELEASE_NAME_FILE", DefaultReleaseNameFile),
+		ReleaseChannelFile:         resolve("ADMIN_RELEASE_CHANNEL_FILE", DefaultReleaseChannelFile),
+		QualificationFile:          resolve("ADMIN_QUALIFICATION_FILE", DefaultQualificationFile),
 		GitRefFile:                 resolve("ADMIN_GIT_REF_FILE", DefaultGitRefFile),
 		SchemaVersionFile:          resolve("ADMIN_CONFIG_SCHEMA_FILE", DefaultSchemaFile),
 		PackageSnapshotFile:        resolve("ADMIN_PACKAGE_SNAPSHOT_FILE", DefaultPackageSnapshotFile),

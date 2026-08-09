@@ -27,15 +27,19 @@ def main() -> None:
         data = yaml.safe_load(f)
 
     bootcmd = data.get("bootcmd", [])
+    package_mode = "ci-live" if arch_snapshot == "live" else "qualified"
     replaced_snapshot = False
+    replaced_mode = False
     for index, command in enumerate(bootcmd):
         if isinstance(command, str) and "ARCH_PACKAGE_SNAPSHOT_REPLACE_ME" in command:
             bootcmd[index] = command.replace("ARCH_PACKAGE_SNAPSHOT_REPLACE_ME", arch_snapshot)
             replaced_snapshot = True
-    if not replaced_snapshot:
-        raise SystemExit("Arch package snapshot placeholder not found")
+        if isinstance(bootcmd[index], str) and "PACKAGE_SNAPSHOT_MODE_REPLACE_ME" in bootcmd[index]:
+            bootcmd[index] = bootcmd[index].replace("PACKAGE_SNAPSHOT_MODE_REPLACE_ME", package_mode)
+            replaced_mode = True
+    if not replaced_snapshot or not replaced_mode:
+        raise SystemExit("Arch package snapshot or mode placeholder not found")
 
-    package_mode = "ci-live" if arch_snapshot == "live" else "qualified"
     recorder_replaced = False
     mode_replaced = False
     for item in data.get("write_files", []):
@@ -55,8 +59,8 @@ def main() -> None:
     replaced_install = False
     new_runcmd = []
     for cmd in data.get("runcmd", []):
-        if isinstance(cmd, list) and len(cmd) == 3 and cmd[0] == "/usr/local/bin/admin-node-install-release":
-            new_runcmd.append([cmd[0], repo_url, repo_ref])
+        if isinstance(cmd, list) and len(cmd) >= 3 and cmd[0] == "/usr/local/bin/admin-node-install-release":
+            new_runcmd.append([cmd[0], repo_url, repo_ref, "", "", "ci"])
             replaced_install = True
         else:
             new_runcmd.append(cmd)

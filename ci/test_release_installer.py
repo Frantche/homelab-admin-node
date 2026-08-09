@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Exercise the cloud-init release selector against a local Git remote."""
 
+import hashlib
+import json
 import os
 import subprocess
 import tempfile
@@ -24,7 +26,12 @@ class ReleaseInstallerTest(unittest.TestCase):
         self.git("-C", str(source), "config", "user.name", "CI")
         (source / "release").mkdir()
         (source / "release/config-schema-version").write_text("1\n", encoding="utf-8")
-        self.git("-C", str(source), "add", "release/config-schema-version")
+        (source / "scripts").mkdir()
+        (source / "scripts/verify-installed-release.py").write_text(
+            (ROOT / "scripts/verify-installed-release.py").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        self.git("-C", str(source), "add", "release/config-schema-version", "scripts/verify-installed-release.py")
         self.git("-C", str(source), "commit", "-m", "initial")
         self.commit = self.output("-C", str(source), "rev-parse", "HEAD")
         self.git("-C", str(source), "tag", "-a", "v1.2.3", "-m", "qualified")
@@ -45,11 +52,74 @@ class ReleaseInstallerTest(unittest.TestCase):
         self.installer.write_text(content, encoding="utf-8")
         self.installer.chmod(0o755)
 
-    def run_installer(self, release_ref: str, checkout: str) -> subprocess.CompletedProcess:
-        env = os.environ.copy()
+        self.qualification = self.root / "qualification.json"
+        self.qualification.write_text(
+            json.dumps({"release": {"tag": "v1.2.3", "commit": self.commit}}),
+            encoding="utf-8",
+        )
+        self.qualification_sha256 = hashlib.sha256(self.qualification.read_bytes()).hexdigest()
+        self.release_metadata = self.root / "release-metadata.json"
+        self.release_metadata.write_text(
+            json.dumps(
+                {
+                    "tag_name": "v1.2.3",
+                    "draft": False,
+                    "prerelease": False,
+                    "author": {"login": "github-actions[bot]"},
+                    "assets": [
+                        {
+                            "name": "qualification.json",
+                            "state": "uploaded",
+                            "digest": "sha256:" + self.qualification_sha256,
+                            "uploader": {"login": "github-actions[bot]"},
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        fake_curl = bin_dir / "curl"
+        fake_curl.write_text(
+            "#!/usr/bin/env bash\nset -euo pipefail\n"
+            "output=\nurl=\nwhile (( $# )); do\n"
+            "  if [[ \"$1\" == --output ]]; then output=\"$2\"; shift 2\n"
+            "  elif [[ \"$1\" == https://* ]]; then url=\"$1\"; shift\n"
+            "  else shift; fi\n"
+            "done\n"
+            "if [[ \"$url\" == https://api.github.com/* ]]; then\n"
+            "  cp \"$RELEASE_METADATA_TEST_SOURCE\" \"$output\"\n"
+            "else\n"
+            "  cp \"$QUALIFICATION_TEST_SOURCE\" \"$output\"\n"
+            "fi\n",
+            encoding="utf-8",
+        )
+        fake_curl.chmod(0o755)
+        self.install_env = os.environ.copy()
+        self.install_env["PATH"] = str(bin_dir) + os.pathsep + self.install_env["PATH"]
+        self.install_env["QUALIFICATION_TEST_SOURCE"] = str(self.qualification)
+        self.install_env["RELEASE_METADATA_TEST_SOURCE"] = str(self.release_metadata)
+        self.install_env["GIT_CONFIG_COUNT"] = "1"
+        self.install_env["GIT_CONFIG_KEY_0"] = "url.file://" + str(self.remote) + ".insteadOf"
+        self.install_env["GIT_CONFIG_VALUE_0"] = "https://github.com/example/repo.git"
+
+    def run_installer(
+        self, release_ref: str, checkout: str, channel: str = "production"
+    ) -> subprocess.CompletedProcess:
+        env = self.install_env.copy()
         env["REPO_DIR"] = str(self.root / checkout)
+        extra = []
+        if release_ref.startswith("v"):
+            extra = [
+                "https://github.com/example/repo/releases/download/v1.2.3/qualification.json",
+                self.qualification_sha256,
+                channel,
+            ]
+        elif channel == "ci":
+            extra = ["", "", channel]
         return subprocess.run(
-            [str(self.installer), str(self.remote), release_ref],
+            [str(self.installer), "https://github.com/example/repo.git", release_ref, *extra],
             check=False,
             capture_output=True,
             text=True,
@@ -80,6 +150,30 @@ class ReleaseInstallerTest(unittest.TestCase):
         branch = self.run_installer("feature", "branch-checkout")
         self.assertNotEqual(branch.returncode, 0)
         self.assertIn("release ref must be", branch.stderr)
+
+    def test_rejects_direct_commit_outside_explicit_ci_channel(self) -> None:
+        production = self.run_installer(self.commit, "sha-production")
+        self.assertNotEqual(production.returncode, 0)
+        self.assertIn("reserved for the explicit CI channel", production.stderr)
+
+        ci = self.run_installer(self.commit, "sha-ci", channel="ci")
+        self.assertEqual(ci.returncode, 0, ci.stderr)
+
+    def test_rejects_qualification_checksum_mismatch(self) -> None:
+        original = self.qualification_sha256
+        self.qualification_sha256 = "0" * 64
+        self.addCleanup(setattr, self, "qualification_sha256", original)
+        result = self.run_installer("v1.2.3", "bad-qualification")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("did NOT match", result.stderr)
+
+    def test_rejects_release_not_published_by_promotion_bot(self) -> None:
+        metadata = json.loads(self.release_metadata.read_text(encoding="utf-8"))
+        metadata["author"]["login"] = "manual-user"
+        self.release_metadata.write_text(json.dumps(metadata), encoding="utf-8")
+        result = self.run_installer("v1.2.3", "manual-release")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("trusted promotion bot", result.stderr)
 
     def test_main_rerun_does_not_discard_local_commits(self) -> None:
         first = self.run_installer("main", "main-checkout")
@@ -124,7 +218,10 @@ class ReleaseInstallerTest(unittest.TestCase):
         data = yaml.safe_load((rendered / "user-data").read_text(encoding="utf-8"))
         bootcmd = "\n".join(data["bootcmd"])
         self.assertIn("snapshot='2026/08/08'", bootcmd)
+        self.assertIn("snapshot_mode='qualified'", bootcmd)
+        self.assertNotIn("cat /etc/admin-node/package-snapshot-mode", bootcmd)
         self.assertNotIn("ARCH_PACKAGE_SNAPSHOT_REPLACE_ME", bootcmd)
+        self.assertNotIn("PACKAGE_SNAPSHOT_MODE_REPLACE_ME", bootcmd)
         rendered_files = {item["path"]: item for item in data["write_files"]}
         self.assertEqual(
             rendered_files["/etc/admin-node/package-snapshot-mode"]["content"].strip(),
@@ -186,6 +283,7 @@ class ReleaseInstallerTest(unittest.TestCase):
             rendered_files["/etc/admin-node/package-snapshot-mode"]["content"].strip(),
             "ci-live",
         )
+        self.assertIn("snapshot_mode='ci-live'", "\n".join(data["bootcmd"]))
 
     @staticmethod
     def git(*args: str) -> None:

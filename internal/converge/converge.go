@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/Frantche/homelab-admin-node/internal/releasequal"
 )
 
 type Options struct {
@@ -18,8 +20,12 @@ type Options struct {
 	PlaybookPath            string
 	LockFile                string
 	SkipGitPull             bool
+	AdminCheckoutAligned    bool
 	ExtraArgs               []string
 	ReleaseRefFile          string
+	ReleaseNameFile         string
+	ReleaseChannelFile      string
+	QualificationFile       string
 	RevisionFile            string
 	SchemaSource            string
 	SchemaFile              string
@@ -68,7 +74,10 @@ func Run(ctx context.Context, opts Options) error {
 	if stat, err := os.Stat(opts.RepoDir + "/.git"); err != nil || !stat.IsDir() {
 		return fmt.Errorf("git repository not found in %s", opts.RepoDir)
 	}
-	if err := updateAdminRepository(ctx, opts, !opts.SkipGitPull); err != nil {
+	if err := updateAdminRepository(ctx, opts, !opts.SkipGitPull && !opts.AdminCheckoutAligned); err != nil {
+		return err
+	}
+	if err := validateReleaseSelection(opts); err != nil {
 		return err
 	}
 	if _, err := readSchemaVersion(opts.SchemaSource); err != nil {
@@ -99,7 +108,7 @@ func Run(ctx context.Context, opts Options) error {
 			}
 		}
 	} else {
-		fmt.Println("[admin-converge] skipping inventory git pull; admin release pin was verified locally")
+		fmt.Println("[admin-converge] skipping inventory git pull by explicit operator request")
 	}
 	if _, err := os.Stat(opts.PlaybookPath); err != nil {
 		return fmt.Errorf("playbook not found: %s", opts.PlaybookPath)
@@ -126,6 +135,9 @@ func validateOptions(opts Options) error {
 	required := map[string]string{
 		"repository":               opts.RepoDir,
 		"release pin":              opts.ReleaseRefFile,
+		"release name":             opts.ReleaseNameFile,
+		"release channel":          opts.ReleaseChannelFile,
+		"qualification manifest":   opts.QualificationFile,
 		"revision state":           opts.RevisionFile,
 		"schema source":            opts.SchemaSource,
 		"schema state":             opts.SchemaFile,
@@ -141,6 +153,36 @@ func validateOptions(opts Options) error {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%s path is required for fail-closed convergence", label)
 		}
+	}
+	return nil
+}
+
+func validateReleaseSelection(opts Options) error {
+	read := func(label, path string) (string, error) {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return "", fmt.Errorf("read %s %s: %w", label, path, err)
+		}
+		value := strings.TrimSpace(string(content))
+		if value == "" {
+			return "", fmt.Errorf("%s %s is empty", label, path)
+		}
+		return value, nil
+	}
+	name, err := read("release name", opts.ReleaseNameFile)
+	if err != nil {
+		return err
+	}
+	pin, err := read("release pin", opts.ReleaseRefFile)
+	if err != nil {
+		return err
+	}
+	channel, err := read("release channel", opts.ReleaseChannelFile)
+	if err != nil {
+		return err
+	}
+	if err := releasequal.Verify(opts.RepoDir, name, pin, channel, opts.QualificationFile); err != nil {
+		return fmt.Errorf("verify selected release qualification: %w", err)
 	}
 	return nil
 }
@@ -210,20 +252,91 @@ func prepareAnsibleCollections(ctx context.Context, opts Options) (string, error
 	digest := fmt.Sprintf("%x", sha256.Sum256(requirements))
 	target := filepath.Join(opts.CollectionsRoot, digest)
 	marker := filepath.Join(target, ".complete")
-	if content, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(content)) == digest {
-		fmt.Printf("[admin-converge] Ansible collections already prepared for %s\n", digest)
-		return target, nil
+	if content, err := os.ReadFile(marker); err == nil {
+		fields := strings.Fields(string(content))
+		if len(fields) == 2 && fields[0] == digest {
+			installedDigest, digestErr := collectionTreeDigest(target)
+			if digestErr == nil && installedDigest == fields[1] {
+				fmt.Printf("[admin-converge] verified cached Ansible collections for %s\n", digest)
+				return target, nil
+			}
+		}
 	}
-	if err := os.MkdirAll(target, 0o755); err != nil {
-		return "", fmt.Errorf("create Ansible collections directory: %w", err)
+	staging := fmt.Sprintf("%s.rebuild-%d", target, os.Getpid())
+	if err := removeCollectionsPath(opts.CollectionsRoot, staging); err != nil {
+		return "", err
 	}
-	if err := run(ctx, "", "ansible-galaxy", "collection", "install", "--force", "-r", opts.RequirementsPath, "-p", target); err != nil {
+	if err := os.MkdirAll(staging, 0o755); err != nil {
+		return "", fmt.Errorf("create Ansible collections staging directory: %w", err)
+	}
+	if err := run(ctx, "", "ansible-galaxy", "collection", "install", "--force", "-r", opts.RequirementsPath, "-p", staging); err != nil {
 		return "", fmt.Errorf("install exact Ansible collections for selected release: %w", err)
 	}
-	if err := writeStateFile(marker, digest+"\n"); err != nil {
+	installedDigest, err := collectionTreeDigest(staging)
+	if err != nil {
+		return "", fmt.Errorf("hash installed Ansible collections: %w", err)
+	}
+	if err := writeStateFile(filepath.Join(staging, ".complete"), digest+" "+installedDigest+"\n"); err != nil {
 		return "", fmt.Errorf("mark Ansible collections prepared: %w", err)
 	}
+	if err := removeCollectionsPath(opts.CollectionsRoot, target); err != nil {
+		return "", err
+	}
+	if err := os.Rename(staging, target); err != nil {
+		return "", fmt.Errorf("activate verified Ansible collections: %w", err)
+	}
 	return target, nil
+}
+
+func collectionTreeDigest(root string) (string, error) {
+	hasher := sha256.New()
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if relative == "." || relative == ".complete" {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(hasher, "%s\x00%o\x00", filepath.ToSlash(relative), info.Mode())
+		if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			hasher.Write([]byte(target))
+		} else if info.Mode().IsRegular() {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			hasher.Write(content)
+		}
+		hasher.Write([]byte{0})
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", hasher.Sum(nil)), nil
+}
+
+func removeCollectionsPath(root, target string) error {
+	relative, err := filepath.Rel(filepath.Clean(root), filepath.Clean(target))
+	if err != nil || relative == "." || relative == "" || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+		return fmt.Errorf("refusing to remove unsafe Ansible collections path %s below %s", target, root)
+	}
+	if err := os.RemoveAll(target); err != nil {
+		return fmt.Errorf("remove stale Ansible collections path %s: %w", target, err)
+	}
+	return nil
 }
 
 func updateAdminRepository(ctx context.Context, opts Options, allowUpdate bool) error {

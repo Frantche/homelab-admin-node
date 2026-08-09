@@ -632,8 +632,16 @@ jobs:
           jq -n \
             --arg tested_commit "$CANDIDATE_SHA" \
             --arg variant "${{ matrix.mode }}" \
+            --arg workflow_path ".github/workflows/bootstrap-user-journey.yml" \
+            --arg workflow_source_sha "$GITHUB_SHA" \
+            --arg workflow_artifact_name "disaster-recovery-evidence-${{ matrix.mode }}" \
+            --argjson workflow_run_id "$GITHUB_RUN_ID" \
             --slurpfile backup_manifest "$manifest" \
-            '{schema_version: 1, tested_commit: $tested_commit, variant: $variant,
+            '{schema_version: 1, kind: "disaster_recovery", commit: $tested_commit,
+              result: "passed", tested_commit: $tested_commit, variant: $variant,
+              workflow_run_id: $workflow_run_id, workflow_path: $workflow_path,
+              workflow_source_sha: $workflow_source_sha,
+              workflow_artifact_name: $workflow_artifact_name,
               backup_manifest: $backup_manifest[0],
               restore_validation: {status: "passed", sentinels: "passed", rotated_secrets: "passed", service_validations: "passed"}}' \
             > ".ci/artifacts/disaster-recovery/evidence-${{ matrix.mode }}.json"
@@ -708,6 +716,7 @@ jobs:
           curl --fail --location --proto '=https' --tlsv1.2 \
             --output "$manifest" "$QUALIFICATION_MANIFEST_URL"
           printf '%s  %s\n' "$QUALIFICATION_MANIFEST_SHA256" "$manifest" | sha256sum --check --strict
+          manifest_digest="$(sha256sum "$manifest" | awk '{print $1}')"
           tag_exists=false
           if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
             remote_commit="$(git ls-remote origin "refs/tags/$RELEASE_TAG^{}" | awk 'NR == 1 {print $1}')"
@@ -725,9 +734,6 @@ jobs:
           (cd "$candidate_dir" && python3 "$GITHUB_WORKSPACE/scripts/validate-release-qualification.py" \
             "$manifest" --commit HEAD --tag "$RELEASE_TAG" \
             --trusted-evidence-prefix "https://github.com/$GITHUB_REPOSITORY/")
-          if [[ "$tag_exists" == "false" ]]; then
-            git push origin "refs/tags/$RELEASE_TAG"
-          fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             existing_dir="$RUNNER_TEMP/existing-release"
             mkdir -p "$existing_dir"
@@ -735,6 +741,14 @@ jobs:
             cmp "$manifest" "$existing_dir/qualification.json"
           else
             gh release create "$RELEASE_TAG" "$manifest" \
+              --draft \
+              --target "$CANDIDATE_SHA" \
               --title "$RELEASE_TAG" \
-              --notes "Qualified release for $CANDIDATE_SHA. Validation and DR evidence: workflow run $GITHUB_RUN_ID."
+              --notes "Qualified release for $CANDIDATE_SHA. qualification.json SHA-256: $manifest_digest. Validation and DR evidence: workflow run $GITHUB_RUN_ID."
+          fi
+          if [[ "$tag_exists" == "false" ]]; then
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
+          if [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == true ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false
           fi

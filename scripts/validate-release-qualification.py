@@ -4,9 +4,12 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
+import zipfile
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -23,6 +26,7 @@ IMAGE_LINE = re.compile(r"^\s*image:\s*[\"']?([^\"'\s]+)", re.MULTILINE)
 DIGEST_IMAGE = re.compile(r"[a-zA-Z0-9./_-]+:[^\"'\s]+@sha256:[0-9a-f]{64}")
 DEFAULT_TRUSTED_EVIDENCE_PREFIX = "https://github.com/Frantche/homelab-admin-node/"
 MAX_EVIDENCE_BYTES = 2 * 1024 * 1024
+MAX_ACTION_ARTIFACT_BYTES = 100 * 1024 * 1024
 
 
 def git_revision(ref: str) -> str:
@@ -65,7 +69,11 @@ def download_verified(
     capture: bool = False,
     max_bytes: int | None = None,
 ) -> bytes | None:
-    request = Request(url, headers={"User-Agent": "homelab-release-qualification/1"})
+    headers = {"User-Agent": "homelab-release-qualification/1"}
+    if token := os.environ.get("GITHUB_TOKEN"):
+        headers["Authorization"] = f"Bearer {token}"
+        headers["X-GitHub-Api-Version"] = "2022-11-28"
+    request = Request(url, headers=headers)
     digest = hashlib.sha256()
     collected = bytearray() if capture else None
     size = 0
@@ -83,6 +91,142 @@ def download_verified(
     if actual != expected_sha256:
         raise ValueError(f"{label} checksum {actual} does not match manifest {expected_sha256}")
     return bytes(collected) if collected is not None else None
+
+
+def download_json(url: str, label: str) -> dict:
+    request = Request(
+        url,
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "homelab-release-qualification/1"},
+    )
+    if token := os.environ.get("GITHUB_TOKEN"):
+        request.add_header("Authorization", f"Bearer {token}")
+        request.add_header("X-GitHub-Api-Version", "2022-11-28")
+    with urlopen(request, timeout=120) as response:
+        require_https(response.geturl(), f"{label} redirected URL")
+        content = response.read(MAX_EVIDENCE_BYTES + 1)
+    if len(content) > MAX_EVIDENCE_BYTES:
+        raise ValueError(f"{label} exceeds the {MAX_EVIDENCE_BYTES}-byte verification limit")
+    value = json.loads(content)
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must contain one JSON object")
+    return value
+
+
+def download_bytes(url: str, label: str, max_bytes: int) -> bytes:
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "homelab-release-qualification/1"}
+    if token := os.environ.get("GITHUB_TOKEN"):
+        headers["Authorization"] = f"Bearer {token}"
+        headers["X-GitHub-Api-Version"] = "2022-11-28"
+    request = Request(url, headers=headers)
+    with urlopen(request, timeout=120) as response:
+        require_https(response.geturl(), f"{label} redirected URL")
+        content = response.read(max_bytes + 1)
+    if len(content) > max_bytes:
+        raise ValueError(f"{label} exceeds the {max_bytes}-byte verification limit")
+    return content
+
+
+def workflow_api_prefix(trusted_prefix: str) -> str:
+    parsed = urlparse(trusted_prefix)
+    if parsed.hostname == "github.com":
+        repository = parsed.path.strip("/")
+        if repository.count("/") != 1:
+            raise ValueError("trusted GitHub prefix must identify exactly one repository")
+        return f"https://api.github.com/repos/{repository}/actions/runs/"
+    return trusted_prefix + "actions/runs/"
+
+
+def artifact_api_prefix(trusted_prefix: str) -> str:
+    parsed = urlparse(trusted_prefix)
+    if parsed.hostname == "github.com":
+        repository = parsed.path.strip("/")
+        return f"https://api.github.com/repos/{repository}/actions/artifacts/"
+    return trusted_prefix + "actions/artifacts/"
+
+
+def require_provenance(entry: dict) -> None:
+    for field in (
+        "workflow_run_id",
+        "workflow_run_api",
+        "workflow_path",
+        "workflow_source_sha",
+        "workflow_artifact_id",
+        "workflow_artifact_api",
+        "workflow_artifact_name",
+    ):
+        require(entry, field)
+    if not COMMIT.fullmatch(entry["workflow_source_sha"]):
+        raise ValueError("evidence workflow_source_sha must be a full Git commit")
+    for field in ("workflow_run_id", "workflow_artifact_id"):
+        if not isinstance(entry[field], int) or entry[field] <= 0:
+            raise ValueError(f"evidence {field} must be a positive integer")
+    require_https(entry["workflow_run_api"], "evidence.workflow_run_api")
+    require_https(entry["workflow_artifact_api"], "evidence.workflow_artifact_api")
+
+
+def verify_workflow_run(entry: dict, trusted_prefix: str) -> None:
+    run_id = require(entry, "workflow_run_id")
+    if not isinstance(run_id, int) or run_id <= 0:
+        raise ValueError("evidence workflow_run_id must be a positive integer")
+    workflow_path = require(entry, "workflow_path")
+    if workflow_path != ".github/workflows/bootstrap-user-journey.yml":
+        raise ValueError("evidence must come from the trusted qualification workflow")
+    run_api = require(entry, "workflow_run_api")
+    expected_url = workflow_api_prefix(trusted_prefix) + str(run_id)
+    if run_api != expected_url:
+        raise ValueError(f"evidence workflow run API must be {expected_url}")
+    run = download_json(run_api, "GitHub Actions workflow run")
+    if (
+        run.get("id") != run_id
+        or run.get("head_sha") != entry["workflow_source_sha"]
+        or run.get("conclusion") != "success"
+        or run.get("path") != workflow_path
+        or run.get("event") != "workflow_dispatch"
+    ):
+        raise ValueError("evidence workflow run identity, commit, event, path, or conclusion is invalid")
+    source_check = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", entry["workflow_source_sha"], "origin/main"],
+        check=False,
+        capture_output=True,
+    )
+    if source_check.returncode != 0:
+        raise ValueError("evidence workflow source is not from trusted main history")
+
+
+def verify_workflow_artifact(entry: dict, trusted_prefix: str, required_digests: set[str]) -> None:
+    artifact_id = entry["workflow_artifact_id"]
+    artifact_api = entry["workflow_artifact_api"]
+    expected_api = artifact_api_prefix(trusted_prefix) + str(artifact_id)
+    if artifact_api != expected_api:
+        raise ValueError(f"evidence workflow artifact API must be {expected_api}")
+    metadata = download_json(artifact_api, "GitHub Actions artifact metadata")
+    archive_url = expected_api + "/zip"
+    workflow_run = metadata.get("workflow_run")
+    if (
+        metadata.get("id") != artifact_id
+        or metadata.get("name") != entry["workflow_artifact_name"]
+        or metadata.get("expired") is not False
+        or metadata.get("archive_download_url") != archive_url
+        or not isinstance(workflow_run, dict)
+        or workflow_run.get("id") != entry["workflow_run_id"]
+        or workflow_run.get("head_sha") != entry["workflow_source_sha"]
+    ):
+        raise ValueError("evidence GitHub Actions artifact identity or workflow binding is invalid")
+    archive = download_bytes(archive_url, "GitHub Actions artifact archive", MAX_ACTION_ARTIFACT_BYTES)
+    found: set[str] = set()
+    try:
+        with zipfile.ZipFile(BytesIO(archive)) as bundle:
+            members = [item for item in bundle.infolist() if not item.is_dir()]
+            if len(members) > 100 or sum(item.file_size for item in members) > 10 * 1024 * 1024:
+                raise ValueError("GitHub Actions evidence archive is unexpectedly large")
+            for member in members:
+                if member.file_size <= MAX_EVIDENCE_BYTES:
+                    found.add(hashlib.sha256(bundle.read(member)).hexdigest())
+    except zipfile.BadZipFile as exc:
+        raise ValueError("GitHub Actions evidence artifact is not a valid ZIP archive") from exc
+    missing = required_digests - found
+    if missing:
+        raise ValueError("staged evidence bytes are not present in the authenticated workflow artifact")
 
 
 def verify_evidence_artifact(
@@ -113,6 +257,16 @@ def verify_evidence_artifact(
     for name in claim_names:
         if claims.get(name) != entry.get(name):
             raise ValueError(f"{kind} evidence artifact claim {name} does not match manifest")
+    verify_workflow_run(entry, trusted_prefix)
+    required_digests = {checksum}
+    if "component_inventory_sha256" in entry:
+        inventory_artifact = require(entry, "component_inventory_artifact")
+        if not inventory_artifact.startswith(trusted_prefix):
+            raise ValueError(f"{kind} component inventory must be hosted below {trusted_prefix}")
+        inventory_checksum = require(entry, "component_inventory_sha256")
+        download_verified(inventory_artifact, inventory_checksum, f"{kind} component inventory")
+        required_digests.add(inventory_checksum)
+    verify_workflow_artifact(entry, trusted_prefix, required_digests)
 
 
 def validate(
@@ -243,6 +397,8 @@ def validate(
         if not SHA256.fullmatch(inventory):
             raise ValueError("component inventory checksum must be SHA-256")
         inventories.add(inventory)
+        require_https(require(item, "component_inventory_artifact"), "evidence.bootstrap.component_inventory_artifact")
+        require_provenance(item)
     if len(inventories) != 1:
         raise ValueError("fresh-node component inventories do not match")
 
@@ -262,6 +418,7 @@ def validate(
         artifact = require(dr, "artifact")
         require_https(artifact, "evidence.disaster_recovery.artifact")
         require_artifact_checksum(dr, "evidence.disaster_recovery")
+        require_provenance(dr)
     if dr_variants != {"standard", "offline-images"}:
         raise ValueError("disaster-recovery evidence must contain standard and offline-images")
     for name in ("upgrade", "rollback"):
@@ -271,6 +428,7 @@ def validate(
         artifact = require(evidence, "artifact")
         require_https(artifact, f"evidence.{name}.artifact")
         require_artifact_checksum(evidence, f"evidence.{name}")
+        require_provenance(evidence)
     from_release = require(document, "evidence.upgrade.from_release")
     if not RELEASE_TAG.fullmatch(from_release):
         raise ValueError("evidence.upgrade.from_release must use vMAJOR.MINOR.PATCH syntax")
@@ -281,6 +439,10 @@ def validate(
         raise ValueError("upgrade component inventory checksum must be SHA-256")
     if upgrade_inventory not in inventories:
         raise ValueError("upgraded-node component inventory does not match fresh nodes")
+    require_https(
+        require(document["evidence"]["upgrade"], "component_inventory_artifact"),
+        "evidence.upgrade.component_inventory_artifact",
+    )
 
     if verify_remote:
         require_https(trusted_evidence_prefix, "trusted evidence prefix")
@@ -303,26 +465,59 @@ def validate(
                 item,
                 "bootstrap",
                 trusted_evidence_prefix,
-                ("commit", "result", "node", "component_inventory_sha256"),
+                (
+                    "commit",
+                    "result",
+                    "node",
+                    "component_inventory_sha256",
+                    "workflow_run_id",
+                    "workflow_path",
+                    "workflow_source_sha",
+                    "workflow_artifact_name",
+                ),
             )
         for item in dr_entries:
             verify_evidence_artifact(
                 item,
                 "disaster_recovery",
                 trusted_evidence_prefix,
-                ("commit", "result", "variant"),
+                (
+                    "commit",
+                    "result",
+                    "variant",
+                    "workflow_run_id",
+                    "workflow_path",
+                    "workflow_source_sha",
+                    "workflow_artifact_name",
+                ),
             )
         verify_evidence_artifact(
             document["evidence"]["upgrade"],
             "upgrade",
             trusted_evidence_prefix,
-            ("commit", "result", "from_release", "component_inventory_sha256"),
+            (
+                "commit",
+                "result",
+                "from_release",
+                "component_inventory_sha256",
+                "workflow_run_id",
+                "workflow_path",
+                "workflow_source_sha",
+                "workflow_artifact_name",
+            ),
         )
         verify_evidence_artifact(
             document["evidence"]["rollback"],
             "rollback",
             trusted_evidence_prefix,
-            ("commit", "result"),
+            (
+                "commit",
+                "result",
+                "workflow_run_id",
+                "workflow_path",
+                "workflow_source_sha",
+                "workflow_artifact_name",
+            ),
         )
 
 

@@ -37,7 +37,7 @@ bootcmd:
   - |
       set -eu
       snapshot='ARCH_PACKAGE_SNAPSHOT_REPLACE_ME'
-      snapshot_mode="$(cat /etc/admin-node/package-snapshot-mode)"
+      snapshot_mode='PACKAGE_SNAPSHOT_MODE_REPLACE_ME'
       case "$snapshot" in
         live)
           if [ "$snapshot_mode" != ci-live ]; then
@@ -96,6 +96,9 @@ write_files:
       set -euo pipefail
       repo_url="${1:?repository URL is required}"
       requested_ref="${2:?release tag or commit is required}"
+      qualification_url="${3:-}"
+      qualification_sha256="${4:-}"
+      install_channel="${5:-production}"
       repo_dir="${REPO_DIR:-/opt/homelab-admin-node}"
       if [[ "$requested_ref" == "RELEASE_REF_REPLACE_ME" ]]; then
         echo "[cloud-init] replace RELEASE_REF_REPLACE_ME with an immutable release tag or full commit SHA" >&2
@@ -129,6 +132,10 @@ write_files:
         git -C "$repo_dir" checkout --detach "$resolved_ref"
         persisted_ref="$resolved_ref"
       elif [[ "$requested_ref" =~ ^[0-9a-f]{40}$ ]]; then
+        if [[ "$install_channel" != ci ]]; then
+          echo "[cloud-init] direct commit installation is reserved for the explicit CI channel; production requires a qualified tag" >&2
+          exit 2
+        fi
         git -C "$repo_dir" fetch origin "$requested_ref"
         resolved_ref="$(git -C "$repo_dir" rev-parse 'FETCH_HEAD^{commit}')"
         if [[ "$resolved_ref" != "$requested_ref" ]]; then
@@ -141,6 +148,40 @@ write_files:
         echo "[cloud-init] release ref must be main, an annotated vMAJOR.MINOR.PATCH tag, or a lowercase full commit SHA" >&2
         exit 2
       fi
+      qualification_state=/etc/admin-node/qualification.json
+      if [[ "$requested_ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        if [[ ! "$repo_url" =~ ^https://github.com/([^/]+)/([^/]+)$ ]]; then
+          echo "[cloud-init] production qualification requires an HTTPS github.com repository URL" >&2
+          exit 2
+        fi
+        repository_owner="${BASH_REMATCH[1]}"
+        repository_name="${BASH_REMATCH[2]%.git}"
+        expected_qualification_url="https://github.com/$repository_owner/$repository_name/releases/download/$requested_ref/qualification.json"
+        if [[ "$qualification_url" != "$expected_qualification_url" || ! "$qualification_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+          echo "[cloud-init] production tag requires $expected_qualification_url and its lowercase SHA-256" >&2
+          exit 2
+        fi
+        qualification_tmp="$(mktemp)"
+        release_metadata_tmp="$(mktemp)"
+        trap 'rm -f "$qualification_tmp" "$release_metadata_tmp"' EXIT
+        curl --fail --location --proto '=https' --tlsv1.2 \
+          --output "$release_metadata_tmp" \
+          "https://api.github.com/repos/$repository_owner/$repository_name/releases/tags/$requested_ref"
+        curl --fail --location --proto '=https' --tlsv1.2 --output "$qualification_tmp" "$qualification_url"
+        printf '%s  %s\n' "$qualification_sha256" "$qualification_tmp" | sha256sum --check --strict
+        (cd "$repo_dir" && python3 scripts/verify-installed-release.py \
+          "$qualification_tmp" --release-metadata "$release_metadata_tmp" \
+          --tag "$requested_ref" --commit "$resolved_ref" --manifest-sha256 "$qualification_sha256")
+        install -m 0644 "$qualification_tmp" "$qualification_state"
+      else
+        rm -f "$qualification_state"
+      fi
+      case "$requested_ref" in
+        main) release_channel=development ;;
+        v*) release_channel=production ;;
+        *) release_channel=ci ;;
+      esac
+      printf '%s\n' "$release_channel" > /etc/admin-node/release-channel
       printf '%s\n' "$requested_ref" > /etc/admin-node/release-name
       printf '%s\n' "$persisted_ref" > /etc/admin-node/release-ref
   - path: /usr/local/bin/admin-node-converge
@@ -195,7 +236,7 @@ write_files:
 runcmd:
   - [ mkdir, -p, /etc/admin-node ]
   - [ /usr/local/bin/admin-node-record-package-snapshot ]
-  - [ /usr/local/bin/admin-node-install-release, 'https://github.com/Frantche/homelab-admin-node.git', 'RELEASE_REF_REPLACE_ME' ]
+  - [ /usr/local/bin/admin-node-install-release, 'https://github.com/Frantche/homelab-admin-node.git', 'RELEASE_REF_REPLACE_ME', 'QUALIFICATION_MANIFEST_URL_REPLACE_ME', 'QUALIFICATION_MANIFEST_SHA256_REPLACE_ME' ]
   - [ systemctl, daemon-reload ]
   - [ systemctl, enable, --now, sshd ]
   - [ systemctl, enable, --now, docker ]

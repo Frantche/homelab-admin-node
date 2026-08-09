@@ -477,11 +477,17 @@ func prepareConvergedRelease(t *testing.T, root string, cfg *config.Config) {
 		t.Fatal(err)
 	}
 	cfg.ReleaseRefFile = filepath.Join(stateDir, "release-ref")
+	cfg.ReleaseNameFile = filepath.Join(stateDir, "release-name")
+	cfg.ReleaseChannelFile = filepath.Join(stateDir, "release-channel")
+	cfg.QualificationFile = filepath.Join(stateDir, "qualification.json")
 	cfg.GitRefFile = filepath.Join(stateDir, "git-ref")
-	for _, path := range []string{cfg.ReleaseRefFile, cfg.GitRefFile} {
+	for _, path := range []string{cfg.ReleaseRefFile, cfg.ReleaseNameFile, cfg.GitRefFile} {
 		if err := os.WriteFile(path, []byte(revision+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := os.WriteFile(cfg.ReleaseChannelFile, []byte("ci\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

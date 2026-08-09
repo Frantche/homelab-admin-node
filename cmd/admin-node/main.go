@@ -26,6 +26,7 @@ import (
 	"github.com/Frantche/homelab-admin-node/internal/mode"
 	"github.com/Frantche/homelab-admin-node/internal/openbao"
 	"github.com/Frantche/homelab-admin-node/internal/operation"
+	"github.com/Frantche/homelab-admin-node/internal/releasequal"
 	"github.com/Frantche/homelab-admin-node/internal/restore"
 	"github.com/Frantche/homelab-admin-node/internal/runner"
 	"github.com/Frantche/homelab-admin-node/internal/secret"
@@ -162,8 +163,14 @@ func (a app) runVersion(ctx context.Context, args []string) int {
 	schema := read("configuration schema", a.cfg.SchemaVersionFile)
 	packageSnapshot := read("installed package snapshot", a.cfg.PackageSnapshotFile)
 	packageSnapshotMode := read("package snapshot mode", a.cfg.PackageSnapshotModeFile)
-	if len(readErrors) == 0 && pin != "main" && pin != revision {
+	releaseChannel := read("release channel", a.cfg.ReleaseChannelFile)
+	if len(readErrors) == 0 && pin != "main" && pin != "refs/heads/main" && pin != revision {
 		readErrors = append(readErrors, fmt.Sprintf("release pin %s does not match installed revision %s", pin, revision))
+	}
+	if len(readErrors) == 0 {
+		if err := releasequal.Verify(a.cfg.RepoRoot, release, pin, releaseChannel, a.cfg.QualificationFile); err != nil {
+			readErrors = append(readErrors, err.Error())
+		}
 	}
 	if len(readErrors) == 0 {
 		headCmd := exec.CommandContext(ctx, "git", "-C", a.cfg.RepoRoot, "rev-parse", "HEAD")
@@ -354,6 +361,7 @@ func (a app) runConverge(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("converge", flag.ContinueOnError)
 	fs.SetOutput(a.errOut)
 	skipGitPull := fs.Bool("skip-git-pull", envBool("ADMIN_CONVERGE_SKIP_GIT_PULL"), "skip git pull before convergence")
+	adminCheckoutAligned := fs.Bool("admin-checkout-aligned", false, "reuse an already verified admin checkout while still updating inventory")
 	extraVars := fs.String("extra-vars", "", "extra ansible-playbook arguments")
 	if err := fs.Parse(rest); err != nil {
 		return 2
@@ -377,7 +385,9 @@ func (a app) runConverge(ctx context.Context, args []string) int {
 	playbook := getenv("PLAYBOOK_PATH", a.cfg.RepoRoot+"/ansible/site.yml")
 	inventory := getenv("INVENTORY_PATH", "/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini")
 	fmt.Fprintf(a.out, "[admin-converge] playbook=%s inventory=%s\n", playbook, inventory)
-	if err := a.executeConverge(ctx, a.convergeOptions(inventory, playbook, *skipGitPull, extraArgs)); err != nil {
+	convergeOpts := a.convergeOptions(inventory, playbook, *skipGitPull, extraArgs)
+	convergeOpts.AdminCheckoutAligned = *adminCheckoutAligned
+	if err := a.executeConverge(ctx, convergeOpts); err != nil {
 		var restart *converge.RestartRequiredError
 		if errors.As(err, &restart) {
 			unlock()
@@ -415,6 +425,9 @@ func (a app) convergeOptions(inventory, playbook string, skipGitPull bool, extra
 		SkipGitPull:             skipGitPull,
 		ExtraArgs:               extraArgs,
 		ReleaseRefFile:          a.cfg.ReleaseRefFile,
+		ReleaseNameFile:         a.cfg.ReleaseNameFile,
+		ReleaseChannelFile:      a.cfg.ReleaseChannelFile,
+		QualificationFile:       a.cfg.QualificationFile,
 		RevisionFile:            a.cfg.GitRefFile,
 		SchemaSource:            filepath.Join(a.cfg.RepoRoot, "release", "config-schema-version"),
 		SchemaFile:              a.cfg.SchemaVersionFile,
@@ -492,6 +505,18 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 			unlock()
 			operationReleased = true
 		}
+	}
+	reacquireOperation := func() error {
+		if !operationReleased {
+			return nil
+		}
+		reacquired, acquireErr := operation.AcquireWait(ctx, a.cfg.OperationLock, 30*time.Minute)
+		if acquireErr != nil {
+			return acquireErr
+		}
+		unlock = reacquired
+		operationReleased = false
+		return nil
 	}
 	defer releaseOperation()
 	if err := validateGiteaProcessRestoreInputs(a.cfg.GiteaStackPath, opts); err != nil {
@@ -593,7 +618,7 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 	}
 
 	if opts.RunConverge {
-		if err := a.runPostRestoreConvergence(ctx, opts, releaseOperation); err != nil {
+		if err := a.runPostRestoreConvergence(ctx, opts, releaseOperation, reacquireOperation); err != nil {
 			return err
 		}
 	}
@@ -606,7 +631,12 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 	return nil
 }
 
-func (a app) runPostRestoreConvergence(ctx context.Context, opts giteaProcessRestoreOptions, releaseOperation func()) error {
+func (a app) runPostRestoreConvergence(
+	ctx context.Context,
+	opts giteaProcessRestoreOptions,
+	releaseOperation func(),
+	reacquireOperation func() error,
+) error {
 	playbook := getenv("PLAYBOOK_PATH", a.cfg.RepoRoot+"/ansible/site.yml")
 	err := a.executeConverge(ctx, a.convergeOptions(opts.Inventory, playbook, opts.SkipGitPull, nil))
 	var restart *converge.RestartRequiredError
@@ -616,7 +646,15 @@ func (a app) runPostRestoreConvergence(ctx context.Context, opts giteaProcessRes
 			"INVENTORY_PATH=" + opts.Inventory,
 			"PLAYBOOK_PATH=" + playbook,
 		}
-		if execErr := a.execLoggedWithEnv(ctx, extraEnv, restart.BinaryPath, "converge", "run", "--skip-git-pull"); execErr != nil {
+		childArgs := []string{"converge", "run", "--admin-checkout-aligned"}
+		if opts.SkipGitPull {
+			childArgs = append(childArgs, "--skip-git-pull")
+		}
+		execErr := a.execLoggedWithEnv(ctx, extraEnv, restart.BinaryPath, childArgs...)
+		if lockErr := reacquireOperation(); lockErr != nil {
+			return fmt.Errorf("reacquire operation lock after selected release handoff: %w", lockErr)
+		}
+		if execErr != nil {
 			return fmt.Errorf("post-restore convergence with selected release binary: %w", execErr)
 		}
 		return nil

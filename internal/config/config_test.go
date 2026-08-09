@@ -146,6 +146,8 @@ ADMIN_BACKUP_ROOT=/managed/backups
 ADMIN_MODE_FILE=/managed/mode
 ADMIN_RELEASE_REF_FILE=/managed/release-ref
 ADMIN_RELEASE_NAME_FILE=/managed/release-name
+ADMIN_RELEASE_CHANNEL_FILE=/managed/release-channel
+ADMIN_QUALIFICATION_FILE=/managed/qualification.json
 ADMIN_GIT_REF_FILE=/managed/git-ref
 ADMIN_CONFIG_SCHEMA_FILE=/managed/config-schema
 ADMIN_RESTORE_ID_FILE=/managed/restore-id
@@ -198,7 +200,7 @@ HARBOR_ADMIN_PASSWORD="this deliberately unterminated secret is ignored
 	if cfg.RestoreIDFile != "/managed/restore-id" || cfg.OperationLock != "/managed/operation.lock" || cfg.SnapshotRoot != "/managed/snapshots" || cfg.GiteaStackPath != "/managed/gitea-stack" {
 		t.Fatalf("managed operation paths not loaded: %#v", cfg)
 	}
-	if cfg.ReleaseRefFile != "/managed/release-ref" || cfg.ReleaseNameFile != "/managed/release-name" || cfg.GitRefFile != "/managed/git-ref" || cfg.SchemaVersionFile != "/managed/config-schema" {
+	if cfg.ReleaseRefFile != "/managed/release-ref" || cfg.ReleaseNameFile != "/managed/release-name" || cfg.ReleaseChannelFile != "/managed/release-channel" || cfg.QualificationFile != "/managed/qualification.json" || cfg.GitRefFile != "/managed/git-ref" || cfg.SchemaVersionFile != "/managed/config-schema" {
 		t.Fatalf("managed release state paths not loaded: %#v", cfg)
 	}
 	if cfg.KeycloakDomain != "keycloak.deployed.test" || cfg.HarborDomain != "harbor.deployed.test" || cfg.GiteaDomain != "gitea.process.test" || cfg.TraefikDomain != "traefik.deployed.test" || cfg.OpenBaoDomain != "bao.deployed.test" {

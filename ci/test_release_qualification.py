@@ -8,6 +8,7 @@ import json
 import os
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -49,12 +50,23 @@ class ReleaseQualificationTest(unittest.TestCase):
         self.addCleanup(os.chdir, self.previous_cwd)
 
     def valid_manifest(self) -> dict:
+        run_id = 100
+
         def evidence(url: str) -> dict:
+            nonlocal run_id
+            run_id += 1
             return {
                 "commit": COMMIT,
                 "result": "passed",
                 "artifact": url,
                 "artifact_sha256": CHECKSUM,
+                "workflow_run_id": run_id,
+                "workflow_run_api": f"https://example.test/actions/runs/{run_id}",
+                "workflow_path": ".github/workflows/bootstrap-user-journey.yml",
+                "workflow_source_sha": "d" * 40,
+                "workflow_artifact_id": run_id + 1000,
+                "workflow_artifact_api": f"https://example.test/actions/artifacts/{run_id + 1000}",
+                "workflow_artifact_name": f"qualification-evidence-{run_id}",
             }
 
         return {
@@ -85,11 +97,13 @@ class ReleaseQualificationTest(unittest.TestCase):
                         **evidence("https://example.test/bootstrap-a"),
                         "node": "node-a",
                         "component_inventory_sha256": CHECKSUM,
+                        "component_inventory_artifact": "https://example.test/inventory-a.txt",
                     },
                     {
                         **evidence("https://example.test/bootstrap-b"),
                         "node": "node-b",
                         "component_inventory_sha256": CHECKSUM,
+                        "component_inventory_artifact": "https://example.test/inventory-b.txt",
                     },
                 ],
                 "disaster_recovery": [
@@ -100,6 +114,7 @@ class ReleaseQualificationTest(unittest.TestCase):
                     **evidence("https://example.test/upgrade"),
                     "from_release": "v1.2.2",
                     "component_inventory_sha256": CHECKSUM,
+                    "component_inventory_artifact": "https://example.test/inventory-upgrade.txt",
                 },
                 "rollback": evidence("https://example.test/rollback"),
             },
@@ -149,6 +164,11 @@ class ReleaseQualificationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "artifact_sha256"):
             self.validate()
 
+    def test_rejects_self_attestation_without_workflow_provenance(self) -> None:
+        del self.manifest["evidence"]["rollback"]["workflow_run_id"]
+        with self.assertRaisesRegex(ValueError, "workflow_run_id"):
+            self.validate()
+
     def test_rejects_moving_cloud_image(self) -> None:
         self.manifest["platform"]["arch_image_url"] = "https://geo.mirror.pkgbuild.com/images/latest/arch.qcow2"
         with self.assertRaisesRegex(ValueError, "dated"):
@@ -167,6 +187,7 @@ class ReleaseQualificationTest(unittest.TestCase):
     def test_remote_verification_checks_bytes_and_evidence_claims(self) -> None:
         image = b"qualified image"
         packages = b"ansible 2.20.0\npython 3.14.0\n"
+        component_inventory = b"qualified components\n"
         self.manifest["platform"]["arch_image_sha256"] = hashlib.sha256(image).hexdigest()
         self.manifest["platform"]["package_state_sha256"] = hashlib.sha256(packages).hexdigest()
         payloads = {
@@ -179,6 +200,20 @@ class ReleaseQualificationTest(unittest.TestCase):
             ("upgrade", self.manifest["evidence"]["upgrade"]),
             ("rollback", self.manifest["evidence"]["rollback"]),
         ]
+        for _kind, entry in evidence_entries:
+            payloads[entry["workflow_run_api"]] = json.dumps(
+                {
+                    "id": entry["workflow_run_id"],
+                    "head_sha": entry["workflow_source_sha"],
+                    "conclusion": "success",
+                    "path": entry["workflow_path"],
+                    "event": "workflow_dispatch",
+                }
+            ).encode()
+            if "component_inventory_sha256" in entry:
+                entry["component_inventory_sha256"] = hashlib.sha256(component_inventory).hexdigest()
+                payloads[entry["component_inventory_artifact"]] = component_inventory
+
         for kind, entry in evidence_entries:
             claims = {"kind": kind}
             for name in (
@@ -188,12 +223,36 @@ class ReleaseQualificationTest(unittest.TestCase):
                 "component_inventory_sha256",
                 "variant",
                 "from_release",
+                "workflow_run_id",
+                "workflow_path",
+                "workflow_source_sha",
+                "workflow_artifact_id",
+                "workflow_artifact_name",
             ):
                 if name in entry:
                     claims[name] = entry[name]
             payload = json.dumps(claims, sort_keys=True).encode()
             entry["artifact_sha256"] = hashlib.sha256(payload).hexdigest()
             payloads[entry["artifact"]] = payload
+            archive = io.BytesIO()
+            with zipfile.ZipFile(archive, "w") as bundle:
+                bundle.writestr("evidence.json", payload)
+                if "component_inventory_sha256" in entry:
+                    bundle.writestr("component-inventory.txt", component_inventory)
+            archive_url = entry["workflow_artifact_api"] + "/zip"
+            payloads[entry["workflow_artifact_api"]] = json.dumps(
+                {
+                    "id": entry["workflow_artifact_id"],
+                    "name": entry["workflow_artifact_name"],
+                    "expired": False,
+                    "archive_download_url": archive_url,
+                    "workflow_run": {
+                        "id": entry["workflow_run_id"],
+                        "head_sha": entry["workflow_source_sha"],
+                    },
+                }
+            ).encode()
+            payloads[archive_url] = archive.getvalue()
 
         class Response:
             def __init__(self, url: str, content: bytes):
@@ -223,7 +282,25 @@ class ReleaseQualificationTest(unittest.TestCase):
                 "check_output",
                 side_effect=lambda args, text=True: "tag\n" if args[1:3] == ["cat-file", "-t"] else COMMIT + "\n",
             ),
+            mock.patch.object(VALIDATOR.subprocess, "run", return_value=mock.Mock(returncode=0)),
             mock.patch.object(VALIDATOR, "urlopen", side_effect=open_request),
+        ):
+            VALIDATOR.validate(
+                self.path,
+                COMMIT,
+                verify_remote=True,
+                trusted_evidence_prefix="https://example.test/",
+            )
+
+        with (
+            mock.patch.object(
+                VALIDATOR.subprocess,
+                "check_output",
+                side_effect=lambda args, text=True: "tag\n" if args[1:3] == ["cat-file", "-t"] else COMMIT + "\n",
+            ),
+            mock.patch.object(VALIDATOR.subprocess, "run", return_value=mock.Mock(returncode=1)),
+            mock.patch.object(VALIDATOR, "urlopen", side_effect=open_request),
+            self.assertRaisesRegex(ValueError, "trusted main history"),
         ):
             VALIDATOR.validate(
                 self.path,
@@ -240,6 +317,7 @@ class ReleaseQualificationTest(unittest.TestCase):
                 "check_output",
                 side_effect=lambda args, text=True: "tag\n" if args[1:3] == ["cat-file", "-t"] else COMMIT + "\n",
             ),
+            mock.patch.object(VALIDATOR.subprocess, "run", return_value=mock.Mock(returncode=0)),
             mock.patch.object(VALIDATOR, "urlopen", side_effect=open_request),
             self.assertRaisesRegex(ValueError, "checksum"),
         ):

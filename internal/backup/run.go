@@ -19,6 +19,7 @@ import (
 	"github.com/Frantche/homelab-admin-node/internal/config"
 	"github.com/Frantche/homelab-admin-node/internal/mode"
 	"github.com/Frantche/homelab-admin-node/internal/operation"
+	"github.com/Frantche/homelab-admin-node/internal/releasequal"
 	"github.com/Frantche/homelab-admin-node/internal/stackscope"
 )
 
@@ -400,6 +401,17 @@ func convergedRevision(ctx context.Context, cfg config.Config) (string, error) {
 	installed, err := readState("installed revision", cfg.GitRefFile)
 	if err != nil {
 		return "", fmt.Errorf("refusing backup without a verified converged release: %w", err)
+	}
+	name, err := readState("release name", cfg.ReleaseNameFile)
+	if err != nil {
+		return "", fmt.Errorf("refusing backup without a verified release selection: %w", err)
+	}
+	channel, err := readState("release channel", cfg.ReleaseChannelFile)
+	if err != nil {
+		return "", fmt.Errorf("refusing backup without a verified release selection: %w", err)
+	}
+	if err := releasequal.Verify(cfg.RepoRoot, name, pin, channel, cfg.QualificationFile); err != nil {
+		return "", fmt.Errorf("refusing backup without a qualified release: %w", err)
 	}
 	head := repoRevision(ctx, cfg.RepoRoot)
 	if head == "" {

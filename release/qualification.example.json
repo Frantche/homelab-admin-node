@@ -10,7 +10,7 @@
     "arch_image_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "package_repository_snapshot": "2026/08/08",
     "package_strategy": "Full pacman upgrade qualified on 2026-08-08; package list attached to the release",
-    "package_state_artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/v1.0.0/pacman-Q.txt",
+    "package_state_artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/qualification-v1.0.0/pacman-Q.txt",
     "package_state_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },
   "dependencies": {
@@ -34,16 +34,32 @@
         "commit": "0123456789abcdef0123456789abcdef01234567",
         "result": "passed",
         "component_inventory_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/v1.0.0/bootstrap-a.json",
-        "artifact_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        "component_inventory_artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/qualification-v1.0.0/component-inventory-a.txt",
+        "artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/qualification-v1.0.0/bootstrap-a.json",
+        "artifact_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "workflow_run_id": 12345678901,
+        "workflow_run_api": "https://api.github.com/repos/Frantche/homelab-admin-node/actions/runs/12345678901",
+        "workflow_path": ".github/workflows/bootstrap-user-journey.yml",
+        "workflow_source_sha": "abcdef0123456789abcdef0123456789abcdef01",
+        "workflow_artifact_id": 22345678901,
+        "workflow_artifact_api": "https://api.github.com/repos/Frantche/homelab-admin-node/actions/artifacts/22345678901",
+        "workflow_artifact_name": "qualification-bootstrap-a"
       },
       {
         "node": "qualification-b",
         "commit": "0123456789abcdef0123456789abcdef01234567",
         "result": "passed",
         "component_inventory_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/v1.0.0/bootstrap-b.json",
-        "artifact_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        "component_inventory_artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/qualification-v1.0.0/component-inventory-b.txt",
+        "artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/qualification-v1.0.0/bootstrap-b.json",
+        "artifact_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "workflow_run_id": 12345678902,
+        "workflow_run_api": "https://api.github.com/repos/Frantche/homelab-admin-node/actions/runs/12345678902",
+        "workflow_path": ".github/workflows/bootstrap-user-journey.yml",
+        "workflow_source_sha": "abcdef0123456789abcdef0123456789abcdef01",
+        "workflow_artifact_id": 22345678902,
+        "workflow_artifact_api": "https://api.github.com/repos/Frantche/homelab-admin-node/actions/artifacts/22345678902",
+        "workflow_artifact_name": "qualification-bootstrap-b"
       }
     ],
     "disaster_recovery": [
@@ -51,15 +67,29 @@
         "variant": "standard",
         "commit": "0123456789abcdef0123456789abcdef01234567",
         "result": "passed",
-        "artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/v1.0.0/dr-standard.json",
-        "artifact_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        "artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/qualification-v1.0.0/dr-standard.json",
+        "artifact_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "workflow_run_id": 12345678903,
+        "workflow_run_api": "https://api.github.com/repos/Frantche/homelab-admin-node/actions/runs/12345678903",
+        "workflow_path": ".github/workflows/bootstrap-user-journey.yml",
+        "workflow_source_sha": "abcdef0123456789abcdef0123456789abcdef01",
+        "workflow_artifact_id": 22345678903,
+        "workflow_artifact_api": "https://api.github.com/repos/Frantche/homelab-admin-node/actions/artifacts/22345678903",
+        "workflow_artifact_name": "disaster-recovery-evidence-standard"
       },
       {
         "variant": "offline-images",
         "commit": "0123456789abcdef0123456789abcdef01234567",
         "result": "passed",
-        "artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/v1.0.0/dr-offline-images.json",
-        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        "artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/qualification-v1.0.0/dr-offline-images.json",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "workflow_run_id": 12345678904,
+        "workflow_run_api": "https://api.github.com/repos/Frantche/homelab-admin-node/actions/runs/12345678904",
+        "workflow_path": ".github/workflows/bootstrap-user-journey.yml",
+        "workflow_source_sha": "abcdef0123456789abcdef0123456789abcdef01",
+        "workflow_artifact_id": 22345678904,
+        "workflow_artifact_api": "https://api.github.com/repos/Frantche/homelab-admin-node/actions/artifacts/22345678904",
+        "workflow_artifact_name": "disaster-recovery-evidence-offline-images"
       }
     ],
     "upgrade": {
@@ -67,14 +97,29 @@
       "commit": "0123456789abcdef0123456789abcdef01234567",
       "result": "passed",
       "component_inventory_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/v1.0.0/upgrade.json",
-      "artifact_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      "component_inventory_artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/qualification-v1.0.0/component-inventory-upgrade.txt",
+      "artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/qualification-v1.0.0/upgrade.json",
+      "artifact_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "workflow_run_id": 12345678905,
+      "workflow_run_api": "https://api.github.com/repos/Frantche/homelab-admin-node/actions/runs/12345678905",
+      "workflow_path": ".github/workflows/bootstrap-user-journey.yml",
+      "workflow_source_sha": "abcdef0123456789abcdef0123456789abcdef01",
+      "workflow_artifact_id": 22345678905,
+      "workflow_artifact_api": "https://api.github.com/repos/Frantche/homelab-admin-node/actions/artifacts/22345678905",
+      "workflow_artifact_name": "qualification-upgrade"
     },
     "rollback": {
       "commit": "0123456789abcdef0123456789abcdef01234567",
       "result": "passed",
-      "artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/v1.0.0/rollback.json",
-      "artifact_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      "artifact": "https://github.com/Frantche/homelab-admin-node/releases/download/qualification-v1.0.0/rollback.json",
+      "artifact_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "workflow_run_id": 12345678906,
+      "workflow_run_api": "https://api.github.com/repos/Frantche/homelab-admin-node/actions/runs/12345678906",
+      "workflow_path": ".github/workflows/bootstrap-user-journey.yml",
+      "workflow_source_sha": "abcdef0123456789abcdef0123456789abcdef01",
+      "workflow_artifact_id": 22345678906,
+      "workflow_artifact_api": "https://api.github.com/repos/Frantche/homelab-admin-node/actions/artifacts/22345678906",
+      "workflow_artifact_name": "qualification-rollback"
     }
   }
 }

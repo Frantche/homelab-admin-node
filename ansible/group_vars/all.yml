@@ -4,6 +4,8 @@ admin_mode_file: "/etc/admin-node/mode"
 admin_git_ref_file: "/etc/admin-node/git-ref"
 admin_release_ref_file: "/etc/admin-node/release-ref"
 admin_release_name_file: "/etc/admin-node/release-name"
+admin_release_channel_file: "/etc/admin-node/release-channel"
+admin_qualification_file: "/etc/admin-node/qualification.json"
 admin_config_schema_file: "/etc/admin-node/config-schema-version"
 # Must be declared by the private config repository. An empty default prevents
 # an old, unmigrated repository from inheriting the release schema silently.

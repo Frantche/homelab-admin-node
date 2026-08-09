@@ -62,3 +62,12 @@ if grep -F 'pip install' <<<"$promotion_job" | grep -F 'candidate_dir' >/dev/nul
   echo "promotion job must not install candidate-controlled Python dependencies" >&2
   exit 1
 fi
+draft_line="$(grep -nF -- '--draft' <<<"$promotion_job" | head -n1 | cut -d: -f1)"
+# shellcheck disable=SC2016 # Match the literal workflow shell expression.
+push_line="$(grep -nF 'git push origin "refs/tags/$RELEASE_TAG"' <<<"$promotion_job" | head -n1 | cut -d: -f1)"
+# shellcheck disable=SC2016 # Match the literal workflow shell expression.
+publish_line="$(grep -nF 'gh release edit "$RELEASE_TAG" --draft=false' <<<"$promotion_job" | head -n1 | cut -d: -f1)"
+if [[ -z "$draft_line" || -z "$push_line" || -z "$publish_line" || "$draft_line" -ge "$push_line" || "$push_line" -ge "$publish_line" ]]; then
+  echo "promotion must stage a draft release before pushing the tag and publish it only afterwards" >&2
+  exit 1
+fi

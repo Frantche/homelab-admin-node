@@ -199,6 +199,7 @@ func TestPostRestoreConvergenceHandsOffToSelectedReleaseBinary(t *testing.T) {
 	cfg := config.FromEnv()
 	cfg.RepoRoot = dir
 	released := false
+	reacquired := false
 	a := app{
 		out:    &out,
 		errOut: &errOut,
@@ -208,20 +209,56 @@ func TestPostRestoreConvergenceHandsOffToSelectedReleaseBinary(t *testing.T) {
 		},
 	}
 	opts := giteaProcessRestoreOptions{Inventory: "/config/inventory.ini"}
-	if err := a.runPostRestoreConvergence(context.Background(), opts, func() { released = true }); err != nil {
+	if err := a.runPostRestoreConvergence(
+		context.Background(),
+		opts,
+		func() { released = true },
+		func() error { reacquired = true; return nil },
+	); err != nil {
 		t.Fatal(err)
 	}
 	if !released {
 		t.Fatal("operation lock was not released before selected binary handoff")
 	}
+	if !reacquired {
+		t.Fatal("operation lock was not reacquired after selected binary handoff")
+	}
 	logContent, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"converge run --skip-git-pull", "/config/inventory.ini", filepath.Join(dir, "ansible/site.yml")} {
+	for _, expected := range []string{"converge run --admin-checkout-aligned", "/config/inventory.ini", filepath.Join(dir, "ansible/site.yml")} {
 		if !strings.Contains(string(logContent), expected) {
 			t.Fatalf("selected release invocation %q does not contain %q", logContent, expected)
 		}
+	}
+	if strings.Contains(string(logContent), "--skip-git-pull") {
+		t.Fatalf("selected release invocation unexpectedly suppresses inventory update: %q", logContent)
+	}
+	opts.SkipGitPull = true
+	if err := a.runPostRestoreConvergence(
+		context.Background(),
+		opts,
+		func() {},
+		func() error { return nil },
+	); err != nil {
+		t.Fatal(err)
+	}
+	logContent, err = os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(logContent), "--admin-checkout-aligned --skip-git-pull") {
+		t.Fatalf("explicit offline restore policy was not preserved: %q", logContent)
+	}
+	lockErr := errors.New("simulated contention")
+	if err := a.runPostRestoreConvergence(
+		context.Background(),
+		opts,
+		func() {},
+		func() error { return lockErr },
+	); !errors.Is(err, lockErr) {
+		t.Fatalf("operation-lock reacquisition error = %v, want %v", err, lockErr)
 	}
 }
 
@@ -269,6 +306,7 @@ func TestVersionReportsPersistedReleaseState(t *testing.T) {
 		{"schema", "2\n"},
 		{"package-snapshot", "2026/08/08\n"},
 		{"package-snapshot-mode", "qualified\n"},
+		{"release-channel", "ci\n"},
 	}
 	for _, item := range paths {
 		if err := os.WriteFile(filepath.Join(dir, item.name), []byte(item.value), 0o644); err != nil {
@@ -283,6 +321,8 @@ func TestVersionReportsPersistedReleaseState(t *testing.T) {
 	cfg.SchemaVersionFile = filepath.Join(dir, "schema")
 	cfg.PackageSnapshotFile = filepath.Join(dir, "package-snapshot")
 	cfg.PackageSnapshotModeFile = filepath.Join(dir, "package-snapshot-mode")
+	cfg.ReleaseChannelFile = filepath.Join(dir, "release-channel")
+	cfg.QualificationFile = filepath.Join(dir, "qualification.json")
 	var out, errOut bytes.Buffer
 	a := app{out: &out, errOut: &errOut, cfg: cfg}
 
@@ -292,6 +332,34 @@ func TestVersionReportsPersistedReleaseState(t *testing.T) {
 	for _, expected := range []string{`"release":"` + revision + `"`, `"config_schema":"2"`} {
 		if !strings.Contains(out.String(), expected) {
 			t.Fatalf("version output %q does not contain %q", out.String(), expected)
+		}
+	}
+	if output, err := exec.Command("git", "-C", repo, "checkout", "main").CombinedOutput(); err != nil {
+		t.Fatalf("checkout main: %v: %s", err, output)
+	}
+	for path, value := range map[string]string{
+		cfg.ReleaseNameFile:    "main\n",
+		cfg.ReleaseRefFile:     "refs/heads/main\n",
+		cfg.ReleaseChannelFile: "development\n",
+	} {
+		if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	errOut.Reset()
+	if code := a.run(context.Background(), []string{"version"}); code != 0 {
+		t.Fatalf("refs/heads/main alias rejected: code=%d stderr=%q", code, errOut.String())
+	}
+	if output, err := exec.Command("git", "-C", repo, "checkout", "--detach").CombinedOutput(); err != nil {
+		t.Fatalf("restore detached checkout: %v: %s", err, output)
+	}
+	for path, value := range map[string]string{
+		cfg.ReleaseNameFile:    revision + "\n",
+		cfg.ReleaseRefFile:     revision + "\n",
+		cfg.ReleaseChannelFile: "ci\n",
+	} {
+		if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
+			t.Fatal(err)
 		}
 	}
 	if err := os.WriteFile(filepath.Join(repo, "unqualified-local-file"), []byte("drift\n"), 0o644); err != nil {
@@ -388,6 +456,8 @@ func TestVersionBindsReleaseTagToInstalledRevision(t *testing.T) {
 	cfg.SchemaVersionFile = filepath.Join(state, "schema")
 	cfg.PackageSnapshotFile = filepath.Join(state, "package-snapshot")
 	cfg.PackageSnapshotModeFile = filepath.Join(state, "package-snapshot-mode")
+	cfg.ReleaseChannelFile = filepath.Join(state, "release-channel")
+	cfg.QualificationFile = filepath.Join(state, "qualification.json")
 	for path, value := range map[string]string{
 		cfg.ReleaseNameFile:         "v1.2.3\n",
 		cfg.ReleaseRefFile:          revision + "\n",
@@ -395,6 +465,8 @@ func TestVersionBindsReleaseTagToInstalledRevision(t *testing.T) {
 		cfg.SchemaVersionFile:       "1\n",
 		cfg.PackageSnapshotFile:     "2026/08/08\n",
 		cfg.PackageSnapshotModeFile: "qualified\n",
+		cfg.ReleaseChannelFile:      "production\n",
+		cfg.QualificationFile:       `{"release":{"tag":"v1.2.3","commit":"` + revision + `"}}`,
 	} {
 		if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
 			t.Fatal(err)
