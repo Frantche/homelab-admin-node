@@ -126,18 +126,21 @@ func TestRunResticAllowsMissingBinaryInExplicitLocalOnlyMode(t *testing.T) {
 }
 
 func TestLoadResticConfigRejectsRequiredLocalOnlyRepository(t *testing.T) {
-	root := t.TempDir()
-	envFile := filepath.Join(root, "backup.env")
-	content := `BACKUP_REQUIRE_REMOTE_REPOSITORY=true
+	for _, repository := range []string{"/srv/admin/backups/restic", "backups/restic", "./backups/restic", "file:backups/restic"} {
+		t.Run(repository, func(t *testing.T) {
+			envFile := filepath.Join(t.TempDir(), "backup.env")
+			content := `BACKUP_REQUIRE_REMOTE_REPOSITORY=true
 RESTIC_REPOSITORIES=local
-RESTIC_REPOSITORY_LOCAL=/srv/admin/backups/restic
+RESTIC_REPOSITORY_LOCAL=` + repository + `
 RESTIC_PASSWORD_LOCAL=test-password
 `
-	if err := os.WriteFile(envFile, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := loadResticConfig(envFile); err == nil || !strings.Contains(err.Error(), "non-local") {
-		t.Fatalf("error = %v, want required remote repository failure", err)
+			if err := os.WriteFile(envFile, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := loadResticConfig(envFile); err == nil || !strings.Contains(err.Error(), "non-local") {
+				t.Fatalf("error = %v, want required remote repository failure", err)
+			}
+		})
 	}
 }
 

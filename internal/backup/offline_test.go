@@ -118,6 +118,7 @@ func TestResticRecoveryKitDeclarationRequiresMatchingNonLocalPair(t *testing.T) 
 		{name: "matching remote repository", content: "RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=s3:https://example.invalid/bucket\nRESTIC_PASSWORD_OFFSITE=secret\n", want: true},
 		{name: "invalid remote repository", content: "RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=s3:test\nRESTIC_PASSWORD_OFFSITE=secret\n"},
 		{name: "matching local repository", content: "RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=/srv/backups\nRESTIC_PASSWORD_OFFSITE=secret\n"},
+		{name: "matching relative repository", content: "RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=backups/restic\nRESTIC_PASSWORD_OFFSITE=secret\n"},
 		{name: "stale legacy remote pair", content: "RESTIC_REPOSITORIES=local\nRESTIC_REPOSITORY_LOCAL=/srv/backups\nRESTIC_PASSWORD_LOCAL=secret\nRESTIC_REPOSITORY=s3:stale\nRESTIC_PASSWORD=stale-secret\n"},
 		{name: "different identifiers", content: "RESTIC_REPOSITORIES=one two\nRESTIC_REPOSITORY_ONE=s3:https://example.invalid/bucket\nRESTIC_PASSWORD_TWO=secret\n"},
 		{name: "empty quoted password", content: "RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=s3:https://example.invalid/bucket\nRESTIC_PASSWORD_OFFSITE=\"\"\n"},

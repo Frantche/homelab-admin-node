@@ -194,11 +194,11 @@ func resticOffsiteAccessDeclared(path string) bool {
 			suffix := sanitizeRepoID(id)
 			values := cfg.RepoValues[suffix]
 			repository := values["RESTIC_REPOSITORY"]
-			if repository != "" && values["RESTIC_PASSWORD"] != "" && !strings.HasPrefix(repository, "/") && !strings.HasPrefix(repository, "file:") && validateSecureRepository(repository, cfg.RequireSecureRepos) == nil {
+			if isRemoteRepository(repository) && values["RESTIC_PASSWORD"] != "" && validateSecureRepository(repository, cfg.RequireSecureRepos) == nil {
 				return true
 			}
 		}
 		return false
 	}
-	return cfg.Repository != "" && cfg.Password != "" && !strings.HasPrefix(cfg.Repository, "/") && !strings.HasPrefix(cfg.Repository, "file:") && validateSecureRepository(cfg.Repository, cfg.RequireSecureRepos) == nil
+	return isRemoteRepository(cfg.Repository) && cfg.Password != "" && validateSecureRepository(cfg.Repository, cfg.RequireSecureRepos) == nil
 }

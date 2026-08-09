@@ -90,8 +90,18 @@
     dest: /etc/admin-node/recovery-kit-inventory.json
     owner: root
     group: root
-    mode: "0644"
-    content: "{{ (backup.offline.recovery_kit | default({})) | to_nice_json }}\n"
+    mode: "0600"
+    content: >-
+      {{
+        {
+          'last_verified_at': backup.offline.recovery_kit.last_verified_at | string,
+          'age_identity_offsite': backup.offline.recovery_kit.age_identity_offsite | bool,
+          'config_repo_access_tested': backup.offline.recovery_kit.config_repo_access_tested | bool,
+          'restic_access_offsite': backup.offline.recovery_kit.restic_access_offsite | bool,
+          'openbao_recovery_offsite': backup.offline.recovery_kit.openbao_recovery_offsite | bool,
+          'separation_of_duties_verified': backup.offline.recovery_kit.separation_of_duties_verified | bool
+        } | to_nice_json
+      }}
   when: backup.offline.enabled | default(false) | bool
 
 - name: Enable offline backup timer after its policy is ready
