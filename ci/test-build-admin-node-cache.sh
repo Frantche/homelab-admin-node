@@ -46,6 +46,28 @@ second_output="$(
 )"
 grep -Fq "changed=false" <<<"$second_output"
 
+third_output="$(
+  sudo env -i \
+    PATH="$PATH" \
+    GOFLAGS="-trimpath" \
+    ADMIN_NODE_GO_CACHE="$TEST_GO_CACHE" \
+    ADMIN_NODE_GO_MOD_CACHE="$TEST_GO_MOD_CACHE" \
+    ADMIN_NODE_GO_PATH="$TEST_GO_PATH" \
+    "$TEST_REPO/scripts/build-admin-node.sh"
+)"
+grep -Fq "changed=true" <<<"$third_output"
+
+fourth_output="$(
+  sudo env -i \
+    PATH="$PATH" \
+    GOFLAGS="-trimpath" \
+    ADMIN_NODE_GO_CACHE="$TEST_GO_CACHE" \
+    ADMIN_NODE_GO_MOD_CACHE="$TEST_GO_MOD_CACHE" \
+    ADMIN_NODE_GO_PATH="$TEST_GO_PATH" \
+    "$TEST_REPO/scripts/build-admin-node.sh"
+)"
+grep -Fq "changed=false" <<<"$fourth_output"
+
 for cache_dir in "$TEST_GO_CACHE" "$TEST_GO_MOD_CACHE" "$TEST_GO_PATH"; do
   [[ "$(sudo stat -c '%a:%U:%G' "$cache_dir")" == "700:root:root" ]]
 done

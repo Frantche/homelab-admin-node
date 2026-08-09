@@ -43,6 +43,7 @@ type app struct {
 	configErr error
 	runner    runner.Runner
 	exec      func(string, []string, []string) error
+	converge  func(context.Context, converge.Options) error
 }
 
 func main() {
@@ -159,14 +160,42 @@ func (a app) runVersion(ctx context.Context, args []string) int {
 	pin := read("release pin", a.cfg.ReleaseRefFile)
 	revision := read("installed revision", a.cfg.GitRefFile)
 	schema := read("configuration schema", a.cfg.SchemaVersionFile)
+	packageSnapshot := read("installed package snapshot", a.cfg.PackageSnapshotFile)
+	packageSnapshotMode := read("package snapshot mode", a.cfg.PackageSnapshotModeFile)
 	if len(readErrors) == 0 && pin != "main" && pin != revision {
 		readErrors = append(readErrors, fmt.Sprintf("release pin %s does not match installed revision %s", pin, revision))
+	}
+	if len(readErrors) == 0 {
+		headCmd := exec.CommandContext(ctx, "git", "-C", a.cfg.RepoRoot, "rev-parse", "HEAD")
+		headOutput, err := headCmd.Output()
+		if err != nil {
+			readErrors = append(readErrors, fmt.Sprintf("repository HEAD is unavailable in %s", a.cfg.RepoRoot))
+		} else if head := strings.TrimSpace(string(headOutput)); head != revision {
+			readErrors = append(readErrors, fmt.Sprintf("repository HEAD %s does not match installed revision %s", head, revision))
+		}
+		repositorySchema := read("release configuration schema", filepath.Join(a.cfg.RepoRoot, "release", "config-schema-version"))
+		if repositorySchema != "unknown" && repositorySchema != schema {
+			readErrors = append(readErrors, fmt.Sprintf("repository schema %s does not match installed schema %s", repositorySchema, schema))
+		}
+		requiredSnapshot := read("release package snapshot", filepath.Join(a.cfg.RepoRoot, "release", "arch-package-snapshot"))
+		if packageSnapshot == "live" {
+			if packageSnapshotMode != "ci-live" {
+				readErrors = append(readErrors, "live package snapshot is not bound to explicit ci-live mode")
+			}
+		} else if packageSnapshotMode != "qualified" || requiredSnapshot != packageSnapshot {
+			readErrors = append(readErrors, fmt.Sprintf("installed package snapshot %s (%s) does not match release snapshot %s", packageSnapshot, packageSnapshotMode, requiredSnapshot))
+		}
 	}
 	if len(readErrors) == 0 {
 		switch {
 		case pin == "main" || pin == "refs/heads/main":
 			if release != "main" {
 				readErrors = append(readErrors, fmt.Sprintf("development pin %s cannot be labelled as release %s", pin, release))
+			}
+			branchCmd := exec.CommandContext(ctx, "git", "-C", a.cfg.RepoRoot, "symbolic-ref", "--quiet", "--short", "HEAD")
+			branch, err := branchCmd.Output()
+			if err != nil || strings.TrimSpace(string(branch)) != "main" {
+				readErrors = append(readErrors, "development release is not checked out on branch main")
 			}
 		case !fullGitSHA.MatchString(pin) || !fullGitSHA.MatchString(revision):
 			readErrors = append(readErrors, "production release pin and installed revision must be lowercase full Git SHAs")
@@ -191,18 +220,32 @@ func (a app) runVersion(ctx context.Context, args []string) int {
 		default:
 			readErrors = append(readErrors, fmt.Sprintf("release name %s is neither main, a vMAJOR.MINOR.PATCH tag, nor a full SHA", release))
 		}
+		if pin != "main" && pin != "refs/heads/main" {
+			branchCmd := exec.CommandContext(ctx, "git", "-C", a.cfg.RepoRoot, "symbolic-ref", "--quiet", "HEAD")
+			if err := branchCmd.Run(); err == nil {
+				readErrors = append(readErrors, "production release checkout is not detached")
+			}
+			statusCmd := exec.CommandContext(ctx, "git", "-C", a.cfg.RepoRoot, "status", "--porcelain=v1", "--untracked-files=all")
+			status, err := statusCmd.Output()
+			if err != nil {
+				readErrors = append(readErrors, "production release checkout status is unavailable")
+			} else if strings.TrimSpace(string(status)) != "" {
+				readErrors = append(readErrors, "production release checkout contains local changes")
+			}
+		}
 	}
 	if *jsonOutput {
 		payload := map[string]string{
 			"release": release, "release_ref": pin,
 			"revision": revision, "config_schema": schema,
+			"package_snapshot": packageSnapshot,
 		}
 		if err := json.NewEncoder(a.out).Encode(payload); err != nil {
 			fmt.Fprintf(a.errOut, "version: %v\n", err)
 			return 1
 		}
 	} else {
-		fmt.Fprintf(a.out, "release: %s\nrelease_ref: %s\nrevision: %s\nconfig_schema: %s\n", release, pin, revision, schema)
+		fmt.Fprintf(a.out, "release: %s\nrelease_ref: %s\nrevision: %s\nconfig_schema: %s\npackage_snapshot: %s\n", release, pin, revision, schema, packageSnapshot)
 	}
 	if len(readErrors) > 0 {
 		for _, message := range readErrors {
@@ -334,19 +377,7 @@ func (a app) runConverge(ctx context.Context, args []string) int {
 	playbook := getenv("PLAYBOOK_PATH", a.cfg.RepoRoot+"/ansible/site.yml")
 	inventory := getenv("INVENTORY_PATH", "/etc/admin-config/homelab-node-admin-config/hosts/inventory.ini")
 	fmt.Fprintf(a.out, "[admin-converge] playbook=%s inventory=%s\n", playbook, inventory)
-	if err := converge.Run(ctx, converge.Options{
-		RepoDir:        a.cfg.RepoRoot,
-		InventoryPath:  inventory,
-		PlaybookPath:   playbook,
-		SkipGitPull:    *skipGitPull,
-		ExtraArgs:      extraArgs,
-		ReleaseRefFile: a.cfg.ReleaseRefFile,
-		RevisionFile:   a.cfg.GitRefFile,
-		SchemaSource:   filepath.Join(a.cfg.RepoRoot, "release", "config-schema-version"),
-		SchemaFile:     a.cfg.SchemaVersionFile,
-		BuildScript:    filepath.Join(a.cfg.RepoRoot, "scripts", "build-admin-node.sh"),
-		BinaryPath:     filepath.Join(a.cfg.RepoRoot, "bin", "admin-node"),
-	}); err != nil {
+	if err := a.executeConverge(ctx, a.convergeOptions(inventory, playbook, *skipGitPull, extraArgs)); err != nil {
 		var restart *converge.RestartRequiredError
 		if errors.As(err, &restart) {
 			unlock()
@@ -367,6 +398,34 @@ func (a app) runConverge(ctx context.Context, args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func (a app) executeConverge(ctx context.Context, opts converge.Options) error {
+	if a.converge != nil {
+		return a.converge(ctx, opts)
+	}
+	return converge.Run(ctx, opts)
+}
+
+func (a app) convergeOptions(inventory, playbook string, skipGitPull bool, extraArgs []string) converge.Options {
+	return converge.Options{
+		RepoDir:                 a.cfg.RepoRoot,
+		InventoryPath:           inventory,
+		PlaybookPath:            playbook,
+		SkipGitPull:             skipGitPull,
+		ExtraArgs:               extraArgs,
+		ReleaseRefFile:          a.cfg.ReleaseRefFile,
+		RevisionFile:            a.cfg.GitRefFile,
+		SchemaSource:            filepath.Join(a.cfg.RepoRoot, "release", "config-schema-version"),
+		SchemaFile:              a.cfg.SchemaVersionFile,
+		BuildScript:             filepath.Join(a.cfg.RepoRoot, "scripts", "build-admin-node.sh"),
+		BinaryPath:              filepath.Join(a.cfg.RepoRoot, "bin", "admin-node"),
+		RequirementsPath:        filepath.Join(a.cfg.RepoRoot, "ansible", "requirements.yml"),
+		CollectionsRoot:         getenv("ADMIN_ANSIBLE_COLLECTIONS_ROOT", "/var/cache/admin-node/ansible-collections"),
+		PackageSnapshotSource:   filepath.Join(a.cfg.RepoRoot, "release", "arch-package-snapshot"),
+		PackageSnapshotFile:     a.cfg.PackageSnapshotFile,
+		PackageSnapshotModeFile: a.cfg.PackageSnapshotModeFile,
+	}
 }
 
 func (a app) runGitea(ctx context.Context, args []string) int {
@@ -427,7 +486,14 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 	if err != nil {
 		return fmt.Errorf("acquire operation lock: %w", err)
 	}
-	defer unlock()
+	operationReleased := false
+	releaseOperation := func() {
+		if !operationReleased {
+			unlock()
+			operationReleased = true
+		}
+	}
+	defer releaseOperation()
 	if err := validateGiteaProcessRestoreInputs(a.cfg.GiteaStackPath, opts); err != nil {
 		return err
 	}
@@ -527,17 +593,8 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 	}
 
 	if opts.RunConverge {
-		if err := converge.Run(ctx, converge.Options{
-			RepoDir:        a.cfg.RepoRoot,
-			InventoryPath:  opts.Inventory,
-			PlaybookPath:   getenv("PLAYBOOK_PATH", a.cfg.RepoRoot+"/ansible/site.yml"),
-			SkipGitPull:    opts.SkipGitPull,
-			ReleaseRefFile: a.cfg.ReleaseRefFile,
-			RevisionFile:   a.cfg.GitRefFile,
-			SchemaSource:   filepath.Join(a.cfg.RepoRoot, "release", "config-schema-version"),
-			SchemaFile:     a.cfg.SchemaVersionFile,
-		}); err != nil {
-			return fmt.Errorf("post-restore convergence: %w", err)
+		if err := a.runPostRestoreConvergence(ctx, opts, releaseOperation); err != nil {
+			return err
 		}
 	}
 
@@ -546,6 +603,27 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 		return err
 	}
 	fmt.Fprintln(a.out, "[gitea-restore-process] restore validated, mode set to normal, and timers resumed")
+	return nil
+}
+
+func (a app) runPostRestoreConvergence(ctx context.Context, opts giteaProcessRestoreOptions, releaseOperation func()) error {
+	playbook := getenv("PLAYBOOK_PATH", a.cfg.RepoRoot+"/ansible/site.yml")
+	err := a.executeConverge(ctx, a.convergeOptions(opts.Inventory, playbook, opts.SkipGitPull, nil))
+	var restart *converge.RestartRequiredError
+	if errors.As(err, &restart) {
+		releaseOperation()
+		extraEnv := []string{
+			"INVENTORY_PATH=" + opts.Inventory,
+			"PLAYBOOK_PATH=" + playbook,
+		}
+		if execErr := a.execLoggedWithEnv(ctx, extraEnv, restart.BinaryPath, "converge", "run", "--skip-git-pull"); execErr != nil {
+			return fmt.Errorf("post-restore convergence with selected release binary: %w", execErr)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("post-restore convergence: %w", err)
+	}
 	return nil
 }
 
@@ -689,8 +767,13 @@ func existingPaths(paths []string) []string {
 }
 
 func (a app) execLogged(ctx context.Context, name string, args ...string) error {
+	return a.execLoggedWithEnv(ctx, nil, name, args...)
+}
+
+func (a app) execLoggedWithEnv(ctx context.Context, extraEnv []string, name string, args ...string) error {
 	fmt.Fprintf(a.out, "[gitea-restore-process] running %s %s\n", name, strings.Join(args, " "))
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = append(os.Environ(), extraEnv...)
 	cmd.Stdout = a.out
 	cmd.Stderr = a.errOut
 	if err := cmd.Run(); err != nil {

@@ -249,6 +249,20 @@ func TestRebuildAdminNodeRequestsRestartOnlyWhenBinaryChanges(t *testing.T) {
 func TestRunRestartsTargetBinaryBeforeAnsibleAfterReleaseChange(t *testing.T) {
 	repo := initGitRepo(t)
 	writeAndCommit(t, repo, "release/config-schema-version", "1\n", "target release")
+	for name, content := range map[string]string{
+		"release/arch-package-snapshot": "2026/08/08\n",
+		"ansible/requirements.yml":      "---\ncollections: []\n",
+	} {
+		path := filepath.Join(repo, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git(t, repo, "add", "release/arch-package-snapshot", "ansible/requirements.yml")
+	git(t, repo, "commit", "--amend", "--no-edit")
 	target := gitOutput(t, repo, "rev-parse", "HEAD")
 	writeAndCommit(t, repo, "README.md", "current release\n", "current release")
 	stateDir := t.TempDir()
@@ -260,15 +274,31 @@ func TestRunRestartsTargetBinaryBeforeAnsibleAfterReleaseChange(t *testing.T) {
 	if err := os.WriteFile(buildScript, []byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf 'changed=true\\n'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	packageState := t.TempDir()
+	packageSnapshotFile := filepath.Join(packageState, "package-snapshot")
+	packageModeFile := filepath.Join(packageState, "package-snapshot-mode")
+	if err := os.WriteFile(packageSnapshotFile, []byte("2026/08/08\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(packageModeFile, []byte("qualified\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	opts := Options{
-		RepoDir:        repo,
-		InventoryPath:  filepath.Join(t.TempDir(), "inventory-must-not-be-read"),
-		PlaybookPath:   filepath.Join(t.TempDir(), "playbook-must-not-be-read"),
-		LockFile:       filepath.Join(t.TempDir(), "converge.lock"),
-		ReleaseRefFile: refFile,
-		SchemaSource:   filepath.Join(repo, "release/config-schema-version"),
-		BuildScript:    buildScript,
-		BinaryPath:     filepath.Join(repo, "bin/admin-node"),
+		RepoDir:                 repo,
+		InventoryPath:           filepath.Join(t.TempDir(), "inventory-must-not-be-read"),
+		PlaybookPath:            filepath.Join(t.TempDir(), "playbook-must-not-be-read"),
+		LockFile:                filepath.Join(t.TempDir(), "converge.lock"),
+		ReleaseRefFile:          refFile,
+		RevisionFile:            filepath.Join(stateDir, "git-ref"),
+		SchemaSource:            filepath.Join(repo, "release/config-schema-version"),
+		SchemaFile:              filepath.Join(stateDir, "schema"),
+		BuildScript:             buildScript,
+		BinaryPath:              filepath.Join(repo, "bin/admin-node"),
+		RequirementsPath:        filepath.Join(repo, "ansible/requirements.yml"),
+		CollectionsRoot:         filepath.Join(t.TempDir(), "collections"),
+		PackageSnapshotSource:   filepath.Join(repo, "release/arch-package-snapshot"),
+		PackageSnapshotFile:     packageSnapshotFile,
+		PackageSnapshotModeFile: packageModeFile,
 	}
 	err := Run(context.Background(), opts)
 	var restart *RestartRequiredError
@@ -277,6 +307,95 @@ func TestRunRestartsTargetBinaryBeforeAnsibleAfterReleaseChange(t *testing.T) {
 	}
 	if got := gitOutput(t, repo, "rev-parse", "HEAD"); got != target {
 		t.Fatalf("HEAD = %s, want target %s", got, target)
+	}
+}
+
+func TestValidatePackageSnapshotRefusesDifferentUpgradeState(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "required")
+	installed := filepath.Join(dir, "installed")
+	mode := filepath.Join(dir, "mode")
+	for path, value := range map[string]string{
+		source: "2026/08/09\n", installed: "2026/08/08\n", mode: "qualified\n",
+	} {
+		if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	err := validatePackageSnapshot(Options{
+		PackageSnapshotSource:   source,
+		PackageSnapshotFile:     installed,
+		PackageSnapshotModeFile: mode,
+	})
+	if err == nil || !strings.Contains(err.Error(), "refusing an in-place upgrade") {
+		t.Fatalf("snapshot mismatch error = %v", err)
+	}
+}
+
+func TestValidatePackageSnapshotAllowsLiveOnlyForExplicitCI(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "required")
+	installed := filepath.Join(dir, "installed")
+	mode := filepath.Join(dir, "mode")
+	if err := os.WriteFile(source, []byte("2026/08/08\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installed, []byte("live\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mode, []byte("qualified\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{PackageSnapshotSource: source, PackageSnapshotFile: installed, PackageSnapshotModeFile: mode}
+	if err := validatePackageSnapshot(opts); err == nil || !strings.Contains(err.Error(), "forbidden") {
+		t.Fatalf("production live mirror error = %v", err)
+	}
+	if err := os.WriteFile(mode, []byte("ci-live\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := validatePackageSnapshot(opts); err != nil {
+		t.Fatalf("explicit CI live mode rejected: %v", err)
+	}
+}
+
+func TestPrepareAnsibleCollectionsUsesRequirementsDigest(t *testing.T) {
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(dir, "ansible-galaxy.log")
+	fake := filepath.Join(binDir, "ansible-galaxy")
+	if err := os.WriteFile(fake, []byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$*\" >> \"$ANSIBLE_GALAXY_TEST_LOG\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("ANSIBLE_GALAXY_TEST_LOG", logPath)
+	requirements := filepath.Join(dir, "requirements.yml")
+	opts := Options{RequirementsPath: requirements, CollectionsRoot: filepath.Join(dir, "collections")}
+	if err := os.WriteFile(requirements, []byte("collections:\n- name: ansible.posix\n  version: 1.0.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	first, err := prepareAnsibleCollections(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareAnsibleCollections(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(requirements, []byte("collections:\n- name: ansible.posix\n  version: 2.0.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second, err := prepareAnsibleCollections(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("different collection requirements reused the same prepared path")
+	}
+	logContent := strings.TrimSpace(readFile(t, logPath))
+	if got := strings.Count(logContent, "collection install --force"); got != 2 {
+		t.Fatalf("ansible-galaxy install count = %d, log=%q", got, logContent)
 	}
 }
 

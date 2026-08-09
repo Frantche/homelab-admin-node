@@ -39,7 +39,7 @@ Commands:
 | `secret` | Install local secret material. |
 | `openbao` | Initialize and unseal OpenBao. |
 | `ci` | Run CI helper operations. |
-| `version` | Show the selected release, immutable pin, installed revision, and config schema. |
+| `version` | Verify and show the selected release, immutable pin, installed revision, config schema, package snapshot, checkout state and tag binding. |
 
 Common examples:
 

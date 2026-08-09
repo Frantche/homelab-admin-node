@@ -2,27 +2,34 @@ package converge
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 )
 
 type Options struct {
-	RepoDir        string
-	InventoryPath  string
-	PlaybookPath   string
-	LockFile       string
-	SkipGitPull    bool
-	ExtraArgs      []string
-	ReleaseRefFile string
-	RevisionFile   string
-	SchemaSource   string
-	SchemaFile     string
-	BuildScript    string
-	BinaryPath     string
+	RepoDir                 string
+	InventoryPath           string
+	PlaybookPath            string
+	LockFile                string
+	SkipGitPull             bool
+	ExtraArgs               []string
+	ReleaseRefFile          string
+	RevisionFile            string
+	SchemaSource            string
+	SchemaFile              string
+	BuildScript             string
+	BinaryPath              string
+	RequirementsPath        string
+	CollectionsRoot         string
+	PackageSnapshotSource   string
+	PackageSnapshotFile     string
+	PackageSnapshotModeFile string
 }
 
 type RestartRequiredError struct {
@@ -34,6 +41,9 @@ func (e *RestartRequiredError) Error() string {
 }
 
 func Run(ctx context.Context, opts Options) error {
+	if err := validateOptions(opts); err != nil {
+		return err
+	}
 	if opts.LockFile == "" {
 		opts.LockFile = "/run/admin-converge.lock"
 	}
@@ -62,6 +72,9 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 	if _, err := readSchemaVersion(opts.SchemaSource); err != nil {
+		return err
+	}
+	if err := validatePackageSnapshot(opts); err != nil {
 		return err
 	}
 	rebuilt, err := rebuildAdminNode(ctx, opts)
@@ -94,8 +107,12 @@ func Run(ctx context.Context, opts Options) error {
 	if _, err := os.Stat(opts.InventoryPath); err != nil {
 		return fmt.Errorf("inventory not found: %s", opts.InventoryPath)
 	}
+	collectionsPath, err := prepareAnsibleCollections(ctx, opts)
+	if err != nil {
+		return err
+	}
 	args := append([]string{"-i", opts.InventoryPath, opts.PlaybookPath}, opts.ExtraArgs...)
-	if err := run(ctx, "", "ansible-playbook", args...); err != nil {
+	if err := runWithEnv(ctx, "", []string{"ANSIBLE_COLLECTIONS_PATH=" + collectionsPath}, "ansible-playbook", args...); err != nil {
 		return err
 	}
 	if err := persistInstalledState(ctx, opts); err != nil {
@@ -105,10 +122,30 @@ func Run(ctx context.Context, opts Options) error {
 	return nil
 }
 
-func rebuildAdminNode(ctx context.Context, opts Options) (bool, error) {
-	if opts.BuildScript == "" || opts.BinaryPath == "" {
-		return false, nil
+func validateOptions(opts Options) error {
+	required := map[string]string{
+		"repository":               opts.RepoDir,
+		"release pin":              opts.ReleaseRefFile,
+		"revision state":           opts.RevisionFile,
+		"schema source":            opts.SchemaSource,
+		"schema state":             opts.SchemaFile,
+		"build script":             opts.BuildScript,
+		"binary":                   opts.BinaryPath,
+		"Ansible requirements":     opts.RequirementsPath,
+		"Ansible collections root": opts.CollectionsRoot,
+		"package snapshot source":  opts.PackageSnapshotSource,
+		"package snapshot state":   opts.PackageSnapshotFile,
+		"package snapshot mode":    opts.PackageSnapshotModeFile,
 	}
+	for label, value := range required {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s path is required for fail-closed convergence", label)
+		}
+	}
+	return nil
+}
+
+func rebuildAdminNode(ctx context.Context, opts Options) (bool, error) {
 	output, err := exec.CommandContext(ctx, opts.BuildScript).CombinedOutput()
 	if len(output) > 0 {
 		fmt.Print(string(output))
@@ -117,6 +154,76 @@ func rebuildAdminNode(ctx context.Context, opts Options) (bool, error) {
 		return false, fmt.Errorf("build admin-node from selected release: %w", err)
 	}
 	return strings.Contains(string(output), "changed=true"), nil
+}
+
+func validatePackageSnapshot(opts Options) error {
+	required, err := readPackageSnapshot(opts.PackageSnapshotSource, false)
+	if err != nil {
+		return fmt.Errorf("read release package snapshot: %w", err)
+	}
+	installed, err := readPackageSnapshot(opts.PackageSnapshotFile, true)
+	if err != nil {
+		return fmt.Errorf("read installed package snapshot: %w", err)
+	}
+	modeBytes, err := os.ReadFile(opts.PackageSnapshotModeFile)
+	if err != nil {
+		return fmt.Errorf("read package snapshot mode %s: %w", opts.PackageSnapshotModeFile, err)
+	}
+	mode := strings.TrimSpace(string(modeBytes))
+	if installed == "live" {
+		if mode != "ci-live" {
+			return fmt.Errorf("live Arch package repositories are forbidden outside the explicit ci-live bootstrap mode")
+		}
+		fmt.Println("[admin-converge] CI live package mirror explicitly selected; production snapshot equivalence is not claimed")
+		return nil
+	}
+	if mode != "qualified" {
+		return fmt.Errorf("unsupported package snapshot mode %q", mode)
+	}
+	if installed != required {
+		return fmt.Errorf("installed Arch package snapshot %s does not match release snapshot %s; refusing an in-place upgrade, rebuild or restore from the qualified snapshot", installed, required)
+	}
+	return nil
+}
+
+func readPackageSnapshot(path string, allowLive bool) (string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", path, err)
+	}
+	value := strings.TrimSpace(string(content))
+	if allowLive && value == "live" {
+		return value, nil
+	}
+	parsed, err := time.Parse("2006/01/02", value)
+	if err != nil || parsed.Format("2006/01/02") != value {
+		return "", fmt.Errorf("%s must contain a valid YYYY/MM/DD snapshot", path)
+	}
+	return value, nil
+}
+
+func prepareAnsibleCollections(ctx context.Context, opts Options) (string, error) {
+	requirements, err := os.ReadFile(opts.RequirementsPath)
+	if err != nil {
+		return "", fmt.Errorf("read Ansible collection requirements: %w", err)
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256(requirements))
+	target := filepath.Join(opts.CollectionsRoot, digest)
+	marker := filepath.Join(target, ".complete")
+	if content, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(content)) == digest {
+		fmt.Printf("[admin-converge] Ansible collections already prepared for %s\n", digest)
+		return target, nil
+	}
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		return "", fmt.Errorf("create Ansible collections directory: %w", err)
+	}
+	if err := run(ctx, "", "ansible-galaxy", "collection", "install", "--force", "-r", opts.RequirementsPath, "-p", target); err != nil {
+		return "", fmt.Errorf("install exact Ansible collections for selected release: %w", err)
+	}
+	if err := writeStateFile(marker, digest+"\n"); err != nil {
+		return "", fmt.Errorf("mark Ansible collections prepared: %w", err)
+	}
+	return target, nil
 }
 
 func updateAdminRepository(ctx context.Context, opts Options, allowUpdate bool) error {
@@ -355,8 +462,13 @@ func samePath(a, b string) bool {
 }
 
 func run(ctx context.Context, dir, name string, args ...string) error {
+	return runWithEnv(ctx, dir, nil, name, args...)
+}
+
+func runWithEnv(ctx context.Context, dir string, extraEnv []string, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), extraEnv...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

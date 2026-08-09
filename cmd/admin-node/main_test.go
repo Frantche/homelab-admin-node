@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Frantche/homelab-admin-node/internal/config"
+	"github.com/Frantche/homelab-admin-node/internal/converge"
 )
 
 func TestRootHelp(t *testing.T) {
@@ -158,9 +159,106 @@ func TestUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestConvergeOptionsKeepReleaseHandoffAndDependencyContractsForEveryCaller(t *testing.T) {
+	repo := t.TempDir()
+	cfg := config.FromEnv()
+	cfg.RepoRoot = repo
+	cfg.ReleaseRefFile = filepath.Join(t.TempDir(), "release-ref")
+	cfg.GitRefFile = filepath.Join(t.TempDir(), "git-ref")
+	cfg.SchemaVersionFile = filepath.Join(t.TempDir(), "schema")
+	cfg.PackageSnapshotFile = filepath.Join(t.TempDir(), "package-snapshot")
+	cfg.PackageSnapshotModeFile = filepath.Join(t.TempDir(), "package-snapshot-mode")
+	t.Setenv("ADMIN_ANSIBLE_COLLECTIONS_ROOT", filepath.Join(t.TempDir(), "collections"))
+	a := app{cfg: cfg}
+	opts := a.convergeOptions("inventory.ini", "site.yml", true, nil)
+	for label, value := range map[string]string{
+		"build script":            opts.BuildScript,
+		"binary":                  opts.BinaryPath,
+		"requirements":            opts.RequirementsPath,
+		"collections":             opts.CollectionsRoot,
+		"package snapshot source": opts.PackageSnapshotSource,
+		"package snapshot state":  opts.PackageSnapshotFile,
+		"package snapshot mode":   opts.PackageSnapshotModeFile,
+	} {
+		if value == "" {
+			t.Fatalf("%s is absent from shared converge options", label)
+		}
+	}
+}
+
+func TestPostRestoreConvergenceHandsOffToSelectedReleaseBinary(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "selected-binary.log")
+	binary := filepath.Join(dir, "admin-node")
+	script := "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s|%s|%s\\n' \"$*\" \"$INVENTORY_PATH\" \"$PLAYBOOK_PATH\" > \"$POST_RESTORE_TEST_LOG\"\n"
+	if err := os.WriteFile(binary, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("POST_RESTORE_TEST_LOG", logPath)
+	var out, errOut bytes.Buffer
+	cfg := config.FromEnv()
+	cfg.RepoRoot = dir
+	released := false
+	a := app{
+		out:    &out,
+		errOut: &errOut,
+		cfg:    cfg,
+		converge: func(context.Context, converge.Options) error {
+			return &converge.RestartRequiredError{BinaryPath: binary}
+		},
+	}
+	opts := giteaProcessRestoreOptions{Inventory: "/config/inventory.ini"}
+	if err := a.runPostRestoreConvergence(context.Background(), opts, func() { released = true }); err != nil {
+		t.Fatal(err)
+	}
+	if !released {
+		t.Fatal("operation lock was not released before selected binary handoff")
+	}
+	logContent, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"converge run --skip-git-pull", "/config/inventory.ini", filepath.Join(dir, "ansible/site.yml")} {
+		if !strings.Contains(string(logContent), expected) {
+			t.Fatalf("selected release invocation %q does not contain %q", logContent, expected)
+		}
+	}
+}
+
 func TestVersionReportsPersistedReleaseState(t *testing.T) {
 	dir := t.TempDir()
-	revision := strings.Repeat("a", 40)
+	repo := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "--initial-branch=main"},
+		{"config", "user.email", "ci@example.test"},
+		{"config", "user.name", "CI"},
+	} {
+		if output, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "release"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "release/config-schema-version"), []byte("2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "release/arch-package-snapshot"), []byte("2026/08/08\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "release"}, {"commit", "-m", "release"}} {
+		if output, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	revisionBytes, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := strings.TrimSpace(string(revisionBytes))
+	if output, err := exec.Command("git", "-C", repo, "checkout", "--detach").CombinedOutput(); err != nil {
+		t.Fatalf("detach release: %v: %s", err, output)
+	}
 	paths := []struct {
 		name  string
 		value string
@@ -169,6 +267,8 @@ func TestVersionReportsPersistedReleaseState(t *testing.T) {
 		{"release-ref", revision + "\n"},
 		{"git-ref", revision + "\n"},
 		{"schema", "2\n"},
+		{"package-snapshot", "2026/08/08\n"},
+		{"package-snapshot-mode", "qualified\n"},
 	}
 	for _, item := range paths {
 		if err := os.WriteFile(filepath.Join(dir, item.name), []byte(item.value), 0o644); err != nil {
@@ -176,10 +276,13 @@ func TestVersionReportsPersistedReleaseState(t *testing.T) {
 		}
 	}
 	cfg := config.FromEnv()
+	cfg.RepoRoot = repo
 	cfg.ReleaseNameFile = filepath.Join(dir, "release-name")
 	cfg.ReleaseRefFile = filepath.Join(dir, "release-ref")
 	cfg.GitRefFile = filepath.Join(dir, "git-ref")
 	cfg.SchemaVersionFile = filepath.Join(dir, "schema")
+	cfg.PackageSnapshotFile = filepath.Join(dir, "package-snapshot")
+	cfg.PackageSnapshotModeFile = filepath.Join(dir, "package-snapshot-mode")
 	var out, errOut bytes.Buffer
 	a := app{out: &out, errOut: &errOut, cfg: cfg}
 
@@ -190,6 +293,16 @@ func TestVersionReportsPersistedReleaseState(t *testing.T) {
 		if !strings.Contains(out.String(), expected) {
 			t.Fatalf("version output %q does not contain %q", out.String(), expected)
 		}
+	}
+	if err := os.WriteFile(filepath.Join(repo, "unqualified-local-file"), []byte("drift\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	errOut.Reset()
+	if code := a.run(context.Background(), []string{"version"}); code != 1 {
+		t.Fatalf("dirty production checkout accepted: code=%d stderr=%q", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "local changes") {
+		t.Fatalf("dirty checkout diagnostic missing: %q", errOut.String())
 	}
 }
 
@@ -240,9 +353,23 @@ func TestVersionBindsReleaseTagToInstalledRevision(t *testing.T) {
 		{"init", "--initial-branch=main"},
 		{"config", "user.email", "ci@example.test"},
 		{"config", "user.name", "CI"},
-		{"commit", "--allow-empty", "-m", "release"},
-		{"tag", "-a", "v1.2.3", "-m", "qualified"},
 	} {
+		if output, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "release"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range map[string]string{
+		"config-schema-version": "1\n",
+		"arch-package-snapshot": "2026/08/08\n",
+	} {
+		if err := os.WriteFile(filepath.Join(repo, "release", name), []byte(value), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"add", "release"}, {"commit", "-m", "release"}, {"tag", "-a", "v1.2.3", "-m", "qualified"}, {"checkout", "--detach"}} {
 		if output, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v: %s", args, err, output)
 		}
@@ -259,11 +386,15 @@ func TestVersionBindsReleaseTagToInstalledRevision(t *testing.T) {
 	cfg.ReleaseRefFile = filepath.Join(state, "release-ref")
 	cfg.GitRefFile = filepath.Join(state, "git-ref")
 	cfg.SchemaVersionFile = filepath.Join(state, "schema")
+	cfg.PackageSnapshotFile = filepath.Join(state, "package-snapshot")
+	cfg.PackageSnapshotModeFile = filepath.Join(state, "package-snapshot-mode")
 	for path, value := range map[string]string{
-		cfg.ReleaseNameFile:   "v1.2.3\n",
-		cfg.ReleaseRefFile:    revision + "\n",
-		cfg.GitRefFile:        revision + "\n",
-		cfg.SchemaVersionFile: "1\n",
+		cfg.ReleaseNameFile:         "v1.2.3\n",
+		cfg.ReleaseRefFile:          revision + "\n",
+		cfg.GitRefFile:              revision + "\n",
+		cfg.SchemaVersionFile:       "1\n",
+		cfg.PackageSnapshotFile:     "2026/08/08\n",
+		cfg.PackageSnapshotModeFile: "qualified\n",
 	} {
 		if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
 			t.Fatal(err)

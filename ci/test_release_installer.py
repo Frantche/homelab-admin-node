@@ -94,9 +94,7 @@ class ReleaseInstallerTest(unittest.TestCase):
 
         second = self.run_installer("main", "main-checkout")
         self.assertEqual(second.returncode, 0, second.stderr)
-        self.assertEqual(
-            self.output("-C", str(checkout), "rev-parse", "HEAD"), local_commit
-        )
+        self.assertEqual(self.output("-C", str(checkout), "rev-parse", "HEAD"), local_commit)
         self.assertFalse((self.state_dir / "git-ref").exists())
         self.assertFalse((self.state_dir / "config-schema-version").exists())
 
@@ -127,6 +125,67 @@ class ReleaseInstallerTest(unittest.TestCase):
         bootcmd = "\n".join(data["bootcmd"])
         self.assertIn("snapshot='2026/08/08'", bootcmd)
         self.assertNotIn("ARCH_PACKAGE_SNAPSHOT_REPLACE_ME", bootcmd)
+        rendered_files = {item["path"]: item for item in data["write_files"]}
+        self.assertEqual(
+            rendered_files["/etc/admin-node/package-snapshot-mode"]["content"].strip(),
+            "qualified",
+        )
+        self.assertIn(
+            "snapshot='2026/08/08'",
+            rendered_files["/usr/local/bin/admin-node-record-package-snapshot"]["content"],
+        )
+
+    def test_ci_renderer_refuses_implicit_or_unauthorized_live_mirror(self) -> None:
+        public_key = self.root / "id_ed25519.pub"
+        public_key.write_text("ssh-ed25519 AAAATEST ci@example.test\n", encoding="utf-8")
+        base_env = os.environ.copy()
+        base_env.update(
+            {
+                "CI_VM_DIR": str(self.root / "rendered-live"),
+                "CI_SSH_PUBLIC_KEY": str(public_key),
+                "REPO_URL": str(self.remote),
+                "REPO_REF": self.commit,
+            }
+        )
+        missing = subprocess.run(
+            ["python3", str(ROOT / "ci/render-bootstrap-cloud-init.py")],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=base_env,
+        )
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("explicit YYYY/MM/DD", missing.stderr)
+
+        base_env["ARCH_PACKAGE_SNAPSHOT"] = "live"
+        unauthorized = subprocess.run(
+            ["python3", str(ROOT / "ci/render-bootstrap-cloud-init.py")],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=base_env,
+        )
+        self.assertNotEqual(unauthorized.returncode, 0)
+        self.assertIn("CI_ALLOW_LIVE_ARCH_MIRROR=true", unauthorized.stderr)
+
+        base_env["CI_ALLOW_LIVE_ARCH_MIRROR"] = "true"
+        allowed = subprocess.run(
+            ["python3", str(ROOT / "ci/render-bootstrap-cloud-init.py")],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=base_env,
+        )
+        self.assertEqual(allowed.returncode, 0, allowed.stderr)
+        data = yaml.safe_load((self.root / "rendered-live/user-data").read_text(encoding="utf-8"))
+        rendered_files = {item["path"]: item for item in data["write_files"]}
+        self.assertEqual(
+            rendered_files["/etc/admin-node/package-snapshot-mode"]["content"].strip(),
+            "ci-live",
+        )
 
     @staticmethod
     def git(*args: str) -> None:

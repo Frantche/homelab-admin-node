@@ -721,8 +721,10 @@ jobs:
           fi
           candidate_dir="$RUNNER_TEMP/release-candidate"
           git worktree add --detach "$candidate_dir" "$CANDIDATE_SHA"
-          python3 -m pip install --user -r "$candidate_dir/ci/requirements.txt"
-          (cd "$candidate_dir" && python3 "$GITHUB_WORKSPACE/scripts/validate-release-qualification.py" "$manifest" --commit HEAD --tag "$RELEASE_TAG")
+          python3 -m pip install --user -r "$GITHUB_WORKSPACE/ci/requirements.txt"
+          (cd "$candidate_dir" && python3 "$GITHUB_WORKSPACE/scripts/validate-release-qualification.py" \
+            "$manifest" --commit HEAD --tag "$RELEASE_TAG" \
+            --trusted-evidence-prefix "https://github.com/$GITHUB_REPOSITORY/")
           if [[ "$tag_exists" == "false" ]]; then
             git push origin "refs/tags/$RELEASE_TAG"
           fi

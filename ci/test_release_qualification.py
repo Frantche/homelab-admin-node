@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Negative contracts for the release qualification validator."""
 
+import hashlib
 import importlib.util
+import io
 import json
 import os
 import tempfile
@@ -28,6 +30,8 @@ class ReleaseQualificationTest(unittest.TestCase):
         self.root = Path(self.tempdir.name)
         (self.root / "release").mkdir()
         (self.root / "release/config-schema-version").write_text("1\n", encoding="utf-8")
+        (self.root / "release/arch-package-snapshot").write_text("2026/08/09\n", encoding="utf-8")
+        (self.root / "go.mod").write_text("module example.test/release\n\ngo 1.26.5\n")
         (self.root / "ansible/roles/docker/defaults").mkdir(parents=True)
         (self.root / "ansible/roles/docker/defaults/main.yml").write_text("", encoding="utf-8")
         (self.root / "ansible/requirements.yml").write_text(
@@ -37,9 +41,7 @@ class ReleaseQualificationTest(unittest.TestCase):
         stack = self.root / "stacks/example"
         stack.mkdir(parents=True)
         self.image = "example/service:1@sha256:" + "c" * 64
-        (stack / "compose.yaml").write_text(
-            f"services:\n  app:\n    image: {self.image}\n", encoding="utf-8"
-        )
+        (stack / "compose.yaml").write_text(f"services:\n  app:\n    image: {self.image}\n", encoding="utf-8")
         self.manifest = self.valid_manifest()
         self.path = self.root / "qualification.json"
         self.previous_cwd = Path.cwd()
@@ -52,6 +54,7 @@ class ReleaseQualificationTest(unittest.TestCase):
                 "commit": COMMIT,
                 "result": "passed",
                 "artifact": url,
+                "artifact_sha256": CHECKSUM,
             }
 
         return {
@@ -62,7 +65,7 @@ class ReleaseQualificationTest(unittest.TestCase):
                 "qualified_at": "2026-08-09T12:00:00Z",
             },
             "platform": {
-                "arch_image_url": "https://example.test/images/2026.08.01/arch.qcow2",
+                "arch_image_url": "https://geo.mirror.pkgbuild.com/images/2026.08.01/arch.qcow2",
                 "arch_image_sha256": CHECKSUM,
                 "package_repository_snapshot": "2026/08/09",
                 "package_strategy": "Arch Linux Archive snapshot",
@@ -72,6 +75,7 @@ class ReleaseQualificationTest(unittest.TestCase):
             "dependencies": {
                 "ansible_core": "2.20.0",
                 "python": "3.14.0",
+                "go": "1.26.5",
                 "collections": [{"name": "ansible.posix", "version": "2.2.0"}],
             },
             "container_images": [self.image],
@@ -95,6 +99,7 @@ class ReleaseQualificationTest(unittest.TestCase):
                 "upgrade": {
                     **evidence("https://example.test/upgrade"),
                     "from_release": "v1.2.2",
+                    "component_inventory_sha256": CHECKSUM,
                 },
                 "rollback": evidence("https://example.test/rollback"),
             },
@@ -130,8 +135,22 @@ class ReleaseQualificationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "YYYY/MM/DD"):
             self.validate()
 
+    def test_rejects_snapshot_or_go_toolchain_not_bound_to_repository(self) -> None:
+        self.manifest["platform"]["package_repository_snapshot"] = "2026/08/10"
+        with self.assertRaisesRegex(ValueError, "does not match repository"):
+            self.validate()
+        self.manifest["platform"]["package_repository_snapshot"] = "2026/08/09"
+        self.manifest["dependencies"]["go"] = "1.27.0"
+        with self.assertRaisesRegex(ValueError, "go.mod"):
+            self.validate()
+
+    def test_rejects_evidence_without_content_checksum(self) -> None:
+        del self.manifest["evidence"]["rollback"]["artifact_sha256"]
+        with self.assertRaisesRegex(ValueError, "artifact_sha256"):
+            self.validate()
+
     def test_rejects_moving_cloud_image(self) -> None:
-        self.manifest["platform"]["arch_image_url"] = "https://example.test/images/latest/arch.qcow2"
+        self.manifest["platform"]["arch_image_url"] = "https://geo.mirror.pkgbuild.com/images/latest/arch.qcow2"
         with self.assertRaisesRegex(ValueError, "dated"):
             self.validate()
 
@@ -139,6 +158,97 @@ class ReleaseQualificationTest(unittest.TestCase):
         self.manifest["evidence"]["upgrade"]["from_release"] = "v1.2.3"
         with self.assertRaisesRegex(ValueError, "older"):
             self.validate()
+
+    def test_rejects_upgrade_inventory_different_from_fresh_nodes(self) -> None:
+        self.manifest["evidence"]["upgrade"]["component_inventory_sha256"] = "d" * 64
+        with self.assertRaisesRegex(ValueError, "does not match fresh nodes"):
+            self.validate()
+
+    def test_remote_verification_checks_bytes_and_evidence_claims(self) -> None:
+        image = b"qualified image"
+        packages = b"ansible 2.20.0\npython 3.14.0\n"
+        self.manifest["platform"]["arch_image_sha256"] = hashlib.sha256(image).hexdigest()
+        self.manifest["platform"]["package_state_sha256"] = hashlib.sha256(packages).hexdigest()
+        payloads = {
+            self.manifest["platform"]["arch_image_url"]: image,
+            self.manifest["platform"]["package_state_artifact"]: packages,
+        }
+        evidence_entries = [
+            *(("bootstrap", item) for item in self.manifest["evidence"]["bootstrap"]),
+            *(("disaster_recovery", item) for item in self.manifest["evidence"]["disaster_recovery"]),
+            ("upgrade", self.manifest["evidence"]["upgrade"]),
+            ("rollback", self.manifest["evidence"]["rollback"]),
+        ]
+        for kind, entry in evidence_entries:
+            claims = {"kind": kind}
+            for name in (
+                "commit",
+                "result",
+                "node",
+                "component_inventory_sha256",
+                "variant",
+                "from_release",
+            ):
+                if name in entry:
+                    claims[name] = entry[name]
+            payload = json.dumps(claims, sort_keys=True).encode()
+            entry["artifact_sha256"] = hashlib.sha256(payload).hexdigest()
+            payloads[entry["artifact"]] = payload
+
+        class Response:
+            def __init__(self, url: str, content: bytes):
+                self.url = url
+                self.stream = io.BytesIO(content)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def geturl(self):
+                return self.url
+
+            def read(self, size: int):
+                return self.stream.read(size)
+
+        def open_request(request, timeout):
+            self.assertEqual(timeout, 120)
+            return Response(request.full_url, payloads[request.full_url])
+
+        self.path.write_text(json.dumps(self.manifest), encoding="utf-8")
+        with (
+            mock.patch.object(
+                VALIDATOR.subprocess,
+                "check_output",
+                side_effect=lambda args, text=True: "tag\n" if args[1:3] == ["cat-file", "-t"] else COMMIT + "\n",
+            ),
+            mock.patch.object(VALIDATOR, "urlopen", side_effect=open_request),
+        ):
+            VALIDATOR.validate(
+                self.path,
+                COMMIT,
+                verify_remote=True,
+                trusted_evidence_prefix="https://example.test/",
+            )
+
+        self.manifest["evidence"]["rollback"]["artifact_sha256"] = "0" * 64
+        self.path.write_text(json.dumps(self.manifest), encoding="utf-8")
+        with (
+            mock.patch.object(
+                VALIDATOR.subprocess,
+                "check_output",
+                side_effect=lambda args, text=True: "tag\n" if args[1:3] == ["cat-file", "-t"] else COMMIT + "\n",
+            ),
+            mock.patch.object(VALIDATOR, "urlopen", side_effect=open_request),
+            self.assertRaisesRegex(ValueError, "checksum"),
+        ):
+            VALIDATOR.validate(
+                self.path,
+                COMMIT,
+                verify_remote=True,
+                trusted_evidence_prefix="https://example.test/",
+            )
 
 
 if __name__ == "__main__":

@@ -119,7 +119,7 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	}
 	if opts.IncludeImages {
 		bundlePath := filepath.Join(partial, "repository.bundle")
-		if err := run(ctx, "git", "-C", cfg.RepoRoot, "bundle", "create", bundlePath, "HEAD"); err != nil {
+		if err := createRepositoryBundle(ctx, cfg.RepoRoot, bundlePath, cliRevision); err != nil {
 			return Info{}, fmt.Errorf("create repository bundle for revision %s: %w", cliRevision, err)
 		}
 		if err := os.Chmod(bundlePath, 0o600); err != nil {
@@ -233,6 +233,13 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 			return Info{}, fmt.Errorf("prepare offline stack definitions: %w", err)
 		}
 	}
+	finalRevision, err := convergedRevision(ctx, cfg)
+	if err != nil {
+		return Info{}, fmt.Errorf("release state changed while backup was running: %w", err)
+	}
+	if finalRevision != cliRevision {
+		return Info{}, fmt.Errorf("release state changed while backup was running: started at %s, now %s", cliRevision, finalRevision)
+	}
 
 	files, err := BuildManifestFiles(partial)
 	if err != nil {
@@ -334,6 +341,44 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	}
 	runSuccessful = true
 	return info, nil
+}
+
+func createRepositoryBundle(ctx context.Context, repoRoot, bundlePath, revision string) error {
+	if !fullGitRevision(revision) {
+		return fmt.Errorf("invalid immutable repository revision %q", revision)
+	}
+	temporaryRef := fmt.Sprintf("refs/admin-node-backup/%s-%d", revision, os.Getpid())
+	if err := run(ctx, "git", "-C", repoRoot, "update-ref", temporaryRef, revision, strings.Repeat("0", 40)); err != nil {
+		return fmt.Errorf("create temporary immutable bundle ref: %w", err)
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_ = run(cleanupCtx, "git", "-C", repoRoot, "update-ref", "-d", temporaryRef, revision)
+	}()
+	if err := run(ctx, "git", "-C", repoRoot, "bundle", "create", bundlePath, temporaryRef); err != nil {
+		return err
+	}
+	head, err := commandOutput(ctx, "git", "bundle", "list-heads", bundlePath, temporaryRef)
+	if err != nil {
+		return fmt.Errorf("inspect repository bundle: %w", err)
+	}
+	if !strings.HasPrefix(head, revision+" ") {
+		return fmt.Errorf("repository bundle does not expose verified revision %s", revision)
+	}
+	return nil
+}
+
+func fullGitRevision(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for _, char := range value {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func convergedRevision(ctx context.Context, cfg config.Config) (string, error) {

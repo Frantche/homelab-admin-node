@@ -33,6 +33,14 @@ fi
 
 cd "$REPO_DIR"
 mkdir -p "$BIN_DIR"
+
+required_go_version="$(awk '$1 == "go" { print $2; exit }' go.mod)"
+actual_go_version="$("$GO_BIN" env GOVERSION)"
+if [[ -z "$required_go_version" || "$actual_go_version" != "go$required_go_version" ]]; then
+  echo "Go toolchain mismatch: go.mod requires $required_go_version, selected toolchain is $actual_go_version" >&2
+  exit 2
+fi
+
 TMP_BIN="$(mktemp "$BIN_DIR/admin-node.tmp.XXXXXX")"
 TMP_HASH="$(mktemp "$BIN_DIR/admin-node.source.sha256.tmp.XXXXXX")"
 
@@ -41,7 +49,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-source_hash="$(
+source_files_hash="$(
   {
     printf '%s\0' go.mod
     printf '%s\0' scripts/build-admin-node.sh
@@ -51,6 +59,13 @@ source_hash="$(
     find cmd internal -type f -name '*.go' -print0
   } | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}'
 )"
+toolchain_fingerprint="$(
+  {
+    "$GO_BIN" version
+    "$GO_BIN" env GOOS GOARCH CGO_ENABLED GOFLAGS GOEXPERIMENT
+  } | sha256sum | awk '{print $1}'
+)"
+source_hash="$(printf '%s\0%s\0' "$source_files_hash" "$toolchain_fingerprint" | sha256sum | awk '{print $1}')"
 
 if [[ -x "$BIN_PATH" && -f "$HASH_PATH" ]] && [[ "$(cat "$HASH_PATH")" == "$source_hash" ]]; then
   echo "admin-node build: up to date"

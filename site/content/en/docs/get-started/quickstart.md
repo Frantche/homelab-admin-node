@@ -8,7 +8,8 @@ Use this path when you already know Proxmox cloud-init, Git, SOPS, and Ansible.
 1. Create an Arch Linux cloud-image template in Proxmox.
 2. Clone the template into `admin-01`.
 3. Replace `RELEASE_REF_REPLACE_ME` with a qualified immutable tag or commit
-   and `ARCH_PACKAGE_SNAPSHOT_REPLACE_ME` with its qualified `YYYY/MM/DD` Arch
+   and `ARCH_PACKAGE_SNAPSHOT_REPLACE_ME` with the `YYYY/MM/DD` value from the
+   selected commit's `release/arch-package-snapshot`
    Linux Archive snapshot, then attach the cloud-init user-data snippet.
 4. Boot the VM and wait for cloud-init to finish.
 5. Create a private config repository with:

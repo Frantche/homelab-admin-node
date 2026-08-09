@@ -55,3 +55,10 @@ if sed -n '/promote-tested-candidate:/,$p' "$workflow" | grep -F "ref: \"\${{ in
   echo "promotion job must not execute candidate-controlled tooling with write permission" >&2
   exit 1
 fi
+promotion_job="$(sed -n '/promote-tested-candidate:/,$p' "$workflow")"
+# shellcheck disable=SC2016 # Match the literal runtime variable in workflow source.
+grep -F 'pip install --user -r "$GITHUB_WORKSPACE/ci/requirements.txt"' <<<"$promotion_job" >/dev/null
+if grep -F 'pip install' <<<"$promotion_job" | grep -F 'candidate_dir' >/dev/null; then
+  echo "promotion job must not install candidate-controlled Python dependencies" >&2
+  exit 1
+fi

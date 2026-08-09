@@ -49,6 +49,8 @@ ci_vm_create() {
     CI_SSH_PUBLIC_KEY="$CI_SSH_KEY.pub" \
     REPO_URL="$repo_url" \
     REPO_REF="$repo_ref" \
+    ARCH_PACKAGE_SNAPSHOT="${ARCH_PACKAGE_SNAPSHOT:-live}" \
+    CI_ALLOW_LIVE_ARCH_MIRROR="${CI_ALLOW_LIVE_ARCH_MIRROR:-true}" \
     python3 "$PWD/ci/render-bootstrap-cloud-init.py"
 
   cat >"$vm_dir/meta-data" <<EOF

@@ -22,16 +22,29 @@ git checkout --detach v1.2.0
 make validate-release MANIFEST=/path/to/qualification.json RELEASE_COMMIT=v1.2.0
 ```
 
+This command performs remote checksum and evidence verification. The validator's
+`--structure-only` mode is only for offline authoring feedback and must never be
+used by a promotion path.
+
 The manifest binds the tag and full commit to the configuration schema, dated
-Arch cloud image and checksum, Arch Linux Archive package snapshot, `pacman -Q` package-state artifact, Python and
-Ansible dependencies, container digests, and evidence URLs. The package-state
-artifact has its own SHA-256 so its contents cannot be replaced silently. Qualification is
+Arch cloud image and checksum, Arch Linux Archive package snapshot, `pacman -Q`
+package-state artifact, Python, Go and Ansible dependencies, container digests,
+and evidence artifacts. The validator downloads the image and package inventory
+and verifies their SHA-256 values. Each evidence entry also has an
+`artifact_sha256`; its artifact is a small JSON object containing `kind` and the
+same commit, result and variant-specific claims as the manifest. Evidence and
+the package inventory must be hosted below the trusted repository prefix passed
+by the promotion workflow. Qualification is
 valid only when two fresh nodes built from the same release have identical
 component-inventory checksums, and bootstrap, disaster recovery, upgrade, and
 rollback all passed. Disaster-recovery evidence must include both the `standard`
 and `offline-images` variants exactly once. Evidence must test the exact release commit. Publish these
 artifacts and notable changes, migrations, known limitations, and the previous
 supported release in the GitHub release notes.
+
+The upgraded node must produce the same component-inventory checksum as both
+fresh nodes. A green playbook with a different OS, collection or component set
+does not qualify an in-place upgrade.
 
 The validator also compares `container_images` with every literal image used by
 `stacks/*/compose.yaml*`; copy the complete digest-pinned set into the manifest.
@@ -64,6 +77,13 @@ sudo /opt/homelab-admin-node/scripts/build-admin-node.sh
 Do not repeat this manual checkout for later release-to-release upgrades; the
 qualified CLI then performs and verifies its own rebuild/re-exec handoff.
 
+The installed package snapshot must match `release/arch-package-snapshot` in the
+target commit. Convergence refuses an in-place upgrade before Ansible when the
+dates differ: rebuild the node from the target release and restore its verified
+backup instead of claiming that an old OS package state is the new release.
+Release notes must state whether the package snapshot is unchanged and an
+in-place upgrade is supported.
+
 1. Read the target release notes and confirm that the current release is listed
    as a supported upgrade source. Apply documented config-schema migrations in
    the private config repository and commit its encrypted state.
@@ -94,10 +114,14 @@ qualified CLI then performs and verifies its own rebuild/re-exec handoff.
 
 Convergence checks out the selected commit, rebuilds `admin-node`, and replaces
 the running process before Ansible starts. This handoff ensures that both the Go
-lifecycle logic and the playbook come from the same release.
+lifecycle logic and the playbook come from the same release. It then installs
+the exact `ansible/requirements.yml` collection set into a directory addressed
+by the requirements checksum and runs Ansible with only that collection root.
 
 Do not upgrade system packages or configuration independently while evaluating
 a release; that would no longer match its qualified component inventory.
+`admin-node version` and convergence reject repository drift and a package
+snapshot marker that no longer matches the release.
 
 ## Failure recovery and rollback
 

@@ -31,6 +31,10 @@ from that release. Replace the package snapshot with the qualified Arch Linux
 Archive date in `YYYY/MM/DD` form. Also pin the dated Arch image URL and verify
 its checksum as recorded in the release qualification manifest; do not use the
 moving `latest` image or live package mirrors for a production rebuild.
+The selected date must equal `release/arch-package-snapshot` in the selected
+commit. After package installation, cloud-init records the date in
+`/etc/admin-node/package-snapshot` and records `qualified` in
+`/etc/admin-node/package-snapshot-mode`.
 
 The installer resolves a tag once, checks out the commit detached, and records:
 
@@ -43,3 +47,6 @@ between release selection and the first successful convergence.
 
 Replacing the placeholder with `main` is supported only as the development
 channel. In that mode periodic convergence continues to fast-forward the branch.
+The CI renderer has a separate `ci-live` marker and refuses `live` unless
+`CI_ALLOW_LIVE_ARCH_MIRROR=true` is explicitly set. That marker is not a
+qualified package state and must never be copied to a production node.

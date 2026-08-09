@@ -40,6 +40,44 @@ func TestConvergedRevisionRefusesCheckoutAfterLastConvergence(t *testing.T) {
 	}
 }
 
+func TestCreateRepositoryBundleUsesVerifiedRevisionInsteadOfHead(t *testing.T) {
+	repo := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "--initial-branch=main"},
+		{"config", "user.name", "Backup Test"},
+		{"config", "user.email", "backup@example.test"},
+		{"commit", "--allow-empty", "-m", "qualified"},
+	} {
+		if output, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	qualifiedBytes, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	qualified := strings.TrimSpace(string(qualifiedBytes))
+	if output, err := exec.Command("git", "-C", repo, "commit", "--allow-empty", "-m", "later head").CombinedOutput(); err != nil {
+		t.Fatalf("create later HEAD: %v: %s", err, output)
+	}
+	laterBytes, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	later := strings.TrimSpace(string(laterBytes))
+	bundle := filepath.Join(t.TempDir(), "repository.bundle")
+	if err := createRepositoryBundle(context.Background(), repo, bundle, qualified); err != nil {
+		t.Fatal(err)
+	}
+	heads, err := exec.Command("git", "bundle", "list-heads", bundle).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(heads), qualified) || strings.Contains(string(heads), later) {
+		t.Fatalf("bundle heads = %q, want qualified %s without later HEAD %s", heads, qualified, later)
+	}
+}
+
 func TestRunCreatesBackupWithManifest(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fake docker script is unix-specific")

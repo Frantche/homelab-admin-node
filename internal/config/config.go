@@ -8,26 +8,28 @@ import (
 )
 
 const (
-	DefaultRepoRoot         = "/opt/homelab-admin-node"
-	DefaultAdminRoot        = "/srv/admin"
-	DefaultModeFile         = "/etc/admin-node/mode"
-	DefaultReleaseRefFile   = "/etc/admin-node/release-ref"
-	DefaultReleaseNameFile  = "/etc/admin-node/release-name"
-	DefaultGitRefFile       = "/etc/admin-node/git-ref"
-	DefaultSchemaFile       = "/etc/admin-node/config-schema-version"
-	DefaultRestoreIDFile    = "/etc/admin-node/restore-id"
-	DefaultBackupRoot       = "/srv/admin/backups/local"
-	DefaultBackupEnvFile    = "/srv/admin/env/backup.env"
-	DefaultOperationLock    = "/run/admin-node-operation.lock"
-	DefaultGiteaStackPath   = "/srv/admin/data/gitea-stack"
-	DefaultSnapshotRoot     = "/srv/admin/backups/snapshots"
-	DefaultBackupStatusRoot = "/srv/admin/backups/status"
-	DefaultAdminNodeLANIP   = "192.168.1.10"
-	DefaultKeycloakDomain   = "keycloak.example.com"
-	DefaultHarborDomain     = "harbor.example.com"
-	DefaultGiteaDomain      = "git.example.com"
-	DefaultTraefikDomain    = "traefik.example.com"
-	DefaultOpenBaoDomain    = "bao.example.com"
+	DefaultRepoRoot                = "/opt/homelab-admin-node"
+	DefaultAdminRoot               = "/srv/admin"
+	DefaultModeFile                = "/etc/admin-node/mode"
+	DefaultReleaseRefFile          = "/etc/admin-node/release-ref"
+	DefaultReleaseNameFile         = "/etc/admin-node/release-name"
+	DefaultGitRefFile              = "/etc/admin-node/git-ref"
+	DefaultSchemaFile              = "/etc/admin-node/config-schema-version"
+	DefaultPackageSnapshotFile     = "/etc/admin-node/package-snapshot"
+	DefaultPackageSnapshotModeFile = "/etc/admin-node/package-snapshot-mode"
+	DefaultRestoreIDFile           = "/etc/admin-node/restore-id"
+	DefaultBackupRoot              = "/srv/admin/backups/local"
+	DefaultBackupEnvFile           = "/srv/admin/env/backup.env"
+	DefaultOperationLock           = "/run/admin-node-operation.lock"
+	DefaultGiteaStackPath          = "/srv/admin/data/gitea-stack"
+	DefaultSnapshotRoot            = "/srv/admin/backups/snapshots"
+	DefaultBackupStatusRoot        = "/srv/admin/backups/status"
+	DefaultAdminNodeLANIP          = "192.168.1.10"
+	DefaultKeycloakDomain          = "keycloak.example.com"
+	DefaultHarborDomain            = "harbor.example.com"
+	DefaultGiteaDomain             = "git.example.com"
+	DefaultTraefikDomain           = "traefik.example.com"
+	DefaultOpenBaoDomain           = "bao.example.com"
 )
 
 type Config struct {
@@ -38,6 +40,8 @@ type Config struct {
 	ReleaseNameFile            string
 	GitRefFile                 string
 	SchemaVersionFile          string
+	PackageSnapshotFile        string
+	PackageSnapshotModeFile    string
 	RestoreIDFile              string
 	BackupRoot                 string
 	BackupEnvFile              string
@@ -222,6 +226,8 @@ func load(values map[string]string, loaded bool) (Config, error) {
 		ReleaseNameFile:            resolve("ADMIN_RELEASE_NAME_FILE", DefaultReleaseNameFile),
 		GitRefFile:                 resolve("ADMIN_GIT_REF_FILE", DefaultGitRefFile),
 		SchemaVersionFile:          resolve("ADMIN_CONFIG_SCHEMA_FILE", DefaultSchemaFile),
+		PackageSnapshotFile:        resolve("ADMIN_PACKAGE_SNAPSHOT_FILE", DefaultPackageSnapshotFile),
+		PackageSnapshotModeFile:    resolve("ADMIN_PACKAGE_SNAPSHOT_MODE_FILE", DefaultPackageSnapshotModeFile),
 		RestoreIDFile:              resolve("ADMIN_RESTORE_ID_FILE", DefaultRestoreIDFile),
 		BackupRoot:                 resolve("ADMIN_BACKUP_ROOT", DefaultBackupRoot),
 		BackupEnvFile:              resolve("RESTIC_BACKUP_ENV_FILE", DefaultBackupEnvFile),
