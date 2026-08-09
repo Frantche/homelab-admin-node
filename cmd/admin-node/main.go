@@ -755,6 +755,20 @@ func (a app) runBackup(ctx context.Context, args []string) int {
 		}
 		fmt.Fprintf(a.out, "Backup verified: %s (%d files, %s)\n", manifest.ID, len(manifest.Files), manifest.Consistency)
 		return 0
+	case "offline-status":
+		status, err := backup.CheckOfflineStatus(a.cfg, time.Now().UTC())
+		if err != nil {
+			fmt.Fprintf(a.errOut, "backup offline-status: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(a.out, "offline_id=%s age=%s fresh=%t verified=%t recovery_kit_complete=%t recovery_kit_checked=%s\n", status.ID, status.Age.Round(time.Second), status.Fresh, status.Verified, status.RecoveryKitComplete, status.RecoveryKitChecked.Format(time.RFC3339))
+		for _, problem := range status.Problems {
+			fmt.Fprintf(a.errOut, "offline recovery: %s\n", problem)
+		}
+		if len(status.Problems) > 0 {
+			return 1
+		}
+		return 0
 	case "restic":
 		paths := fs.Args()
 		if _, err := backup.RunRestic(ctx, a.cfg.BackupEnvFile, paths); err != nil {

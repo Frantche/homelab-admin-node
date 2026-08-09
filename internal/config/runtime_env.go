@@ -33,6 +33,14 @@ var managedRuntimeKeys = map[string]struct{}{
 	"BACKUP_REQUIRE_BTRFS_HOT":        {},
 	"BACKUP_REQUIRE_HARBOR_READ_ONLY": {},
 	"BACKUP_LOCAL_RETENTION":          {},
+	"BACKUP_OFFLINE_RETENTION":        {},
+	"BACKUP_OFFLINE_MAX_AGE":          {},
+	"BACKUP_OFFLINE_MIN_FREE_BYTES":   {},
+	"BACKUP_RECOVERY_KIT_INVENTORY":   {},
+	"BACKUP_RECOVERY_KIT_MAX_AGE":     {},
+	"SOPS_AGE_KEY_FILE":               {},
+	"ADMIN_CONFIG_REPO_ROOT":          {},
+	"OPENBAO_RECOVERY_FILE":           {},
 	"GITEA_STACK_PATH":                {},
 }
 

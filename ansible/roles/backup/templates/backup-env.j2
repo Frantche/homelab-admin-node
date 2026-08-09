@@ -1,4 +1,5 @@
 # Managed by Ansible.
+{% set offline_backup = backup.offline | default({}) %}
 CI_MODE={{ ((ci_mode | default(false) | bool) | ternary('true', 'false')) | quote }}
 ADMIN_NODE_REPO_ROOT={{ admin_node_repo_root | default('/opt/homelab-admin-node') | quote }}
 ADMIN_NODE_ROOT={{ admin_node_root | quote }}
@@ -23,13 +24,17 @@ BACKUP_STATUS_ROOT={{ (admin_node_root ~ '/backups/status') | quote }}
 BACKUP_STANDARD_MAX_AGE={{ backup.standard_max_age | default('36h') | quote }}
 BACKUP_GITEA_PROCESS_MAX_AGE={{ backup.gitea_process.max_age | default('36h') | quote }}
 BACKUP_REMOTE_MAX_AGE={{ backup.remote_max_age | default('36h') | quote }}
-BACKUP_OFFLINE_MAX_AGE={{ backup.offline_max_age | default('0') | quote }}
+BACKUP_OFFLINE_MAX_AGE={{ (offline_backup.max_age | default('192h') if offline_backup.enabled | default(false) | bool else backup.offline_max_age | default('0')) | quote }}
 BACKUP_INTEGRITY_MAX_AGE={{ backup.integrity_max_age | default('192h') | quote }}
 GITEA_PROCESS_BACKUP_ENABLED={{ ((backup.gitea_process.enabled | default(false) | bool) | ternary('true', 'false')) | quote }}
 BACKUP_REQUIRE_BTRFS_HOT={{ ((backup.require_btrfs_hot | default(false) | bool) | ternary('true', 'false')) | quote }}
 BACKUP_REQUIRE_REMOTE_REPOSITORY={{ ((backup.require_remote_repository | default(true) | bool) | ternary('true', 'false')) | quote }}
 BACKUP_REQUIRE_HARBOR_READ_ONLY={{ ((backup.require_harbor_read_only | default(true) | bool) | ternary('true', 'false')) | quote }}
 BACKUP_LOCAL_RETENTION={{ backup.local_retention | default(3) | int }}
+BACKUP_OFFLINE_RETENTION={{ offline_backup.retention | default(2) | int }}
+BACKUP_OFFLINE_MIN_FREE_BYTES={{ offline_backup.minimum_free_bytes | default(32212254720) | int }}
+BACKUP_RECOVERY_KIT_INVENTORY=/etc/admin-node/recovery-kit-inventory.json
+BACKUP_RECOVERY_KIT_MAX_AGE={{ offline_backup.recovery_kit_max_age | default('2160h') | quote }}
 HARBOR_ADMIN_USER={{ harbor.admin_user | default('admin') | to_json }}
 HARBOR_ADMIN_PASSWORD={{ harbor.admin_password | mandatory('harbor.admin_password is required') | to_json }}
 RESTIC_REPOSITORIES={{ (backup_restic_repositories_effective | map(attribute='name') | list | join(' ')) | quote }}

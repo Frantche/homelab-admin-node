@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Frantche/homelab-admin-node/internal/config"
@@ -44,6 +45,15 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 			return Info{}, err
 		}
 	}
+	if opts.IncludeImages {
+		resticCfg, err := loadResticConfig(cfg.BackupEnvFile)
+		if err != nil {
+			return Info{}, fmt.Errorf("inspect offline remote-delivery policy: %w", err)
+		}
+		if !resticCfg.RequireRemote {
+			return Info{}, fmt.Errorf("offline backup requires BACKUP_REQUIRE_REMOTE_REPOSITORY=true")
+		}
+	}
 
 	now := time.Now
 	if opts.Now != nil {
@@ -59,6 +69,15 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	}
 	if err := os.Chmod(cfg.BackupRoot, 0o700); err != nil {
 		return Info{}, err
+	}
+	if opts.IncludeImages && cfg.OfflineBackupMinFreeBytes > 0 {
+		available, err := availableBytes(cfg.BackupRoot)
+		if err != nil {
+			return Info{}, fmt.Errorf("inspect offline backup capacity: %w", err)
+		}
+		if available < uint64(cfg.OfflineBackupMinFreeBytes) {
+			return Info{}, fmt.Errorf("offline backup requires at least %s free in %s; available %s", FormatSize(cfg.OfflineBackupMinFreeBytes), cfg.BackupRoot, FormatSize(int64(available)))
+		}
 	}
 	partial, err := os.MkdirTemp(cfg.BackupRoot, ".partial-"+stamp+"-")
 	if err != nil {
@@ -251,6 +270,15 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	if err := WriteManifest(partial, manifest); err != nil {
 		return Info{}, fmt.Errorf("write manifest: %w", err)
 	}
+	if opts.IncludeImages {
+		verifiedManifest, err := Verify(partial)
+		if err != nil {
+			return Info{}, fmt.Errorf("verify offline backup before publication: %w", err)
+		}
+		if err := validateScheduledOfflineRecoveryManifest(verifiedManifest, partial); err != nil {
+			return Info{}, fmt.Errorf("verify offline backup before publication: %w", err)
+		}
+	}
 	if err := os.Rename(partial, target); err != nil {
 		return Info{}, fmt.Errorf("publish backup: %w", err)
 	}
@@ -277,10 +305,16 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		}
 	}
 	retention := cfg.LocalBackupRetention
-	if retention < 1 {
-		retention = 3
+	if opts.IncludeImages {
+		retention = cfg.OfflineBackupRetention
 	}
-	if err := rotateLocal(cfg.BackupRoot, retention); err != nil {
+	if retention < 1 {
+		retention = 2
+		if !opts.IncludeImages {
+			retention = 3
+		}
+	}
+	if err := rotateLocalType(cfg.BackupRoot, retention, opts.IncludeImages); err != nil {
 		return Info{}, err
 	}
 	completedAt := now().UTC()
@@ -890,9 +924,29 @@ func hostname() string {
 }
 
 func rotateLocal(root string, keep int) error {
+	return rotateLocalFiltered(root, keep, nil)
+}
+
+func rotateLocalType(root string, keep int, offline bool) error {
+	return rotateLocalFiltered(root, keep, &offline)
+}
+
+func rotateLocalFiltered(root string, keep int, offline *bool) error {
 	backups, err := List(root)
 	if err != nil {
 		return err
+	}
+	if offline != nil {
+		filtered := backups[:0]
+		for _, item := range backups {
+			if *offline && verifiedDeliveredOfflineRecoveryPoint(item) {
+				filtered = append(filtered, item)
+			}
+			if !*offline && !item.HasOfflineImage {
+				filtered = append(filtered, item)
+			}
+		}
+		backups = filtered
 	}
 	if len(backups) <= keep {
 		return nil
@@ -906,4 +960,20 @@ func rotateLocal(root string, keep int) error {
 		}
 	}
 	return nil
+}
+
+func verifiedDeliveredOfflineRecoveryPoint(info Info) bool {
+	if !info.HasOfflineImage {
+		return false
+	}
+	manifest, err := Verify(info.Path)
+	return err == nil && validateDeliveredOfflineRecoveryManifest(manifest, info.Path) == nil
+}
+
+func availableBytes(path string) (uint64, error) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return 0, err
+	}
+	return stat.Bavail * uint64(stat.Bsize), nil
 }

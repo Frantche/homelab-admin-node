@@ -176,11 +176,18 @@ func loadResticConfig(path string) (resticConfig, error) {
 func hasRemoteRepository(cfg resticConfig) bool {
 	for _, id := range cfg.Repositories {
 		repo := cfg.RepoValues[sanitizeRepoID(id)]["RESTIC_REPOSITORY"]
-		if repo != "" && !strings.HasPrefix(repo, "/") && !strings.HasPrefix(repo, "file:") {
+		if isRemoteRepository(repo) {
 			return true
 		}
 	}
-	return cfg.Repository != "" && !strings.HasPrefix(cfg.Repository, "/") && !strings.HasPrefix(cfg.Repository, "file:")
+	return isRemoteRepository(cfg.Repository)
+}
+
+func isRemoteRepository(repository string) bool {
+	if repository == "" || filepath.IsAbs(repository) || strings.HasPrefix(repository, ".") || strings.HasPrefix(repository, "file:") {
+		return false
+	}
+	return strings.Contains(repository, ":")
 }
 
 func parseEnvFile(path string) (map[string]string, error) {

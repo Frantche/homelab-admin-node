@@ -158,10 +158,11 @@ exit 0
 		t.Fatal(err)
 	}
 	backupEnv := filepath.Join(root, "backup.env")
-	if err := os.WriteFile(backupEnv, []byte(`RESTIC_REPOSITORY="/tmp/restic-repo"
+	if err := os.WriteFile(backupEnv, []byte(`RESTIC_REPOSITORY="s3:https://example.invalid/bucket"
 RESTIC_PASSWORD="secret"
 RESTIC_INIT_REPOSITORIES="true"
 RESTIC_DEFAULT_FORGET_ARGS="--keep-last 2 --prune"
+BACKUP_REQUIRE_REMOTE_REPOSITORY="true"
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -738,6 +739,111 @@ func TestRotateLocalKeepsNewest(t *testing.T) {
 	}
 }
 
+func TestOfflineRunRequiresRemoteDeliveryPolicy(t *testing.T) {
+	root := t.TempDir()
+	modeFile := filepath.Join(root, "mode")
+	if err := os.WriteFile(modeFile, []byte("normal\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	backupEnv := filepath.Join(root, "backup.env")
+	if err := os.WriteFile(backupEnv, []byte("BACKUP_REQUIRE_REMOTE_REPOSITORY=false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Run(context.Background(), config.Config{
+		ModeFile:                   modeFile,
+		OperationLock:              filepath.Join(root, "operation.lock"),
+		BackupOperationLockTimeout: time.Second,
+		BackupEnvFile:              backupEnv,
+	}, RunOptions{IncludeImages: true})
+	if err == nil || !strings.Contains(err.Error(), "BACKUP_REQUIRE_REMOTE_REPOSITORY=true") {
+		t.Fatalf("Run() error = %v", err)
+	}
+}
+
+func TestRotateLocalTypeKeepsStandardAndOfflineRetentionSeparate(t *testing.T) {
+	root := t.TempDir()
+	for index, id := range []string{"20260621-120000", "20260622-120000", "20260623-120000", "20260624-120000"} {
+		dir := filepath.Join(root, id)
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if index%2 == 0 {
+			writeDeliveredOfflinePoint(t, dir, id)
+		}
+	}
+	if err := rotateLocalType(root, 1, true); err != nil {
+		t.Fatal(err)
+	}
+	if dirExists(filepath.Join(root, "20260621-120000")) || !dirExists(filepath.Join(root, "20260623-120000")) {
+		t.Fatal("offline retention did not keep only the newest offline point")
+	}
+	if !dirExists(filepath.Join(root, "20260622-120000")) || !dirExists(filepath.Join(root, "20260624-120000")) {
+		t.Fatal("offline retention removed a standard backup")
+	}
+}
+
+func TestRotateLocalTypeDoesNotCountInvalidOfflinePoints(t *testing.T) {
+	root := t.TempDir()
+	for _, id := range []string{"20260621-120000", "20260622-120000", "20260623-120000"} {
+		dir := filepath.Join(root, id)
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if id == "20260622-120000" {
+			if err := os.WriteFile(filepath.Join(dir, "offline-images.tar"), []byte("invalid"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		writeDeliveredOfflinePoint(t, dir, id)
+	}
+	if err := rotateLocalType(root, 2, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"20260621-120000", "20260623-120000"} {
+		if !dirExists(filepath.Join(root, id)) {
+			t.Fatalf("valid offline point %s was removed", id)
+		}
+	}
+}
+
+func writeDeliveredOfflinePoint(t *testing.T, dir, id string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "offline-images.tar"), []byte("images"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "repository.bundle"), []byte("bundle"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "stack-definitions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	files, err := BuildManifestFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdAt, err := time.Parse("20060102-150405", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := Manifest{
+		Version:              ManifestVersion,
+		ID:                   id,
+		CreatedAt:            createdAt,
+		CLIRevision:          "0123456789abcdef",
+		OfflineImages:        true,
+		OfflineImageArchives: []OfflineImageArchive{{Source: "example/app:1", ArchiveTag: "admin-node-backup.local/" + id + ":image-001", ImageID: "sha256:test"}},
+		StackDefinitions:     true,
+		RepositoryBundle:     true,
+		Artifacts:            []ManifestArtifact{{Path: "remote-delivery", Required: true, Status: ArtifactProduced, External: true}},
+		Complete:             true,
+		Files:                files,
+	}
+	if err := WriteManifest(dir, manifest); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDirectoryContentsPathPreservesDotSuffix(t *testing.T) {
 	got := directoryContentsPath(filepath.Join("tmp", "snapshot"))
 	want := filepath.Join("tmp", "snapshot") + string(os.PathSeparator) + "."
@@ -790,5 +896,57 @@ func TestVerifyRejectsTamperedBackup(t *testing.T) {
 	}
 	if _, err := Verify(dir); err == nil {
 		t.Fatal("expected checksum failure")
+	}
+}
+
+func TestOfflineValidationRejectsIncompleteRecoveryManifest(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*Manifest)
+	}{
+		{name: "missing repository bundle declaration", mutate: func(manifest *Manifest) { manifest.RepositoryBundle = false }},
+		{name: "missing stack definitions declaration", mutate: func(manifest *Manifest) { manifest.StackDefinitions = false }},
+		{name: "missing image mappings", mutate: func(manifest *Manifest) { manifest.OfflineImageArchives = nil }},
+		{name: "incomplete image mapping", mutate: func(manifest *Manifest) { manifest.OfflineImageArchives[0].ImageID = "" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "offline-images.tar"), []byte("images"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "repository.bundle"), []byte("bundle"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(filepath.Join(dir, "stack-definitions"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			files, err := BuildManifestFiles(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manifest := Manifest{
+				Version:              ManifestVersion,
+				ID:                   "20260809-120000",
+				CreatedAt:            time.Now().UTC(),
+				CLIRevision:          "0123456789abcdef",
+				OfflineImages:        true,
+				OfflineImageArchives: []OfflineImageArchive{{Source: "example/app:1", ArchiveTag: "admin-node-backup.local/test:image-001", ImageID: "sha256:test"}},
+				StackDefinitions:     true,
+				RepositoryBundle:     true,
+				Complete:             true,
+				Files:                files,
+			}
+			test.mutate(&manifest)
+			if err := WriteManifest(dir, manifest); err != nil {
+				t.Fatal(err)
+			}
+			verified, err := Verify(dir)
+			if err == nil {
+				err = validateScheduledOfflineRecoveryManifest(verified, dir)
+			}
+			if err == nil {
+				t.Fatal("offline validation accepted an incomplete recovery manifest")
+			}
+		})
 	}
 }

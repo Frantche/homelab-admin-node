@@ -130,6 +130,7 @@
     - admin-backup-integrity.service
     - admin-backup-integrity.timer
     - admin-backup-failure@.service
+    - admin-offline-backup.service
     - admin-gitea-process-backup.service
     - admin-unlock.path
   notify: systemd daemon-reload
@@ -138,6 +139,15 @@
   ansible.builtin.template:
     src: admin-gitea-process-backup.timer.j2
     dest: /etc/systemd/system/admin-gitea-process-backup.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: systemd daemon-reload
+
+- name: Deploy offline backup timer
+  ansible.builtin.template:
+    src: admin-offline-backup.timer.j2
+    dest: /etc/systemd/system/admin-offline-backup.timer
     owner: root
     group: root
     mode: "0644"
@@ -201,6 +211,14 @@
     enabled: "{{ (admin_mode == 'normal') and ((backup | default({})).gitea_process.enabled | default(false) | bool) }}"
     state: "{{ ((admin_mode == 'normal') and ((backup | default({})).gitea_process.enabled | default(false) | bool)) | ternary('started', 'stopped') }}"
     daemon_reload: true
+
+- name: Disable offline backup timer when it is not operational
+  ansible.builtin.systemd:
+    name: admin-offline-backup.timer
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  when: not ((admin_mode == 'normal') and ((backup | default({})).offline.enabled | default(false) | bool))
 
 - name: Enable admin-converge.timer
   ansible.builtin.systemd:

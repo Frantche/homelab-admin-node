@@ -31,6 +31,9 @@ func TestFromEnvDefaults(t *testing.T) {
 	if cfg.GiteaBackupQuiesceTimeout != 10*time.Minute {
 		t.Fatalf("GiteaBackupQuiesceTimeout = %s, want 10m", cfg.GiteaBackupQuiesceTimeout)
 	}
+	if cfg.OfflineBackupRetention != 2 || cfg.OfflineBackupMaxAge != 8*24*time.Hour || cfg.RecoveryKitMaxAge != 90*24*time.Hour {
+		t.Fatalf("offline defaults = retention %d max age %s kit age %s", cfg.OfflineBackupRetention, cfg.OfflineBackupMaxAge, cfg.RecoveryKitMaxAge)
+	}
 	if cfg.CIMode {
 		t.Fatal("CIMode = true, want false")
 	}
@@ -83,6 +86,9 @@ func TestFromEnvOverrides(t *testing.T) {
 	t.Setenv("ADMIN_NODE_VALIDATE_MOCK_ALL", "true")
 	t.Setenv("BACKUP_OPERATION_LOCK_TIMEOUT", "45m")
 	t.Setenv("BACKUP_GITEA_QUIESCE_TIMEOUT", "8m")
+	t.Setenv("BACKUP_OFFLINE_RETENTION", "4")
+	t.Setenv("BACKUP_OFFLINE_MAX_AGE", "10h")
+	t.Setenv("BACKUP_OFFLINE_MIN_FREE_BYTES", "1234")
 
 	cfg := FromEnv()
 
@@ -125,6 +131,9 @@ func TestFromEnvOverrides(t *testing.T) {
 	if cfg.GiteaBackupQuiesceTimeout != 8*time.Minute {
 		t.Fatalf("GiteaBackupQuiesceTimeout = %s, want 8m", cfg.GiteaBackupQuiesceTimeout)
 	}
+	if cfg.OfflineBackupRetention != 4 || cfg.OfflineBackupMaxAge != 10*time.Hour || cfg.OfflineBackupMinFreeBytes != 1234 {
+		t.Fatalf("offline overrides = %#v", cfg)
+	}
 }
 
 func TestLoadUsesManagedRuntimeFileWithProcessPrecedence(t *testing.T) {
@@ -153,6 +162,14 @@ BACKUP_REQUIRE_HARBOR_READ_ONLY=true
 BACKUP_LOCAL_RETENTION=7
 BACKUP_OPERATION_LOCK_TIMEOUT=45m
 BACKUP_GITEA_QUIESCE_TIMEOUT=9m
+BACKUP_OFFLINE_RETENTION=5
+BACKUP_OFFLINE_MAX_AGE=240h
+BACKUP_OFFLINE_MIN_FREE_BYTES=1234
+BACKUP_RECOVERY_KIT_INVENTORY=/managed/recovery-kit.json
+BACKUP_RECOVERY_KIT_MAX_AGE=720h
+SOPS_AGE_KEY_FILE=/managed/age-keys.txt
+ADMIN_CONFIG_REPO_ROOT=/managed/config
+OPENBAO_RECOVERY_FILE=/managed/openbao-recovery.sops.yaml
 HARBOR_ADMIN_PASSWORD="this deliberately unterminated secret is ignored
 `
 	if err := os.WriteFile(envFile, []byte(content), 0o600); err != nil {
@@ -189,6 +206,12 @@ HARBOR_ADMIN_PASSWORD="this deliberately unterminated secret is ignored
 	if cfg.GiteaBackupQuiesceTimeout != 9*time.Minute {
 		t.Fatalf("managed Gitea quiesce timeout not loaded: %s", cfg.GiteaBackupQuiesceTimeout)
 	}
+	if cfg.OfflineBackupRetention != 5 || cfg.OfflineBackupMaxAge != 240*time.Hour || cfg.OfflineBackupMinFreeBytes != 1234 {
+		t.Fatalf("managed offline backup policy not loaded: %#v", cfg)
+	}
+	if cfg.RecoveryKitInventoryFile != "/managed/recovery-kit.json" || cfg.RecoveryKitMaxAge != 720*time.Hour || cfg.AgeKeyFile != "/managed/age-keys.txt" || cfg.ConfigRepoRoot != "/managed/config" || cfg.OpenBaoRecoveryFile != "/managed/openbao-recovery.sops.yaml" {
+		t.Fatalf("managed recovery prerequisites not loaded: %#v", cfg)
+	}
 	if err := cfg.ValidateOperational(); err != nil {
 		t.Fatalf("deployed domains rejected: %v", err)
 	}
@@ -208,6 +231,22 @@ func TestLoadMissingManagedRuntimeFileUsesSafeDefaults(t *testing.T) {
 	}
 	if err := cfg.ValidateOperational(); err == nil || !strings.Contains(err.Error(), "built-in example values") {
 		t.Fatalf("expected clear incomplete runtime error, got %v", err)
+	}
+}
+
+func TestLoadAllowsDisabledOfflineFreshnessPolicy(t *testing.T) {
+	envFile := filepath.Join(t.TempDir(), "backup.env")
+	if err := os.WriteFile(envFile, []byte("BACKUP_OFFLINE_MAX_AGE=0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RESTIC_BACKUP_ENV_FILE", envFile)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.OfflineBackupMaxAge != 0 {
+		t.Fatalf("OfflineBackupMaxAge = %s, want disabled", cfg.OfflineBackupMaxAge)
 	}
 }
 

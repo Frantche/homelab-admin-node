@@ -23,6 +23,59 @@
       }}
   no_log: true
 
+- name: Validate offline backup policy and recovery-kit attestations
+  ansible.builtin.assert:
+    that:
+      - (backup.offline.retention | default(2) | int) >= 1
+      - (backup.offline.minimum_free_bytes | default(32212254720) | int) >= 1073741824
+      - backup.require_remote_repository | default(true) | bool
+      - >-
+        backup.offline.max_age | default('192h') | string
+        is match(offline_positive_duration_pattern)
+      - >-
+        not ((backup.offline.max_age | default('192h') | string)
+        is match(offline_zero_duration_pattern))
+      - >-
+        backup.offline.recovery_kit_max_age | default('2160h') | string
+        is match(offline_positive_duration_pattern)
+      - >-
+        not ((backup.offline.recovery_kit_max_age | default('2160h') | string)
+        is match(offline_zero_duration_pattern))
+      - >-
+        ((backup.offline.recovery_kit | default({})).keys()
+        | difference([
+          'last_verified_at',
+          'age_identity_offsite',
+          'config_repo_access_tested',
+          'restic_access_offsite',
+          'openbao_recovery_offsite',
+          'separation_of_duties_verified'
+        ]) | length) == 0
+      - >-
+        backup.offline.recovery_kit.last_verified_at | default('')
+        is match('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$')
+      - >-
+        (backup.offline.recovery_kit.last_verified_at | default('')
+        | to_datetime('%Y-%m-%dT%H:%M:%SZ')).strftime('%Y-%m-%dT%H:%M:%SZ')
+        == backup.offline.recovery_kit.last_verified_at
+      - >-
+        ((now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') | to_datetime('%Y-%m-%dT%H:%M:%SZ'))
+        - (backup.offline.recovery_kit.last_verified_at
+        | to_datetime('%Y-%m-%dT%H:%M:%SZ'))).total_seconds() >= 0
+      - backup.offline.recovery_kit.age_identity_offsite | default(false) | bool
+      - backup.offline.recovery_kit.config_repo_access_tested | default(false) | bool
+      - backup.offline.recovery_kit.restic_access_offsite | default(false) | bool
+      - backup.offline.recovery_kit.openbao_recovery_offsite | default(false) | bool
+      - backup.offline.recovery_kit.separation_of_duties_verified | default(false) | bool
+    fail_msg: >-
+      backup.offline is enabled but retention/capacity, mandatory remote delivery,
+      or the strictly secret-free recovery-kit attestations are invalid. Complete
+      the published offline recovery checklist and remove every undocumented key.
+  when: backup.offline.enabled | default(false) | bool
+  vars:
+    offline_positive_duration_pattern: '^\+?(?:(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:ns|us|µs|μs|ms|s|m|h))+$'
+    offline_zero_duration_pattern: '^\+?(?:0+(?:\.0+)?(?:ns|us|µs|μs|ms|s|m|h))+$|^\+?0$'
+
 - name: Render backup environment
   ansible.builtin.template:
     src: backup-env.j2
@@ -31,6 +84,35 @@
     group: root
     mode: "0600"
   no_log: true
+
+- name: Render secret-free recovery-kit inventory
+  ansible.builtin.copy:
+    dest: /etc/admin-node/recovery-kit-inventory.json
+    owner: root
+    group: root
+    mode: "0600"
+    content: >-
+      {{
+        {
+          'last_verified_at': backup.offline.recovery_kit.last_verified_at | string,
+          'age_identity_offsite': backup.offline.recovery_kit.age_identity_offsite | bool,
+          'config_repo_access_tested': backup.offline.recovery_kit.config_repo_access_tested | bool,
+          'restic_access_offsite': backup.offline.recovery_kit.restic_access_offsite | bool,
+          'openbao_recovery_offsite': backup.offline.recovery_kit.openbao_recovery_offsite | bool,
+          'separation_of_duties_verified': backup.offline.recovery_kit.separation_of_duties_verified | bool
+        } | to_nice_json
+      }}
+  when: backup.offline.enabled | default(false) | bool
+
+- name: Enable offline backup timer after its policy is ready
+  ansible.builtin.systemd:
+    name: admin-offline-backup.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - admin_mode == 'normal'
+    - backup.offline.enabled | default(false) | bool
 
 - name: Validate Gitea process backup configuration
   ansible.builtin.assert:

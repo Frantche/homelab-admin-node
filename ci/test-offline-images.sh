@@ -25,8 +25,12 @@ fake_restic="$fake_bin/restic"
 fake_systemctl="$fake_bin/systemctl"
 repo_root="$tmp_dir/repo"
 backup_env="$tmp_dir/backup.env"
+recovery_inventory="$tmp_dir/recovery-kit.json"
+age_key="$tmp_dir/keys.txt"
+config_repo="$tmp_dir/config-repo"
+openbao_recovery="$tmp_dir/openbao-unseal.sops.yaml"
 
-mkdir -p "$admin_root/stacks/test" "$admin_root/env" "$admin_root/data/gitea" "$fake_bin" "$repo_root" "$backup_root"
+mkdir -p "$admin_root/stacks/test" "$admin_root/env" "$admin_root/data/gitea" "$fake_bin" "$repo_root" "$backup_root" "$config_repo/.git"
 git -C "$repo_root" init -q
 git -C "$repo_root" -c user.name="Offline Test" -c user.email="offline-test@example.invalid" \
   commit --allow-empty -qm "offline test revision"
@@ -34,11 +38,24 @@ printf 'normal\n' > "$mode_file"
 printf 'services:\n  app:\n    image: %s\n' "$IMAGE" > "$admin_root/stacks/test/compose.yaml"
 printf 'GITEA_ADMIN_PASSWORD=test\n' > "$admin_root/env/gitea.env"
 printf 'gitea-data\n' > "$admin_root/data/gitea/value.txt"
+printf 'AGE-SECRET-KEY-TEST\n' > "$age_key"
+printf 'openbao: ENC[test]\nsops:\n  version: 3.13.2\n' > "$openbao_recovery"
+cat > "$recovery_inventory" <<EOF
+{
+  "last_verified_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "age_identity_offsite": true,
+  "config_repo_access_tested": true,
+  "restic_access_offsite": true,
+  "openbao_recovery_offsite": true,
+  "separation_of_duties_verified": true
+}
+EOF
 cat > "$backup_env" <<EOF
-RESTIC_REPOSITORY="$tmp_dir/restic-repo"
+RESTIC_REPOSITORY="s3:https://example.invalid/bucket"
 RESTIC_PASSWORD="secret"
 RESTIC_INIT_REPOSITORIES="true"
 RESTIC_DEFAULT_FORGET_ARGS="none"
+BACKUP_REQUIRE_REMOTE_REPOSITORY="true"
 EOF
 
 cat > "$fake_docker" <<EOF
@@ -139,6 +156,17 @@ if [[ ! -s "$backup_dir/repository.bundle" ]]; then
   echo "[offline-images] expected repository bundle in backup" >&2
   exit 1
 fi
+
+PATH="$fake_bin:$PATH" \
+ADMIN_BACKUP_ROOT="$backup_root" \
+RESTIC_BACKUP_ENV_FILE="$backup_env" \
+BACKUP_OFFLINE_MAX_AGE=1h \
+BACKUP_RECOVERY_KIT_INVENTORY="$recovery_inventory" \
+BACKUP_RECOVERY_KIT_MAX_AGE=1h \
+SOPS_AGE_KEY_FILE="$age_key" \
+ADMIN_CONFIG_REPO_ROOT="$config_repo" \
+OPENBAO_RECOVERY_FILE="$openbao_recovery" \
+  "$REPO_ROOT/bin/admin-node" backup offline-status >/dev/null
 
 echo "[offline-images] removing local image $IMAGE"
 "$REAL_DOCKER" image rm "$IMAGE" >/dev/null 2>&1 || true
