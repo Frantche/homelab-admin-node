@@ -1,8 +1,10 @@
 # Managed by Ansible.
+CI_MODE={{ ((ci_mode | default(false) | bool) | ternary('true', 'false')) | quote }}
 ADMIN_NODE_REPO_ROOT={{ admin_node_repo_root | default('/opt/homelab-admin-node') | quote }}
 ADMIN_NODE_ROOT={{ admin_node_root | quote }}
 ADMIN_BACKUP_ROOT={{ (admin_node_root ~ '/backups/local') | quote }}
 ADMIN_MODE_FILE={{ admin_mode_file | quote }}
+ADMIN_RESTORE_ID_FILE=/etc/admin-node/restore-id
 ADMIN_NODE_LAN_IP={{ admin_node_lan_ip | quote }}
 KEYCLOAK_DOMAIN={{ service_domains.keycloak | quote }}
 HARBOR_DOMAIN={{ service_domains.harbor | quote }}
