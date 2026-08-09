@@ -46,7 +46,9 @@ manifest checksum verification, and recovery-kit state. It exits non-zero with
 actionable prerequisite names when anything is missing or stale.
 The Restic prerequisite must be a complete, syntactically valid non-local
 repository declaration; a local path or `file:` repository does not satisfy
-off-node recovery readiness.
+off-node recovery readiness. Offline scheduling also requires
+`backup.require_remote_repository: true`, and a point is not healthy until its
+manifest records a successful remote delivery.
 The scheduled service also requires the Ansible-managed
 `/srv/admin/env/backup.env`; a missing policy file is a hard failure rather than
 an invitation to run with permissive defaults.

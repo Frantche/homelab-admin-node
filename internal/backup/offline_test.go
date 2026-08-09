@@ -39,6 +39,7 @@ func TestCheckOfflineStatusVerifiesRecoveryPointAndRecoveryKit(t *testing.T) {
 		OfflineImageArchives: []OfflineImageArchive{{Source: "example/app:1", ArchiveTag: "admin-node-backup.local/test:image-001", ImageID: "sha256:test"}},
 		StackDefinitions:     true,
 		RepositoryBundle:     true,
+		Artifacts:            []ManifestArtifact{{Path: "remote-delivery", Required: true, Status: ArtifactProduced, External: true}},
 		Complete:             true,
 		Files:                files,
 	}); err != nil {
@@ -81,6 +82,19 @@ func TestCheckOfflineStatusVerifiesRecoveryPointAndRecoveryKit(t *testing.T) {
 	}
 	if status.ID != "20260808-110000" || !status.Fresh || !status.Verified || !status.RecoveryKitComplete || len(status.Problems) != 0 {
 		t.Fatalf("status = %#v", status)
+	}
+}
+
+func TestDeliveredOfflineRecoveryRequiresRemoteEvidence(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "repository.bundle"), []byte("bundle"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "stack-definitions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateDeliveredOfflineRecoveryManifest(Manifest{OfflineImages: true, RepositoryBundle: true, CLIRevision: "revision", StackDefinitions: true}, dir); err == nil {
+		t.Fatal("delivery validation accepted a manifest without remote evidence")
 	}
 }
 
@@ -132,5 +146,20 @@ func TestCheckOfflineStatusRejectsUnknownRecoveryKitFields(t *testing.T) {
 	}
 	if status.RecoveryKitComplete || len(status.Problems) < 2 {
 		t.Fatalf("status = %#v", status)
+	}
+}
+
+func TestRecoveryMaterialMarkersCannotBeComments(t *testing.T) {
+	root := t.TempDir()
+	ageFile := filepath.Join(root, "age.txt")
+	if err := os.WriteFile(ageFile, []byte("# AGE-SECRET-KEY-FAKE\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sopsFile := filepath.Join(root, "openbao.sops.yaml")
+	if err := os.WriteFile(sopsFile, []byte("# value: ENC[fake]\n# sops:\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if ageIdentityPresent(ageFile) || sopsEncryptedMaterialPresent(sopsFile) {
+		t.Fatal("comment-only recovery material was accepted")
 	}
 }

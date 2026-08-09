@@ -28,6 +28,19 @@
     that:
       - (backup.offline.retention | default(2) | int) >= 1
       - (backup.offline.minimum_free_bytes | default(32212254720) | int) >= 1073741824
+      - backup.require_remote_repository | default(true) | bool
+      - >-
+        backup.offline.max_age | default('192h') | string
+        is match(offline_positive_duration_pattern)
+      - >-
+        not ((backup.offline.max_age | default('192h') | string)
+        is match(offline_zero_duration_pattern))
+      - >-
+        backup.offline.recovery_kit_max_age | default('2160h') | string
+        is match(offline_positive_duration_pattern)
+      - >-
+        not ((backup.offline.recovery_kit_max_age | default('2160h') | string)
+        is match(offline_zero_duration_pattern))
       - >-
         ((backup.offline.recovery_kit | default({})).keys()
         | difference([
@@ -45,16 +58,23 @@
         (backup.offline.recovery_kit.last_verified_at | default('')
         | to_datetime('%Y-%m-%dT%H:%M:%SZ')).strftime('%Y-%m-%dT%H:%M:%SZ')
         == backup.offline.recovery_kit.last_verified_at
+      - >-
+        ((now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') | to_datetime('%Y-%m-%dT%H:%M:%SZ'))
+        - (backup.offline.recovery_kit.last_verified_at
+        | to_datetime('%Y-%m-%dT%H:%M:%SZ'))).total_seconds() >= 0
       - backup.offline.recovery_kit.age_identity_offsite | default(false) | bool
       - backup.offline.recovery_kit.config_repo_access_tested | default(false) | bool
       - backup.offline.recovery_kit.restic_access_offsite | default(false) | bool
       - backup.offline.recovery_kit.openbao_recovery_offsite | default(false) | bool
       - backup.offline.recovery_kit.separation_of_duties_verified | default(false) | bool
     fail_msg: >-
-      backup.offline is enabled but retention/capacity or the strictly secret-free
-      recovery-kit attestations are invalid. Complete the published offline recovery
-      checklist and remove every inventory key not documented there.
+      backup.offline is enabled but retention/capacity, mandatory remote delivery,
+      or the strictly secret-free recovery-kit attestations are invalid. Complete
+      the published offline recovery checklist and remove every undocumented key.
   when: backup.offline.enabled | default(false) | bool
+  vars:
+    offline_positive_duration_pattern: '^\+?(?:(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:ns|us|µs|μs|ms|s|m|h))+$'
+    offline_zero_duration_pattern: '^\+?(?:0+(?:\.0+)?(?:ns|us|µs|μs|ms|s|m|h))+$|^\+?0$'
 
 - name: Render backup environment
   ansible.builtin.template:

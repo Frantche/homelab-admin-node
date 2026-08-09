@@ -60,7 +60,7 @@ func CheckOfflineStatus(cfg config.Config, now time.Time) (OfflineStatus, error)
 		manifest, err := Verify(latest.Path)
 		if err != nil {
 			status.Problems = append(status.Problems, "offline recovery point verification failed: "+err.Error())
-		} else if err := validateScheduledOfflineRecoveryManifest(manifest, latest.Path); err != nil {
+		} else if err := validateDeliveredOfflineRecoveryManifest(manifest, latest.Path); err != nil {
 			status.Problems = append(status.Problems, "offline recovery point is incomplete: "+err.Error())
 		} else {
 			status.Verified = true
@@ -81,6 +81,18 @@ func validateScheduledOfflineRecoveryManifest(manifest Manifest, dir string) err
 		return fmt.Errorf("rendered stack definitions are missing")
 	}
 	return nil
+}
+
+func validateDeliveredOfflineRecoveryManifest(manifest Manifest, dir string) error {
+	if err := validateScheduledOfflineRecoveryManifest(manifest, dir); err != nil {
+		return err
+	}
+	for _, artifact := range manifest.Artifacts {
+		if artifact.Path == "remote-delivery" && artifact.Required && artifact.External && artifact.Status == ArtifactProduced {
+			return nil
+		}
+	}
+	return fmt.Errorf("verified remote delivery evidence is missing")
 }
 
 func checkRecoveryKit(cfg config.Config, now time.Time, status *OfflineStatus) {
@@ -121,7 +133,7 @@ func checkRecoveryKit(cfg config.Config, now time.Time, status *OfflineStatus) {
 			status.Problems = append(status.Problems, "recovery-kit prerequisite not attested: "+check.name)
 		}
 	}
-	if !fileContains(cfg.AgeKeyFile, []byte("AGE-SECRET-KEY-")) {
+	if !ageIdentityPresent(cfg.AgeKeyFile) {
 		complete = false
 		status.Problems = append(status.Problems, "local recovery prerequisite missing or invalid: local age identity")
 	}
@@ -129,7 +141,7 @@ func checkRecoveryKit(cfg config.Config, now time.Time, status *OfflineStatus) {
 		complete = false
 		status.Problems = append(status.Problems, "local recovery prerequisite missing: private config repository")
 	}
-	if !fileContains(cfg.OpenBaoRecoveryFile, []byte("ENC[")) || !fileContains(cfg.OpenBaoRecoveryFile, []byte("sops:")) {
+	if !sopsEncryptedMaterialPresent(cfg.OpenBaoRecoveryFile) {
 		complete = false
 		status.Problems = append(status.Problems, "local recovery prerequisite missing or invalid: SOPS-encrypted OpenBao recovery material")
 	}
@@ -140,12 +152,36 @@ func checkRecoveryKit(cfg config.Config, now time.Time, status *OfflineStatus) {
 	status.RecoveryKitComplete = complete
 }
 
-func fileContains(path string, marker []byte) bool {
+func ageIdentityPresent(path string) bool {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false
 	}
-	return len(data) > 0 && bytes.Contains(data, marker)
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "AGE-SECRET-KEY-") && len(line) > len("AGE-SECRET-KEY-") {
+			return true
+		}
+	}
+	return false
+}
+
+func sopsEncryptedMaterialPresent(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	hasEncryptedValue := false
+	hasSOPSMetadata := false
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		hasEncryptedValue = hasEncryptedValue || strings.Contains(line, "ENC[")
+		hasSOPSMetadata = hasSOPSMetadata || strings.HasPrefix(line, "sops:")
+	}
+	return hasEncryptedValue && hasSOPSMetadata
 }
 
 func resticOffsiteAccessDeclared(path string) bool {

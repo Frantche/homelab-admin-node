@@ -55,6 +55,7 @@ RESTIC_REPOSITORY="s3:https://example.invalid/bucket"
 RESTIC_PASSWORD="secret"
 RESTIC_INIT_REPOSITORIES="true"
 RESTIC_DEFAULT_FORGET_ARGS="none"
+BACKUP_REQUIRE_REMOTE_REPOSITORY="true"
 EOF
 
 cat > "$fake_docker" <<EOF

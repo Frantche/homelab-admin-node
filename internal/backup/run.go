@@ -45,6 +45,15 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 			return Info{}, err
 		}
 	}
+	if opts.IncludeImages {
+		resticCfg, err := loadResticConfig(cfg.BackupEnvFile)
+		if err != nil {
+			return Info{}, fmt.Errorf("inspect offline remote-delivery policy: %w", err)
+		}
+		if !resticCfg.RequireRemote {
+			return Info{}, fmt.Errorf("offline backup requires BACKUP_REQUIRE_REMOTE_REPOSITORY=true")
+		}
+	}
 
 	now := time.Now
 	if opts.Now != nil {
@@ -930,7 +939,10 @@ func rotateLocalFiltered(root string, keep int, offline *bool) error {
 	if offline != nil {
 		filtered := backups[:0]
 		for _, item := range backups {
-			if item.HasOfflineImage == *offline {
+			if *offline && verifiedDeliveredOfflineRecoveryPoint(item) {
+				filtered = append(filtered, item)
+			}
+			if !*offline && !item.HasOfflineImage {
 				filtered = append(filtered, item)
 			}
 		}
@@ -948,6 +960,14 @@ func rotateLocalFiltered(root string, keep int, offline *bool) error {
 		}
 	}
 	return nil
+}
+
+func verifiedDeliveredOfflineRecoveryPoint(info Info) bool {
+	if !info.HasOfflineImage {
+		return false
+	}
+	manifest, err := Verify(info.Path)
+	return err == nil && validateDeliveredOfflineRecoveryManifest(manifest, info.Path) == nil
 }
 
 func availableBytes(path string) (uint64, error) {
