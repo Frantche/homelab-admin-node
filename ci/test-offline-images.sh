@@ -30,6 +30,8 @@ age_key="$tmp_dir/keys.txt"
 config_repo="$tmp_dir/config-repo"
 openbao_recovery="$tmp_dir/openbao-unseal.sops.yaml"
 release_ref_file="$tmp_dir/release-ref"
+release_name_file="$tmp_dir/release-name"
+release_channel_file="$tmp_dir/release-channel"
 git_ref_file="$tmp_dir/git-ref"
 
 mkdir -p "$admin_root/stacks/test" "$admin_root/env" "$admin_root/data/gitea" "$fake_bin" "$repo_root" "$backup_root" "$config_repo/.git"
@@ -39,6 +41,8 @@ git -C "$repo_root" -c user.name="Offline Test" -c user.email="offline-test@exam
 release_revision="$(git -C "$repo_root" rev-parse HEAD)"
 git -C "$repo_root" checkout --detach "$release_revision" >/dev/null
 printf '%s\n' "$release_revision" > "$release_ref_file"
+printf '%s\n' "$release_revision" > "$release_name_file"
+printf 'ci\n' > "$release_channel_file"
 printf '%s\n' "$release_revision" > "$git_ref_file"
 printf 'normal\n' > "$mode_file"
 printf 'services:\n  app:\n    image: %s\n' "$IMAGE" > "$admin_root/stacks/test/compose.yaml"
@@ -146,6 +150,8 @@ ADMIN_NODE_ROOT="$admin_root" \
 ADMIN_BACKUP_ROOT="$backup_root" \
 ADMIN_MODE_FILE="$mode_file" \
 ADMIN_RELEASE_REF_FILE="$release_ref_file" \
+ADMIN_RELEASE_NAME_FILE="$release_name_file" \
+ADMIN_RELEASE_CHANNEL_FILE="$release_channel_file" \
 ADMIN_GIT_REF_FILE="$git_ref_file" \
 ADMIN_OPERATION_LOCK="$tmp_dir/operation.lock" \
 GITEA_STACK_PATH="$admin_root/data/gitea-stack" \
