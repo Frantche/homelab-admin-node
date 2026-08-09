@@ -21,6 +21,16 @@ type Options struct {
 	RevisionFile   string
 	SchemaSource   string
 	SchemaFile     string
+	BuildScript    string
+	BinaryPath     string
+}
+
+type RestartRequiredError struct {
+	BinaryPath string
+}
+
+func (e *RestartRequiredError) Error() string {
+	return fmt.Sprintf("admin-node was rebuilt from the selected release; restart with %s", e.BinaryPath)
 }
 
 func Run(ctx context.Context, opts Options) error {
@@ -50,6 +60,16 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	if err := updateAdminRepository(ctx, opts, !opts.SkipGitPull); err != nil {
 		return err
+	}
+	if _, err := readSchemaVersion(opts.SchemaSource); err != nil {
+		return err
+	}
+	rebuilt, err := rebuildAdminNode(ctx, opts)
+	if err != nil {
+		return err
+	}
+	if rebuilt {
+		return &RestartRequiredError{BinaryPath: opts.BinaryPath}
 	}
 	if !opts.SkipGitPull {
 		inventoryRepo, err := gitRootForPath(ctx, opts.InventoryPath)
@@ -83,6 +103,20 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	fmt.Println("[admin-converge] completed")
 	return nil
+}
+
+func rebuildAdminNode(ctx context.Context, opts Options) (bool, error) {
+	if opts.BuildScript == "" || opts.BinaryPath == "" {
+		return false, nil
+	}
+	output, err := exec.CommandContext(ctx, opts.BuildScript).CombinedOutput()
+	if len(output) > 0 {
+		fmt.Print(string(output))
+	}
+	if err != nil {
+		return false, fmt.Errorf("build admin-node from selected release: %w", err)
+	}
+	return strings.Contains(string(output), "changed=true"), nil
 }
 
 func updateAdminRepository(ctx context.Context, opts Options, allowUpdate bool) error {
@@ -174,13 +208,9 @@ func persistInstalledState(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("read installed admin revision: %w", err)
 	}
-	schema, err := os.ReadFile(opts.SchemaSource)
+	schemaVersion, err := readSchemaVersion(opts.SchemaSource)
 	if err != nil {
-		return fmt.Errorf("read configuration schema version: %w", err)
-	}
-	schemaVersion := strings.TrimSpace(string(schema))
-	if schemaVersion == "" {
-		return fmt.Errorf("configuration schema version in %s is empty", opts.SchemaSource)
+		return err
 	}
 	if err := writeStateFile(opts.SchemaFile, schemaVersion+"\n"); err != nil {
 		return fmt.Errorf("persist configuration schema version: %w", err)
@@ -191,6 +221,18 @@ func persistInstalledState(ctx context.Context, opts Options) error {
 		return fmt.Errorf("persist installed admin revision: %w", err)
 	}
 	return nil
+}
+
+func readSchemaVersion(path string) (string, error) {
+	schema, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read configuration schema version: %w", err)
+	}
+	schemaVersion := strings.TrimSpace(string(schema))
+	if schemaVersion == "" {
+		return "", fmt.Errorf("configuration schema version in %s is empty", path)
+	}
+	return schemaVersion, nil
 }
 
 func writeStateFile(path, content string) error {

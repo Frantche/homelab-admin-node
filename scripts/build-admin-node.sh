@@ -44,6 +44,7 @@ trap cleanup EXIT
 source_hash="$(
   {
     printf '%s\0' go.mod
+    printf '%s\0' scripts/build-admin-node.sh
     if [[ -f go.sum ]]; then
       printf '%s\0' go.sum
     fi

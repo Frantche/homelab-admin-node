@@ -27,8 +27,8 @@ ci_vm_create() {
   local repo_url="$3"
   local repo_ref="$4"
 
-  if [[ ! "$repo_ref" =~ ^[0-9a-fA-F]{40}$ ]]; then
-    echo "ERROR: VM repository ref must be a full commit SHA" >&2
+  if [[ ! "$repo_ref" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "ERROR: VM repository ref must be a lowercase full commit SHA" >&2
     return 1
   fi
   case "$vm_dir" in

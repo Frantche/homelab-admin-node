@@ -16,11 +16,23 @@ def main() -> None:
     pubkey = public_key_path.read_text().strip()
     repo_url = os.environ["REPO_URL"]
     repo_ref = os.environ["REPO_REF"]
-    if re.fullmatch(r"[0-9a-fA-F]{40}", repo_ref) is None:
-        raise SystemExit("REPO_REF must be a full commit SHA")
+    arch_snapshot = os.environ.get("ARCH_PACKAGE_SNAPSHOT", "live")
+    if re.fullmatch(r"[0-9a-f]{40}", repo_ref) is None:
+        raise SystemExit("REPO_REF must be a lowercase full commit SHA")
+    if arch_snapshot != "live" and re.fullmatch(r"[0-9]{4}/[0-9]{2}/[0-9]{2}", arch_snapshot) is None:
+        raise SystemExit("ARCH_PACKAGE_SNAPSHOT must be live or YYYY/MM/DD")
 
     with Path("cloud-init/admin-01.user-data.yaml").open() as f:
         data = yaml.safe_load(f)
+
+    bootcmd = data.get("bootcmd", [])
+    replaced_snapshot = False
+    for index, command in enumerate(bootcmd):
+        if isinstance(command, str) and "ARCH_PACKAGE_SNAPSHOT_REPLACE_ME" in command:
+            bootcmd[index] = command.replace("ARCH_PACKAGE_SNAPSHOT_REPLACE_ME", arch_snapshot)
+            replaced_snapshot = True
+    if not replaced_snapshot:
+        raise SystemExit("Arch package snapshot placeholder not found")
 
     for user in data.get("users", []):
         keys = user.get("ssh_authorized_keys", [])

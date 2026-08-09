@@ -23,7 +23,7 @@ make validate-release MANIFEST=/path/to/qualification.json RELEASE_COMMIT=v1.2.0
 ```
 
 The manifest binds the tag and full commit to the configuration schema, dated
-Arch cloud image and checksum, `pacman -Q` package-state artifact, Python and
+Arch cloud image and checksum, Arch Linux Archive package snapshot, `pacman -Q` package-state artifact, Python and
 Ansible dependencies, container digests, and evidence URLs. The package-state
 artifact has its own SHA-256 so its contents cannot be replaced silently. Qualification is
 valid only when two fresh nodes built from the same release have identical
@@ -36,12 +36,33 @@ supported release in the GitHub release notes.
 The validator also compares `container_images` with every literal image used by
 `stacks/*/compose.yaml*`; copy the complete digest-pinned set into the manifest.
 
+Production publication uses the `bootstrap-user-journey` workflow on the
+default branch with `scope=disaster-recovery`, `promote=true`, the immutable
+candidate SHA, `release_tag=vMAJOR.MINOR.PATCH`, and the HTTPS URL plus SHA-256
+of the completed manifest. Promotion reruns both DR variants, verifies the
+downloaded manifest against the candidate and local annotated tag, then pushes
+that tag and creates the GitHub release with the manifest attached. Do not
+create production tags manually or reuse the older
+`homelab-production-<sha>` marker convention.
+
 ## Supported upgrade
 
 Before the first convergence after adopting this release policy, create
 `/etc/admin-node/release-ref`. Its absence is a hard failure; there is no legacy
 fallback to a moving branch. Use a qualified full commit for production, or the
 literal value `main` only when deliberately selecting the development channel.
+When adopting the policy from an older binary, check out the first qualified
+release and run `scripts/build-admin-node.sh` once before using this procedure.
+Perform that one-time handoff after the backup in step 2 and after resolving
+`target` in step 3:
+
+```bash
+sudo git -C /opt/homelab-admin-node checkout --detach "$target"
+sudo /opt/homelab-admin-node/scripts/build-admin-node.sh
+```
+
+Do not repeat this manual checkout for later release-to-release upgrades; the
+qualified CLI then performs and verifies its own rebuild/re-exec handoff.
 
 1. Read the target release notes and confirm that the current release is listed
    as a supported upgrade source. Apply documented config-schema migrations in
@@ -70,6 +91,10 @@ literal value `main` only when deliberately selecting the development channel.
 
 4. Confirm that `release_ref` and `revision` are identical and retain the
    pre-upgrade backup until the release has completed its observation period.
+
+Convergence checks out the selected commit, rebuilds `admin-node`, and replaces
+the running process before Ansible starts. This handoff ensures that both the Go
+lifecycle logic and the playbook come from the same release.
 
 Do not upgrade system packages or configuration independently while evaluating
 a release; that would no longer match its qualified component inventory.

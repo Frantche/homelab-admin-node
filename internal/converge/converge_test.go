@@ -2,6 +2,8 @@ package converge
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -215,6 +217,66 @@ func TestPersistInstalledStateDoesNotRecordRevisionForInvalidSchema(t *testing.T
 	}
 	if _, err := os.Stat(opts.RevisionFile); !os.IsNotExist(err) {
 		t.Fatalf("revision marker should not exist after invalid schema: %v", err)
+	}
+}
+
+func TestRebuildAdminNodeRequestsRestartOnlyWhenBinaryChanges(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		changed bool
+	}{
+		{name: "unchanged", changed: false},
+		{name: "rebuilt", changed: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			script := filepath.Join(dir, "build-admin-node.sh")
+			content := "#!/usr/bin/env bash\nset -euo pipefail\nprintf 'changed=" + fmt.Sprintf("%t", test.changed) + "\\n'\n"
+			if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			changed, err := rebuildAdminNode(context.Background(), Options{BuildScript: script, BinaryPath: filepath.Join(dir, "admin-node")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if changed != test.changed {
+				t.Fatalf("changed = %t, want %t", changed, test.changed)
+			}
+		})
+	}
+}
+
+func TestRunRestartsTargetBinaryBeforeAnsibleAfterReleaseChange(t *testing.T) {
+	repo := initGitRepo(t)
+	writeAndCommit(t, repo, "release/config-schema-version", "1\n", "target release")
+	target := gitOutput(t, repo, "rev-parse", "HEAD")
+	writeAndCommit(t, repo, "README.md", "current release\n", "current release")
+	stateDir := t.TempDir()
+	refFile := filepath.Join(stateDir, "release-ref")
+	if err := os.WriteFile(refFile, []byte(target+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	buildScript := filepath.Join(t.TempDir(), "build-admin-node.sh")
+	if err := os.WriteFile(buildScript, []byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf 'changed=true\\n'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{
+		RepoDir:        repo,
+		InventoryPath:  filepath.Join(t.TempDir(), "inventory-must-not-be-read"),
+		PlaybookPath:   filepath.Join(t.TempDir(), "playbook-must-not-be-read"),
+		LockFile:       filepath.Join(t.TempDir(), "converge.lock"),
+		ReleaseRefFile: refFile,
+		SchemaSource:   filepath.Join(repo, "release/config-schema-version"),
+		BuildScript:    buildScript,
+		BinaryPath:     filepath.Join(repo, "bin/admin-node"),
+	}
+	err := Run(context.Background(), opts)
+	var restart *RestartRequiredError
+	if !errors.As(err, &restart) {
+		t.Fatalf("release transition error = %v, want RestartRequiredError", err)
+	}
+	if got := gitOutput(t, repo, "rev-parse", "HEAD"); got != target {
+		t.Fatalf("HEAD = %s, want target %s", got, target)
 	}
 }
 

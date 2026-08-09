@@ -22,6 +22,12 @@ that every artifact required by the active stateful stacks was produced. It
 fails instead of silently omitting an active Gitea or Harbor database, Harbor
 registry data, or the OpenBao snapshot.
 
+Before touching service data, every backup also verifies that the selected
+release pin, the revision recorded by the last successful convergence, and the
+repository `HEAD` are identical. Production checkouts must additionally be
+detached and free of local files. A checkout performed without convergence is
+therefore never published as the backup `cli_revision` or repository bundle.
+
 The backup manifest contains an `artifacts` inventory. Required entries must be
 `produced`; optional offline-image and repository-bundle entries are explicitly
 `disabled` during a standard backup. `admin-node backup verify` checks this

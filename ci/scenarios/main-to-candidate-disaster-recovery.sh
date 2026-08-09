@@ -160,7 +160,9 @@ case "$ACTION" in
   upgrade-candidate)
     vm_ssh "sudo git -C /opt/homelab-admin-node fetch --no-tags '$CANDIDATE_REPO_URL' '$CANDIDATE_SHA'; \
       sudo git -C /opt/homelab-admin-node checkout --detach '$CANDIDATE_SHA'; \
-      sudo /opt/homelab-admin-node/scripts/build-admin-node.sh"
+      sudo /opt/homelab-admin-node/scripts/build-admin-node.sh; \
+      printf '%s\n' '$CANDIDATE_SHA' | sudo tee /etc/admin-node/release-name >/dev/null; \
+      printf '%s\n' '$CANDIDATE_SHA' | sudo tee /etc/admin-node/release-ref >/dev/null"
     run_converge
     ;;
   reboot-candidate-hardening)

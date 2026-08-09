@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -159,13 +160,14 @@ func TestUnknownCommand(t *testing.T) {
 
 func TestVersionReportsPersistedReleaseState(t *testing.T) {
 	dir := t.TempDir()
+	revision := strings.Repeat("a", 40)
 	paths := []struct {
 		name  string
 		value string
 	}{
-		{"release-name", "v1.2.3\n"},
-		{"release-ref", strings.Repeat("a", 40) + "\n"},
-		{"git-ref", strings.Repeat("a", 40) + "\n"},
+		{"release-name", revision + "\n"},
+		{"release-ref", revision + "\n"},
+		{"git-ref", revision + "\n"},
 		{"schema", "2\n"},
 	}
 	for _, item := range paths {
@@ -184,7 +186,7 @@ func TestVersionReportsPersistedReleaseState(t *testing.T) {
 	if code := a.run(context.Background(), []string{"version", "--json"}); code != 0 {
 		t.Fatalf("code = %d, stderr=%q", code, errOut.String())
 	}
-	for _, expected := range []string{`"release":"v1.2.3"`, `"config_schema":"2"`} {
+	for _, expected := range []string{`"release":"` + revision + `"`, `"config_schema":"2"`} {
 		if !strings.Contains(out.String(), expected) {
 			t.Fatalf("version output %q does not contain %q", out.String(), expected)
 		}
@@ -229,6 +231,54 @@ func TestVersionFailsWhenPersistedReleaseStateIsIncompleteOrMismatched(t *testin
 				t.Fatalf("missing diagnostic: %q", errOut.String())
 			}
 		})
+	}
+}
+
+func TestVersionBindsReleaseTagToInstalledRevision(t *testing.T) {
+	repo := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "--initial-branch=main"},
+		{"config", "user.email", "ci@example.test"},
+		{"config", "user.name", "CI"},
+		{"commit", "--allow-empty", "-m", "release"},
+		{"tag", "-a", "v1.2.3", "-m", "qualified"},
+	} {
+		if output, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	revisionBytes, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := strings.TrimSpace(string(revisionBytes))
+	state := t.TempDir()
+	cfg := config.FromEnv()
+	cfg.RepoRoot = repo
+	cfg.ReleaseNameFile = filepath.Join(state, "release-name")
+	cfg.ReleaseRefFile = filepath.Join(state, "release-ref")
+	cfg.GitRefFile = filepath.Join(state, "git-ref")
+	cfg.SchemaVersionFile = filepath.Join(state, "schema")
+	for path, value := range map[string]string{
+		cfg.ReleaseNameFile:   "v1.2.3\n",
+		cfg.ReleaseRefFile:    revision + "\n",
+		cfg.GitRefFile:        revision + "\n",
+		cfg.SchemaVersionFile: "1\n",
+	} {
+		if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out, errOut bytes.Buffer
+	a := app{out: &out, errOut: &errOut, cfg: cfg}
+	if code := a.run(context.Background(), []string{"version"}); code != 0 {
+		t.Fatalf("valid tag rejected: code=%d stderr=%q", code, errOut.String())
+	}
+	if err := os.WriteFile(cfg.ReleaseNameFile, []byte("v1.2.4\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := a.run(context.Background(), []string{"version"}); code != 1 {
+		t.Fatalf("unbound tag accepted: code=%d", code)
 	}
 }
 

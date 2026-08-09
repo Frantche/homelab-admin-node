@@ -97,10 +97,36 @@ class ReleaseInstallerTest(unittest.TestCase):
         self.assertEqual(
             self.output("-C", str(checkout), "rev-parse", "HEAD"), local_commit
         )
-        self.assertEqual(
-            (self.state_dir / "git-ref").read_text(encoding="utf-8").strip(),
-            local_commit,
+        self.assertFalse((self.state_dir / "git-ref").exists())
+        self.assertFalse((self.state_dir / "config-schema-version").exists())
+
+    def test_ci_renderer_injects_exact_package_snapshot(self) -> None:
+        public_key = self.root / "id_ed25519.pub"
+        public_key.write_text("ssh-ed25519 AAAATEST ci@example.test\n", encoding="utf-8")
+        rendered = self.root / "rendered"
+        env = os.environ.copy()
+        env.update(
+            {
+                "CI_VM_DIR": str(rendered),
+                "CI_SSH_PUBLIC_KEY": str(public_key),
+                "REPO_URL": str(self.remote),
+                "REPO_REF": self.commit,
+                "ARCH_PACKAGE_SNAPSHOT": "2026/08/08",
+            }
         )
+        result = subprocess.run(
+            ["python3", str(ROOT / "ci/render-bootstrap-cloud-init.py")],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = yaml.safe_load((rendered / "user-data").read_text(encoding="utf-8"))
+        bootcmd = "\n".join(data["bootcmd"])
+        self.assertIn("snapshot='2026/08/08'", bootcmd)
+        self.assertNotIn("ARCH_PACKAGE_SNAPSHOT_REPLACE_ME", bootcmd)
 
     @staticmethod
     def git(*args: str) -> None:

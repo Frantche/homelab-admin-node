@@ -33,6 +33,24 @@ packages:
   - audit
   - lynis
 
+bootcmd:
+  - |
+      set -eu
+      snapshot='ARCH_PACKAGE_SNAPSHOT_REPLACE_ME'
+      case "$snapshot" in
+        live)
+          server='https://geo.mirror.pkgbuild.com/$repo/os/$arch'
+          ;;
+        [0-9][0-9][0-9][0-9]/[0-9][0-9]/[0-9][0-9])
+          server="https://archive.archlinux.org/repos/$snapshot/\$repo/os/\$arch"
+          ;;
+        *)
+          echo "[cloud-init] replace ARCH_PACKAGE_SNAPSHOT_REPLACE_ME with the qualified YYYY/MM/DD Arch snapshot" >&2
+          exit 2
+          ;;
+      esac
+      printf 'Server = %s\n' "$server" > /etc/pacman.d/mirrorlist
+
 write_files:
   - path: /etc/admin-node/mode
     owner: root:root
@@ -94,8 +112,6 @@ write_files:
       fi
       printf '%s\n' "$requested_ref" > /etc/admin-node/release-name
       printf '%s\n' "$persisted_ref" > /etc/admin-node/release-ref
-      printf '%s\n' "$resolved_ref" > /etc/admin-node/git-ref
-      install -m 0644 "$repo_dir/release/config-schema-version" /etc/admin-node/config-schema-version
   - path: /usr/local/bin/admin-node-converge
     owner: root:root
     permissions: '0755'

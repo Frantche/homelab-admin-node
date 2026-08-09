@@ -8,6 +8,7 @@
   "platform": {
     "arch_image_url": "https://geo.mirror.pkgbuild.com/images/2026.08.01/Arch-Linux-x86_64-cloudimg.qcow2",
     "arch_image_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "package_repository_snapshot": "2026/08/08",
     "package_strategy": "Full pacman upgrade qualified on 2026-08-08; package list attached to the release",
     "package_state_artifact": "https://github.example/releases/download/v1.0.0/pacman-Q.txt",
     "package_state_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -58,10 +59,12 @@
     ],
     "upgrade": {
       "from_release": "v0.9.0",
+      "commit": "0123456789abcdef0123456789abcdef01234567",
       "result": "passed",
       "artifact": "https://github.example/actions/runs/4"
     },
     "rollback": {
+      "commit": "0123456789abcdef0123456789abcdef01234567",
       "result": "passed",
       "artifact": "https://github.example/actions/runs/5"
     }

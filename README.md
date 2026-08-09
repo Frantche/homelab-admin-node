@@ -30,8 +30,9 @@ The project keeps the admin node reproducible and recoverable:
 ## Quick Start
 
 1. Create a Proxmox VM from an Arch Linux cloud image.
-2. Replace `RELEASE_REF_REPLACE_ME` in `cloud-init/admin-01.user-data.yaml`
-   with a qualified immutable tag or commit, then attach the file.
+2. Replace `RELEASE_REF_REPLACE_ME` and `ARCH_PACKAGE_SNAPSHOT_REPLACE_ME` in
+   `cloud-init/admin-01.user-data.yaml` with the qualified immutable release
+   and Arch Linux Archive snapshot, then attach the file.
 3. Boot the VM and wait for cloud-init to clone this repository into `/opt/homelab-admin-node`.
 4. Create or clone the private config repository under `/etc/admin-config/homelab-node-admin-config`.
    The current layout uses `di/` and `pr/`; the VM selects `di` with:

@@ -24,18 +24,22 @@ The user-data file must not contain production secrets. The secret zero is insta
 ## Select a release before booting
 
 The checked-in user-data intentionally contains `RELEASE_REF_REPLACE_ME` and
-refuses to bootstrap until it is replaced. For production, replace it with a
+`ARCH_PACKAGE_SNAPSHOT_REPLACE_ME` and refuses to bootstrap until both are
+replaced. For production, replace the release ref with a
 published immutable tag such as `v1.2.0`, or with the exact 40-character commit
-from that release. Also pin the dated Arch image URL and verify its checksum as
-recorded in the release qualification manifest; do not use the moving `latest`
-image for a production rebuild.
+from that release. Replace the package snapshot with the qualified Arch Linux
+Archive date in `YYYY/MM/DD` form. Also pin the dated Arch image URL and verify
+its checksum as recorded in the release qualification manifest; do not use the
+moving `latest` image or live package mirrors for a production rebuild.
 
 The installer resolves a tag once, checks out the commit detached, and records:
 
 - the requested tag in `/etc/admin-node/release-name`;
-- the immutable commit pin in `/etc/admin-node/release-ref`;
-- the installed commit in `/etc/admin-node/git-ref`;
-- the configuration schema in `/etc/admin-node/config-schema-version`.
+- the immutable commit pin in `/etc/admin-node/release-ref`.
+
+The installed commit and configuration schema are deliberately absent until a
+complete convergence succeeds. `admin-node version` therefore returns an error
+between release selection and the first successful convergence.
 
 Replacing the placeholder with `main` is supported only as the development
 channel. In that mode periodic convergence continues to fast-forward the branch.

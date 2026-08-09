@@ -14,7 +14,7 @@ The most important non-secret variables are:
 | `admin_release_ref_file` | `/etc/admin-node/release-ref` | Immutable commit pin enforced by convergence, or `main` for the development channel. |
 | `admin_release_name_file` | `/etc/admin-node/release-name` | Operator-selected release tag or commit. |
 | `admin_config_schema_file` | `/etc/admin-node/config-schema-version` | Installed private-config compatibility schema. |
-| `admin_config_schema_version` | `1` | Schema declared by the private config repository; convergence refuses incompatible values. |
+| `admin_config_schema_version` | required, no default | Schema declared by the private config repository; convergence refuses missing or incompatible values. |
 | `admin_node_lan_ip` | `192.168.1.10` | LAN IP used by DNS records and local certificate SANs. |
 | `admin_node_fqdn` | empty string | Optional node FQDN for inventory-specific references. |
 | `acme_email` | `admin@example.com` | Email used when Traefik can request ACME certificates. |

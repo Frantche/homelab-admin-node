@@ -144,6 +144,10 @@ ADMIN_NODE_REPO_ROOT='/managed/repo'
 ADMIN_NODE_ROOT="/managed/admin"
 ADMIN_BACKUP_ROOT=/managed/backups
 ADMIN_MODE_FILE=/managed/mode
+ADMIN_RELEASE_REF_FILE=/managed/release-ref
+ADMIN_RELEASE_NAME_FILE=/managed/release-name
+ADMIN_GIT_REF_FILE=/managed/git-ref
+ADMIN_CONFIG_SCHEMA_FILE=/managed/config-schema
 ADMIN_RESTORE_ID_FILE=/managed/restore-id
 ADMIN_NODE_LAN_IP=192.0.2.41
 ADMIN_OPERATION_LOCK=/managed/operation.lock
@@ -193,6 +197,9 @@ HARBOR_ADMIN_PASSWORD="this deliberately unterminated secret is ignored
 	}
 	if cfg.RestoreIDFile != "/managed/restore-id" || cfg.OperationLock != "/managed/operation.lock" || cfg.SnapshotRoot != "/managed/snapshots" || cfg.GiteaStackPath != "/managed/gitea-stack" {
 		t.Fatalf("managed operation paths not loaded: %#v", cfg)
+	}
+	if cfg.ReleaseRefFile != "/managed/release-ref" || cfg.ReleaseNameFile != "/managed/release-name" || cfg.GitRefFile != "/managed/git-ref" || cfg.SchemaVersionFile != "/managed/config-schema" {
+		t.Fatalf("managed release state paths not loaded: %#v", cfg)
 	}
 	if cfg.KeycloakDomain != "keycloak.deployed.test" || cfg.HarborDomain != "harbor.deployed.test" || cfg.GiteaDomain != "gitea.process.test" || cfg.TraefikDomain != "traefik.deployed.test" || cfg.OpenBaoDomain != "bao.deployed.test" {
 		t.Fatalf("domain precedence is incorrect: %#v", cfg)

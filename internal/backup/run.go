@@ -113,18 +113,11 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 		}
 	}()
 
-	cliRevision := repoRevision(ctx, cfg.RepoRoot)
+	cliRevision, err := convergedRevision(ctx, cfg)
+	if err != nil {
+		return Info{}, err
+	}
 	if opts.IncludeImages {
-		if cliRevision == "" {
-			return Info{}, fmt.Errorf("include docker images: repository HEAD revision is unavailable")
-		}
-		status, err := commandOutput(ctx, "git", "-C", cfg.RepoRoot, "status", "--porcelain", "--untracked-files=no")
-		if err != nil {
-			return Info{}, fmt.Errorf("inspect repository state: %w", err)
-		}
-		if status != "" {
-			return Info{}, fmt.Errorf("include docker images: repository has tracked changes and cannot be tied to an exact revision")
-		}
 		bundlePath := filepath.Join(partial, "repository.bundle")
 		if err := run(ctx, "git", "-C", cfg.RepoRoot, "bundle", "create", bundlePath, "HEAD"); err != nil {
 			return Info{}, fmt.Errorf("create repository bundle for revision %s: %w", cliRevision, err)
@@ -341,6 +334,53 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	}
 	runSuccessful = true
 	return info, nil
+}
+
+func convergedRevision(ctx context.Context, cfg config.Config) (string, error) {
+	readState := func(label, path string) (string, error) {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return "", fmt.Errorf("read %s %s: %w", label, path, err)
+		}
+		value := strings.TrimSpace(string(content))
+		if value == "" {
+			return "", fmt.Errorf("%s %s is empty", label, path)
+		}
+		return value, nil
+	}
+	pin, err := readState("release pin", cfg.ReleaseRefFile)
+	if err != nil {
+		return "", fmt.Errorf("refusing backup without a verified converged release: %w", err)
+	}
+	installed, err := readState("installed revision", cfg.GitRefFile)
+	if err != nil {
+		return "", fmt.Errorf("refusing backup without a verified converged release: %w", err)
+	}
+	head := repoRevision(ctx, cfg.RepoRoot)
+	if head == "" {
+		return "", fmt.Errorf("refusing backup: repository HEAD revision is unavailable")
+	}
+	if installed != head {
+		return "", fmt.Errorf("refusing backup: installed revision %s does not match repository HEAD %s", installed, head)
+	}
+	development := pin == "main" || pin == "refs/heads/main"
+	if !development && pin != installed {
+		return "", fmt.Errorf("refusing backup: release pin %s does not match installed revision %s", pin, installed)
+	}
+	if !development {
+		branch, err := commandOutput(ctx, "git", "-C", cfg.RepoRoot, "symbolic-ref", "--quiet", "HEAD")
+		if err == nil || branch != "" {
+			return "", fmt.Errorf("refusing backup: production release checkout is not detached")
+		}
+		status, err := commandOutput(ctx, "git", "-C", cfg.RepoRoot, "status", "--porcelain=v1", "--untracked-files=all")
+		if err != nil {
+			return "", fmt.Errorf("inspect production release checkout: %w", err)
+		}
+		if status != "" {
+			return "", fmt.Errorf("refusing backup: production release checkout contains local changes")
+		}
+	}
+	return installed, nil
 }
 
 func writeArtifactFailureRecord(backupRoot, artifactRoot, id string, activeStacks []string, includeImages bool) error {

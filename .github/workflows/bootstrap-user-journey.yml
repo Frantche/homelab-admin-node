@@ -24,10 +24,22 @@ on:
         required: false
         type: string
       promote:
-        description: Create the production marker after both DR variants pass
+        description: Publish the qualified semver release after both DR variants pass
         required: false
         default: false
         type: boolean
+      release_tag:
+        description: Immutable vMAJOR.MINOR.PATCH tag used when promote=true
+        required: false
+        type: string
+      qualification_manifest_url:
+        description: HTTPS URL of the completed qualification manifest
+        required: false
+        type: string
+      qualification_manifest_sha256:
+        description: Lowercase SHA-256 of the qualification manifest
+        required: false
+        type: string
   schedule:
     - cron: "0 3 * * 0"
 
@@ -681,17 +693,46 @@ jobs:
       - name: Refuse stale or incomplete evidence
         run: make validate-dr-promotion DR_EVIDENCE_DIR=.ci/dr-evidence
 
-      - name: Create immutable production marker
+      - name: Validate and publish immutable production release
+        env:
+          RELEASE_TAG: "${{ inputs.release_tag }}"
+          QUALIFICATION_MANIFEST_URL: "${{ inputs.qualification_manifest_url }}"
+          QUALIFICATION_MANIFEST_SHA256: "${{ inputs.qualification_manifest_sha256 }}"
         run: |
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$QUALIFICATION_MANIFEST_URL" =~ ^https:// ]]
+          [[ "$QUALIFICATION_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
           git cat-file -e "$CANDIDATE_SHA^{commit}"
-          marker="homelab-production-${CANDIDATE_SHA:0:12}"
-          if git ls-remote --exit-code --tags origin "refs/tags/$marker" >/dev/null 2>&1; then
-            remote_commit="$(git ls-remote origin "refs/tags/$marker^{}" | awk 'NR == 1 {print $1}')"
+          manifest="$RUNNER_TEMP/qualification.json"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "$manifest" "$QUALIFICATION_MANIFEST_URL"
+          printf '%s  %s\n' "$QUALIFICATION_MANIFEST_SHA256" "$manifest" | sha256sum --check --strict
+          tag_exists=false
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            remote_commit="$(git ls-remote origin "refs/tags/$RELEASE_TAG^{}" | awk 'NR == 1 {print $1}')"
             test "$remote_commit" = "$CANDIDATE_SHA"
-            exit 0
+            git fetch origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+            tag_exists=true
+          else
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git tag -a "$RELEASE_TAG" "$CANDIDATE_SHA" -m "Qualified homelab release validated by run $GITHUB_RUN_ID"
           fi
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git tag -a "$marker" "$CANDIDATE_SHA" -m "Homelab production candidate validated by DR run $GITHUB_RUN_ID"
-          git push origin "refs/tags/$marker"
+          candidate_dir="$RUNNER_TEMP/release-candidate"
+          git worktree add --detach "$candidate_dir" "$CANDIDATE_SHA"
+          python3 -m pip install --user -r "$candidate_dir/ci/requirements.txt"
+          (cd "$candidate_dir" && python3 "$GITHUB_WORKSPACE/scripts/validate-release-qualification.py" "$manifest" --commit HEAD --tag "$RELEASE_TAG")
+          if [[ "$tag_exists" == "false" ]]; then
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            existing_dir="$RUNNER_TEMP/existing-release"
+            mkdir -p "$existing_dir"
+            gh release download "$RELEASE_TAG" --pattern qualification.json --dir "$existing_dir"
+            cmp "$manifest" "$existing_dir/qualification.json"
+          else
+            gh release create "$RELEASE_TAG" "$manifest" \
+              --title "$RELEASE_TAG" \
+              --notes "Qualified release for $CANDIDATE_SHA. Validation and DR evidence: workflow run $GITHUB_RUN_ID."
+          fi

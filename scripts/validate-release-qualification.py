@@ -15,6 +15,8 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 RELEASE_TAG = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
 VERSION = re.compile(r"^[0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]+)?$")
+ARCH_SNAPSHOT = re.compile(r"^[0-9]{4}/[0-9]{2}/[0-9]{2}$")
+ARCH_IMAGE_DATE = re.compile(r"/images/([0-9]{4}\.[0-9]{2}\.[0-9]{2})/")
 IMAGE_LINE = re.compile(r"^\s*image:\s*[\"']?([^\"'\s]+)", re.MULTILINE)
 DIGEST_IMAGE = re.compile(r"[a-zA-Z0-9./_-]+:[^\"'\s]+@sha256:[0-9a-f]{64}")
 
@@ -42,10 +44,16 @@ def require_https(value: str, path: str) -> None:
         raise ValueError(f"{path} must be an absolute HTTPS URL")
 
 
-def validate(path: Path, expected_commit: str) -> None:
+def release_version(value: str) -> tuple[int, int, int]:
+    return tuple(int(part) for part in value[1:].split("."))
+
+
+def validate(path: Path, expected_commit: str, expected_tag: str | None = None) -> None:
     document = json.loads(path.read_text())
     commit = require(document, "release.commit")
     tag = require(document, "release.tag")
+    if expected_tag is not None and tag != expected_tag:
+        raise ValueError(f"manifest tag {tag} does not match requested release tag {expected_tag}")
     if not COMMIT.fullmatch(commit):
         raise ValueError("release.commit must be a lowercase full Git SHA")
     if commit != expected_commit:
@@ -68,14 +76,29 @@ def validate(path: Path, expected_commit: str) -> None:
         )
     qualified_at = require(document, "release.qualified_at")
     try:
-        datetime.fromisoformat(qualified_at.replace("Z", "+00:00"))
+        qualified_timestamp = datetime.fromisoformat(qualified_at.replace("Z", "+00:00"))
     except (AttributeError, ValueError) as exc:
         raise ValueError("release.qualified_at must be an ISO-8601 timestamp") from exc
+    if qualified_timestamp.tzinfo is None:
+        raise ValueError("release.qualified_at must include an explicit timezone")
     arch_image_url = require(document, "platform.arch_image_url")
     require_https(arch_image_url, "platform.arch_image_url")
+    image_date_match = ARCH_IMAGE_DATE.search(urlparse(arch_image_url).path)
+    if image_date_match is None:
+        raise ValueError("platform.arch_image_url must reference a dated /images/YYYY.MM.DD/ image")
     image_checksum = require(document, "platform.arch_image_sha256")
     if not SHA256.fullmatch(image_checksum):
         raise ValueError("platform.arch_image_sha256 must be a lowercase SHA-256")
+    package_snapshot = require(document, "platform.package_repository_snapshot")
+    if not ARCH_SNAPSHOT.fullmatch(package_snapshot):
+        raise ValueError("platform.package_repository_snapshot must use YYYY/MM/DD syntax")
+    try:
+        image_date = datetime.strptime(image_date_match.group(1), "%Y.%m.%d").date()
+        snapshot_date = datetime.strptime(package_snapshot, "%Y/%m/%d").date()
+    except ValueError as exc:
+        raise ValueError("Arch image and package snapshot dates must be valid calendar dates") from exc
+    if snapshot_date < image_date:
+        raise ValueError("Arch package snapshot cannot predate the qualified cloud image")
     require(document, "platform.package_strategy")
     package_artifact = require(document, "platform.package_state_artifact")
     require_https(package_artifact, "platform.package_state_artifact")
@@ -162,20 +185,25 @@ def validate(path: Path, expected_commit: str) -> None:
         raise ValueError("disaster-recovery evidence must contain standard and offline-images")
     for name in ("upgrade", "rollback"):
         evidence = require(document, f"evidence.{name}")
-        if evidence.get("result") != "passed":
-            raise ValueError(f"{name} evidence must pass")
+        if evidence.get("commit") != commit or evidence.get("result") != "passed":
+            raise ValueError(f"{name} evidence must pass for the exact release commit")
         artifact = require(evidence, "artifact")
         require_https(artifact, f"evidence.{name}.artifact")
-    require(document, "evidence.upgrade.from_release")
+    from_release = require(document, "evidence.upgrade.from_release")
+    if not RELEASE_TAG.fullmatch(from_release):
+        raise ValueError("evidence.upgrade.from_release must use vMAJOR.MINOR.PATCH syntax")
+    if release_version(from_release) >= release_version(tag):
+        raise ValueError("evidence.upgrade.from_release must be older than the qualified release")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--commit", default="HEAD")
+    parser.add_argument("--tag")
     args = parser.parse_args()
     try:
-        validate(args.manifest, git_revision(args.commit))
+        validate(args.manifest, git_revision(args.commit), args.tag)
     except (ValueError, OSError, json.JSONDecodeError, subprocess.CalledProcessError) as exc:
         raise SystemExit(f"release qualification invalid: {exc}") from exc
     print(f"release qualification valid: {args.manifest}")

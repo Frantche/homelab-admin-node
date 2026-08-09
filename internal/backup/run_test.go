@@ -26,6 +26,20 @@ func TestRunRefusesLockedMode(t *testing.T) {
 	}
 }
 
+func TestConvergedRevisionRefusesCheckoutAfterLastConvergence(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Config{}
+	prepareConvergedRelease(t, root, &cfg)
+	if output, err := exec.Command("git", "-C", cfg.RepoRoot, "commit", "--allow-empty", "-m", "not converged").CombinedOutput(); err != nil {
+		t.Fatalf("create unqualified commit: %v: %s", err, output)
+	}
+
+	_, err := convergedRevision(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), "does not match repository HEAD") {
+		t.Fatalf("unconverged checkout error = %v", err)
+	}
+}
+
 func TestRunCreatesBackupWithManifest(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fake docker script is unix-specific")
@@ -176,6 +190,7 @@ BACKUP_REQUIRE_REMOTE_REPOSITORY="true"
 		BackupEnvFile:          backupEnv,
 		CIMockCloudflareTunnel: true,
 	}
+	prepareConvergedRelease(t, root, &cfg)
 	info, err := Run(context.Background(), cfg, RunOptions{
 		Validate: func(context.Context) error {
 			validateCalled = true
@@ -259,12 +274,14 @@ func TestRunFailsWhenActiveOpenBaoSnapshotTokenIsMissing(t *testing.T) {
 	writeActiveStack(t, adminRoot, "openbao")
 	t.Setenv("OPENBAO_TOKEN", "")
 
-	_, err := Run(context.Background(), config.Config{
+	cfg := config.Config{
 		AdminRoot:  adminRoot,
 		RepoRoot:   filepath.Join(root, "repo-without-token"),
 		ModeFile:   writeBackupMode(t, root),
 		BackupRoot: filepath.Join(root, "backups"),
-	}, RunOptions{})
+	}
+	prepareConvergedRelease(t, root, &cfg)
+	_, err := Run(context.Background(), cfg, RunOptions{})
 	if err == nil || !strings.Contains(err.Error(), "snapshot token") {
 		t.Fatalf("error = %v, want missing OpenBao snapshot token", err)
 	}
@@ -304,11 +321,13 @@ func TestRunFailsWhenActiveGiteaDatabaseIsUnavailable(t *testing.T) {
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	_, err := Run(context.Background(), config.Config{
+	cfg := config.Config{
 		AdminRoot:  adminRoot,
 		ModeFile:   writeBackupMode(t, root),
 		BackupRoot: filepath.Join(root, "backups"),
-	}, RunOptions{})
+	}
+	prepareConvergedRelease(t, root, &cfg)
+	_, err := Run(context.Background(), cfg, RunOptions{})
 	if err == nil || !strings.Contains(err.Error(), "gitea-db is not running") {
 		t.Fatalf("error = %v, want unavailable Gitea database", err)
 	}
@@ -357,12 +376,14 @@ func TestRunStandardBackupIncludesActiveStackDefinitions(t *testing.T) {
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	info, err := Run(context.Background(), config.Config{
+	cfg := config.Config{
 		AdminRoot:     adminRoot,
 		ModeFile:      modeFile,
 		BackupRoot:    filepath.Join(root, "backups"),
 		BackupEnvFile: filepath.Join(root, "missing-backup.env"),
-	}, RunOptions{
+	}
+	prepareConvergedRelease(t, root, &cfg)
+	info, err := Run(context.Background(), cfg, RunOptions{
 		Now: func() time.Time {
 			return time.Date(2026, 6, 25, 13, 0, 0, 0, time.UTC)
 		},
@@ -382,6 +403,47 @@ func TestRunStandardBackupIncludesActiveStackDefinitions(t *testing.T) {
 	}
 	if fileExists(filepath.Join(info.Path, "offline-images.tar")) || fileExists(filepath.Join(info.Path, "repository.bundle")) {
 		t.Fatal("standard backup unexpectedly contains offline-only artifacts")
+	}
+}
+
+func prepareConvergedRelease(t *testing.T, root string, cfg *config.Config) {
+	t.Helper()
+	if cfg.RepoRoot == "" {
+		cfg.RepoRoot = filepath.Join(root, "admin-repo")
+	}
+	if _, err := os.Stat(filepath.Join(cfg.RepoRoot, ".git")); os.IsNotExist(err) {
+		if err := os.MkdirAll(cfg.RepoRoot, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{
+			{"init", "--initial-branch=main"},
+			{"config", "user.email", "ci@example.test"},
+			{"config", "user.name", "CI"},
+			{"commit", "--allow-empty", "-m", "release"},
+		} {
+			if output, err := exec.Command("git", append([]string{"-C", cfg.RepoRoot}, args...)...).CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v: %s", args, err, output)
+			}
+		}
+	}
+	revisionBytes, err := exec.Command("git", "-C", cfg.RepoRoot, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := strings.TrimSpace(string(revisionBytes))
+	if output, err := exec.Command("git", "-C", cfg.RepoRoot, "checkout", "--detach", revision).CombinedOutput(); err != nil {
+		t.Fatalf("detach release checkout: %v: %s", err, output)
+	}
+	stateDir := filepath.Join(root, "release-state")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg.ReleaseRefFile = filepath.Join(stateDir, "release-ref")
+	cfg.GitRefFile = filepath.Join(stateDir, "git-ref")
+	for _, path := range []string{cfg.ReleaseRefFile, cfg.GitRefFile} {
+		if err := os.WriteFile(path, []byte(revision+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

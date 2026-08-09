@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -32,6 +33,8 @@ import (
 )
 
 var giteaProcessBackupFilenamePattern = regexp.MustCompile(`^gitea-backup-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}\.zip$`)
+var fullGitSHA = regexp.MustCompile(`^[0-9a-f]{40}$`)
+var releaseTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 
 type app struct {
 	out       io.Writer
@@ -39,6 +42,7 @@ type app struct {
 	cfg       config.Config
 	configErr error
 	runner    runner.Runner
+	exec      func(string, []string, []string) error
 }
 
 func main() {
@@ -55,6 +59,7 @@ func main() {
 		cfg:       cfg,
 		configErr: configErr,
 		runner:    runner.ExecRunner{},
+		exec:      syscall.Exec,
 	}
 	os.Exit(a.run(ctx, os.Args[1:]))
 }
@@ -90,7 +95,7 @@ func (a app) run(ctx context.Context, args []string) int {
 	case "ci":
 		return a.runCI(ctx, args[1:])
 	case "version":
-		return a.runVersion(args[1:])
+		return a.runVersion(ctx, args[1:])
 	default:
 		fmt.Fprintf(a.errOut, "unknown command: %s\n\n", args[0])
 		a.printRootUsage()
@@ -129,7 +134,7 @@ func (a app) requireOperationalConfig() bool {
 	return true
 }
 
-func (a app) runVersion(args []string) int {
+func (a app) runVersion(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("version", flag.ContinueOnError)
 	fs.SetOutput(a.errOut)
 	jsonOutput := fs.Bool("json", false, "print machine-readable JSON")
@@ -156,6 +161,36 @@ func (a app) runVersion(args []string) int {
 	schema := read("configuration schema", a.cfg.SchemaVersionFile)
 	if len(readErrors) == 0 && pin != "main" && pin != revision {
 		readErrors = append(readErrors, fmt.Sprintf("release pin %s does not match installed revision %s", pin, revision))
+	}
+	if len(readErrors) == 0 {
+		switch {
+		case pin == "main" || pin == "refs/heads/main":
+			if release != "main" {
+				readErrors = append(readErrors, fmt.Sprintf("development pin %s cannot be labelled as release %s", pin, release))
+			}
+		case !fullGitSHA.MatchString(pin) || !fullGitSHA.MatchString(revision):
+			readErrors = append(readErrors, "production release pin and installed revision must be lowercase full Git SHAs")
+		case fullGitSHA.MatchString(release):
+			if release != pin {
+				readErrors = append(readErrors, fmt.Sprintf("release SHA %s does not match pin %s", release, pin))
+			}
+		case releaseTag.MatchString(release):
+			typeCmd := exec.CommandContext(ctx, "git", "-C", a.cfg.RepoRoot, "cat-file", "-t", "refs/tags/"+release)
+			tagType, err := typeCmd.Output()
+			if err != nil || strings.TrimSpace(string(tagType)) != "tag" {
+				readErrors = append(readErrors, fmt.Sprintf("release tag %s is unavailable or not annotated", release))
+				break
+			}
+			cmd := exec.CommandContext(ctx, "git", "-C", a.cfg.RepoRoot, "rev-parse", "refs/tags/"+release+"^{commit}")
+			resolved, err := cmd.Output()
+			if err != nil {
+				readErrors = append(readErrors, fmt.Sprintf("release tag %s is unavailable in %s", release, a.cfg.RepoRoot))
+			} else if strings.TrimSpace(string(resolved)) != pin {
+				readErrors = append(readErrors, fmt.Sprintf("release tag %s does not resolve to pin %s", release, pin))
+			}
+		default:
+			readErrors = append(readErrors, fmt.Sprintf("release name %s is neither main, a vMAJOR.MINOR.PATCH tag, nor a full SHA", release))
+		}
 	}
 	if *jsonOutput {
 		payload := map[string]string{
@@ -285,7 +320,12 @@ func (a app) runConverge(ctx context.Context, args []string) int {
 		fmt.Fprintf(a.errOut, "converge run: %v\n", err)
 		return 1
 	}
-	defer unlock()
+	released := false
+	defer func() {
+		if !released {
+			unlock()
+		}
+	}()
 	extraArgs := converge.SplitExtraArgs(os.Getenv("ANSIBLE_EXTRA_ARGS"))
 	if *extraVars != "" {
 		extraArgs = append(extraArgs, converge.SplitExtraArgs(*extraVars)...)
@@ -304,7 +344,25 @@ func (a app) runConverge(ctx context.Context, args []string) int {
 		RevisionFile:   a.cfg.GitRefFile,
 		SchemaSource:   filepath.Join(a.cfg.RepoRoot, "release", "config-schema-version"),
 		SchemaFile:     a.cfg.SchemaVersionFile,
+		BuildScript:    filepath.Join(a.cfg.RepoRoot, "scripts", "build-admin-node.sh"),
+		BinaryPath:     filepath.Join(a.cfg.RepoRoot, "bin", "admin-node"),
 	}); err != nil {
+		var restart *converge.RestartRequiredError
+		if errors.As(err, &restart) {
+			unlock()
+			released = true
+			execProcess := a.exec
+			if execProcess == nil {
+				execProcess = syscall.Exec
+			}
+			execArgs := append([]string{restart.BinaryPath, "converge"}, args...)
+			fmt.Fprintf(a.out, "[admin-converge] restarting with binary built from selected release\n")
+			if err := execProcess(restart.BinaryPath, execArgs, os.Environ()); err != nil {
+				fmt.Fprintf(a.errOut, "converge restart: %v\n", err)
+				return 1
+			}
+			return 0
+		}
 		fmt.Fprintf(a.errOut, "converge run: %v\n", err)
 		return 1
 	}
