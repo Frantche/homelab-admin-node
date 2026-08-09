@@ -27,8 +27,8 @@ This command performs remote checksum and evidence verification. The validator's
 used by a promotion path.
 
 The manifest binds the tag and full commit to the configuration schema, dated
-Arch cloud image and checksum, Arch Linux Archive package snapshot, `pacman -Q`
-package-state artifact, Python, Go and Ansible dependencies, container digests,
+Arch cloud image and checksum, `pacman -Q` package-state artifact, Python, Go
+and Ansible dependencies, container digests,
 and evidence artifacts. The validator downloads the image and package inventory
 and verifies their SHA-256 values. Each evidence entry also has an
 `artifact_sha256`, the producing GitHub Actions run ID/API URL, and the trusted
@@ -95,13 +95,6 @@ sudo /opt/homelab-admin-node/scripts/build-admin-node.sh
 Do not repeat this manual checkout for later release-to-release upgrades; the
 qualified CLI then performs and verifies its own rebuild/re-exec handoff.
 
-The installed package snapshot must match `release/arch-package-snapshot` in the
-target commit. Convergence refuses an in-place upgrade before Ansible when the
-dates differ: rebuild the node from the target release and restore its verified
-backup instead of claiming that an old OS package state is the new release.
-Release notes must state whether the package snapshot is unchanged and an
-in-place upgrade is supported.
-
 1. Read the target release notes and confirm that the current release is listed
    as a supported upgrade source. Apply documented config-schema migrations in
    the private config repository and commit its encrypted state.
@@ -150,8 +143,7 @@ by the requirements checksum and runs Ansible with only that collection root.
 
 Do not upgrade system packages or configuration independently while evaluating
 a release; that would no longer match its qualified component inventory.
-`admin-node version` and convergence reject repository drift and a package
-snapshot marker that no longer matches the release.
+`admin-node version` and convergence reject repository drift.
 
 ## Failure recovery and rollback
 

@@ -9,33 +9,29 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/Frantche/homelab-admin-node/internal/releasequal"
 )
 
 type Options struct {
-	RepoDir                 string
-	InventoryPath           string
-	PlaybookPath            string
-	LockFile                string
-	SkipGitPull             bool
-	AdminCheckoutAligned    bool
-	ExtraArgs               []string
-	ReleaseRefFile          string
-	ReleaseNameFile         string
-	ReleaseChannelFile      string
-	QualificationFile       string
-	RevisionFile            string
-	SchemaSource            string
-	SchemaFile              string
-	BuildScript             string
-	BinaryPath              string
-	RequirementsPath        string
-	CollectionsRoot         string
-	PackageSnapshotSource   string
-	PackageSnapshotFile     string
-	PackageSnapshotModeFile string
+	RepoDir              string
+	InventoryPath        string
+	PlaybookPath         string
+	LockFile             string
+	SkipGitPull          bool
+	AdminCheckoutAligned bool
+	ExtraArgs            []string
+	ReleaseRefFile       string
+	ReleaseNameFile      string
+	ReleaseChannelFile   string
+	QualificationFile    string
+	RevisionFile         string
+	SchemaSource         string
+	SchemaFile           string
+	BuildScript          string
+	BinaryPath           string
+	RequirementsPath     string
+	CollectionsRoot      string
 }
 
 type RestartRequiredError struct {
@@ -81,9 +77,6 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 	if _, err := readSchemaVersion(opts.SchemaSource); err != nil {
-		return err
-	}
-	if err := validatePackageSnapshot(opts); err != nil {
 		return err
 	}
 	rebuilt, err := rebuildAdminNode(ctx, opts)
@@ -145,9 +138,6 @@ func validateOptions(opts Options) error {
 		"binary":                   opts.BinaryPath,
 		"Ansible requirements":     opts.RequirementsPath,
 		"Ansible collections root": opts.CollectionsRoot,
-		"package snapshot source":  opts.PackageSnapshotSource,
-		"package snapshot state":   opts.PackageSnapshotFile,
-		"package snapshot mode":    opts.PackageSnapshotModeFile,
 	}
 	for label, value := range required {
 		if strings.TrimSpace(value) == "" {
@@ -196,52 +186,6 @@ func rebuildAdminNode(ctx context.Context, opts Options) (bool, error) {
 		return false, fmt.Errorf("build admin-node from selected release: %w", err)
 	}
 	return strings.Contains(string(output), "changed=true"), nil
-}
-
-func validatePackageSnapshot(opts Options) error {
-	required, err := readPackageSnapshot(opts.PackageSnapshotSource, false)
-	if err != nil {
-		return fmt.Errorf("read release package snapshot: %w", err)
-	}
-	installed, err := readPackageSnapshot(opts.PackageSnapshotFile, true)
-	if err != nil {
-		return fmt.Errorf("read installed package snapshot: %w", err)
-	}
-	modeBytes, err := os.ReadFile(opts.PackageSnapshotModeFile)
-	if err != nil {
-		return fmt.Errorf("read package snapshot mode %s: %w", opts.PackageSnapshotModeFile, err)
-	}
-	mode := strings.TrimSpace(string(modeBytes))
-	if installed == "live" {
-		if mode != "ci-live" {
-			return fmt.Errorf("live Arch package repositories are forbidden outside the explicit ci-live bootstrap mode")
-		}
-		fmt.Println("[admin-converge] CI live package mirror explicitly selected; production snapshot equivalence is not claimed")
-		return nil
-	}
-	if mode != "qualified" {
-		return fmt.Errorf("unsupported package snapshot mode %q", mode)
-	}
-	if installed != required {
-		return fmt.Errorf("installed Arch package snapshot %s does not match release snapshot %s; refusing an in-place upgrade, rebuild or restore from the qualified snapshot", installed, required)
-	}
-	return nil
-}
-
-func readPackageSnapshot(path string, allowLive bool) (string, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", path, err)
-	}
-	value := strings.TrimSpace(string(content))
-	if allowLive && value == "live" {
-		return value, nil
-	}
-	parsed, err := time.Parse("2006/01/02", value)
-	if err != nil || parsed.Format("2006/01/02") != value {
-		return "", fmt.Errorf("%s must contain a valid YYYY/MM/DD snapshot", path)
-	}
-	return value, nil
 }
 
 func prepareAnsibleCollections(ctx context.Context, opts Options) (string, error) {

@@ -121,8 +121,6 @@ jobs:
       CI_MOCK_PIHOLE: "true"
       CI_MOCK_CLOUDFLARE_TUNNEL: "true"
       CI_SKIP_PUBLIC_URL_VALIDATION: "true"
-      ARCH_PACKAGE_SNAPSHOT: "live"
-      CI_ALLOW_LIVE_ARCH_MIRROR: "true"
 
     steps:
       - name: Checkout

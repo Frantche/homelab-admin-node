@@ -31,7 +31,6 @@ class ReleaseQualificationTest(unittest.TestCase):
         self.root = Path(self.tempdir.name)
         (self.root / "release").mkdir()
         (self.root / "release/config-schema-version").write_text("1\n", encoding="utf-8")
-        (self.root / "release/arch-package-snapshot").write_text("2026/08/09\n", encoding="utf-8")
         (self.root / "go.mod").write_text("module example.test/release\n\ngo 1.26.5\n")
         (self.root / "ansible/roles/docker/defaults").mkdir(parents=True)
         (self.root / "ansible/roles/docker/defaults/main.yml").write_text("", encoding="utf-8")
@@ -79,8 +78,7 @@ class ReleaseQualificationTest(unittest.TestCase):
             "platform": {
                 "arch_image_url": "https://geo.mirror.pkgbuild.com/images/2026.08.01/arch.qcow2",
                 "arch_image_sha256": CHECKSUM,
-                "package_repository_snapshot": "2026/08/09",
-                "package_strategy": "Arch Linux Archive snapshot",
+                "package_strategy": "Full pacman upgrade",
                 "package_state_artifact": "https://example.test/pacman-Q.txt",
                 "package_state_sha256": CHECKSUM,
             },
@@ -145,16 +143,7 @@ class ReleaseQualificationTest(unittest.TestCase):
                     self.validate()
                 self.manifest["evidence"][name]["commit"] = COMMIT
 
-    def test_rejects_moving_package_repository(self) -> None:
-        self.manifest["platform"]["package_repository_snapshot"] = "live"
-        with self.assertRaisesRegex(ValueError, "YYYY/MM/DD"):
-            self.validate()
-
-    def test_rejects_snapshot_or_go_toolchain_not_bound_to_repository(self) -> None:
-        self.manifest["platform"]["package_repository_snapshot"] = "2026/08/10"
-        with self.assertRaisesRegex(ValueError, "does not match repository"):
-            self.validate()
-        self.manifest["platform"]["package_repository_snapshot"] = "2026/08/09"
+    def test_rejects_go_toolchain_not_bound_to_repository(self) -> None:
         self.manifest["dependencies"]["go"] = "1.27.0"
         with self.assertRaisesRegex(ValueError, "go.mod"):
             self.validate()

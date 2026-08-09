@@ -166,19 +166,14 @@ func TestConvergeOptionsKeepReleaseHandoffAndDependencyContractsForEveryCaller(t
 	cfg.ReleaseRefFile = filepath.Join(t.TempDir(), "release-ref")
 	cfg.GitRefFile = filepath.Join(t.TempDir(), "git-ref")
 	cfg.SchemaVersionFile = filepath.Join(t.TempDir(), "schema")
-	cfg.PackageSnapshotFile = filepath.Join(t.TempDir(), "package-snapshot")
-	cfg.PackageSnapshotModeFile = filepath.Join(t.TempDir(), "package-snapshot-mode")
 	t.Setenv("ADMIN_ANSIBLE_COLLECTIONS_ROOT", filepath.Join(t.TempDir(), "collections"))
 	a := app{cfg: cfg}
 	opts := a.convergeOptions("inventory.ini", "site.yml", true, nil)
 	for label, value := range map[string]string{
-		"build script":            opts.BuildScript,
-		"binary":                  opts.BinaryPath,
-		"requirements":            opts.RequirementsPath,
-		"collections":             opts.CollectionsRoot,
-		"package snapshot source": opts.PackageSnapshotSource,
-		"package snapshot state":  opts.PackageSnapshotFile,
-		"package snapshot mode":   opts.PackageSnapshotModeFile,
+		"build script": opts.BuildScript,
+		"binary":       opts.BinaryPath,
+		"requirements": opts.RequirementsPath,
+		"collections":  opts.CollectionsRoot,
 	} {
 		if value == "" {
 			t.Fatalf("%s is absent from shared converge options", label)
@@ -280,9 +275,6 @@ func TestVersionReportsPersistedReleaseState(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "release/config-schema-version"), []byte("2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, "release/arch-package-snapshot"), []byte("2026/08/08\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	for _, args := range [][]string{{"add", "release"}, {"commit", "-m", "release"}} {
 		if output, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v: %s", args, err, output)
@@ -304,8 +296,6 @@ func TestVersionReportsPersistedReleaseState(t *testing.T) {
 		{"release-ref", revision + "\n"},
 		{"git-ref", revision + "\n"},
 		{"schema", "2\n"},
-		{"package-snapshot", "2026/08/08\n"},
-		{"package-snapshot-mode", "qualified\n"},
 		{"release-channel", "ci\n"},
 	}
 	for _, item := range paths {
@@ -319,8 +309,6 @@ func TestVersionReportsPersistedReleaseState(t *testing.T) {
 	cfg.ReleaseRefFile = filepath.Join(dir, "release-ref")
 	cfg.GitRefFile = filepath.Join(dir, "git-ref")
 	cfg.SchemaVersionFile = filepath.Join(dir, "schema")
-	cfg.PackageSnapshotFile = filepath.Join(dir, "package-snapshot")
-	cfg.PackageSnapshotModeFile = filepath.Join(dir, "package-snapshot-mode")
 	cfg.ReleaseChannelFile = filepath.Join(dir, "release-channel")
 	cfg.QualificationFile = filepath.Join(dir, "qualification.json")
 	var out, errOut bytes.Buffer
@@ -429,13 +417,8 @@ func TestVersionBindsReleaseTagToInstalledRevision(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repo, "release"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for name, value := range map[string]string{
-		"config-schema-version": "1\n",
-		"arch-package-snapshot": "2026/08/08\n",
-	} {
-		if err := os.WriteFile(filepath.Join(repo, "release", name), []byte(value), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.WriteFile(filepath.Join(repo, "release/config-schema-version"), []byte("1\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	for _, args := range [][]string{{"add", "release"}, {"commit", "-m", "release"}, {"tag", "-a", "v1.2.3", "-m", "qualified"}, {"checkout", "--detach"}} {
 		if output, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
@@ -454,19 +437,15 @@ func TestVersionBindsReleaseTagToInstalledRevision(t *testing.T) {
 	cfg.ReleaseRefFile = filepath.Join(state, "release-ref")
 	cfg.GitRefFile = filepath.Join(state, "git-ref")
 	cfg.SchemaVersionFile = filepath.Join(state, "schema")
-	cfg.PackageSnapshotFile = filepath.Join(state, "package-snapshot")
-	cfg.PackageSnapshotModeFile = filepath.Join(state, "package-snapshot-mode")
 	cfg.ReleaseChannelFile = filepath.Join(state, "release-channel")
 	cfg.QualificationFile = filepath.Join(state, "qualification.json")
 	for path, value := range map[string]string{
-		cfg.ReleaseNameFile:         "v1.2.3\n",
-		cfg.ReleaseRefFile:          revision + "\n",
-		cfg.GitRefFile:              revision + "\n",
-		cfg.SchemaVersionFile:       "1\n",
-		cfg.PackageSnapshotFile:     "2026/08/08\n",
-		cfg.PackageSnapshotModeFile: "qualified\n",
-		cfg.ReleaseChannelFile:      "production\n",
-		cfg.QualificationFile:       `{"release":{"tag":"v1.2.3","commit":"` + revision + `"}}`,
+		cfg.ReleaseNameFile:    "v1.2.3\n",
+		cfg.ReleaseRefFile:     revision + "\n",
+		cfg.GitRefFile:         revision + "\n",
+		cfg.SchemaVersionFile:  "1\n",
+		cfg.ReleaseChannelFile: "production\n",
+		cfg.QualificationFile:  `{"release":{"tag":"v1.2.3","commit":"` + revision + `"}}`,
 	} {
 		if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
 			t.Fatal(err)

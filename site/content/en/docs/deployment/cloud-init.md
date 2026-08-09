@@ -24,19 +24,14 @@ The user-data file must not contain production secrets. The secret zero is insta
 ## Select a release before booting
 
 The checked-in user-data intentionally contains `RELEASE_REF_REPLACE_ME`,
-`ARCH_PACKAGE_SNAPSHOT_REPLACE_ME`, `QUALIFICATION_MANIFEST_URL_REPLACE_ME`,
-and `QUALIFICATION_MANIFEST_SHA256_REPLACE_ME` and refuses a production
+`QUALIFICATION_MANIFEST_URL_REPLACE_ME`, and
+`QUALIFICATION_MANIFEST_SHA256_REPLACE_ME` and refuses a production
 bootstrap until all are replaced. For production, use a published immutable tag
 such as `v1.2.0`; direct commit installation is reserved for the CI renderer.
 Use the `qualification.json` asset URL from that public release and its SHA-256
-from the release notes. Replace the package snapshot with the qualified Arch Linux
-Archive date in `YYYY/MM/DD` form. Also pin the dated Arch image URL and verify
-its checksum as recorded in the release qualification manifest; do not use the
-moving `latest` image or live package mirrors for a production rebuild.
-The selected date must equal `release/arch-package-snapshot` in the selected
-commit. After package installation, cloud-init records the date in
-`/etc/admin-node/package-snapshot` and records `qualified` in
-`/etc/admin-node/package-snapshot-mode`.
+from the release notes. Also pin the dated Arch image URL and verify its checksum
+as recorded in the release qualification manifest; do not use the moving
+`latest` image for a production rebuild.
 
 The installer also queries the GitHub release API. It refuses drafts,
 prereleases, manually authored releases, assets not uploaded by
@@ -57,6 +52,3 @@ between release selection and the first successful convergence.
 
 Replacing the placeholder with `main` is supported only as the development
 channel. In that mode periodic convergence continues to fast-forward the branch.
-The CI renderer has a separate `ci-live` marker and refuses `live` unless
-`CI_ALLOW_LIVE_ARCH_MIRROR=true` is explicitly set. That marker is not a
-qualified package state and must never be copied to a production node.

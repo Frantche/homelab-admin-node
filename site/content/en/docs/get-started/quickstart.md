@@ -10,10 +10,7 @@ Use this path when you already know Proxmox cloud-init, Git, SOPS, and Ansible.
 3. Replace `RELEASE_REF_REPLACE_ME` with a qualified immutable tag,
    `QUALIFICATION_MANIFEST_URL_REPLACE_ME` and
    `QUALIFICATION_MANIFEST_SHA256_REPLACE_ME` with its published qualification
-   asset URL and checksum,
-   and `ARCH_PACKAGE_SNAPSHOT_REPLACE_ME` with the `YYYY/MM/DD` value from the
-   selected commit's `release/arch-package-snapshot`
-   Linux Archive snapshot, then attach the cloud-init user-data snippet.
+   asset URL and checksum, then attach the cloud-init user-data snippet.
 4. Boot the VM and wait for cloud-init to finish.
 5. Create a private config repository with:
 

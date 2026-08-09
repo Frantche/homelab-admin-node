@@ -14,8 +14,6 @@ The most important non-secret variables are:
 | `admin_release_ref_file` | `/etc/admin-node/release-ref` | Immutable commit pin enforced by convergence, or `main` for the development channel. |
 | `admin_release_name_file` | `/etc/admin-node/release-name` | Operator-selected release tag or commit. |
 | `admin_config_schema_file` | `/etc/admin-node/config-schema-version` | Installed private-config compatibility schema. |
-| `ADMIN_PACKAGE_SNAPSHOT_FILE` | `/etc/admin-node/package-snapshot` | Package snapshot installed by cloud-init and checked before convergence. |
-| `ADMIN_PACKAGE_SNAPSHOT_MODE_FILE` | `/etc/admin-node/package-snapshot-mode` | Must be `qualified` in production; `ci-live` is reserved for explicitly rendered CI nodes. |
 | `ADMIN_ANSIBLE_COLLECTIONS_ROOT` | `/var/cache/admin-node/ansible-collections` | Cache of exact collection sets addressed by the target requirements checksum. |
 | `admin_config_schema_version` | required, no default | Schema declared by the private config repository; convergence refuses missing or incompatible values. |
 | `admin_node_lan_ip` | `192.168.1.10` | LAN IP used by DNS records and local certificate SANs. |

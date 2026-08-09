@@ -16,8 +16,6 @@ grep -F "contains(github.event.pull_request.labels.*.name, 'release-candidate')"
 grep -F 'inputs.candidate_sha || github.event.pull_request.head.sha || github.sha' "$workflow" >/dev/null
 grep -F 'needs: [main-to-candidate-disaster-recovery]' "$workflow" >/dev/null
 grep -F 'github.ref_name == github.event.repository.default_branch' "$workflow" >/dev/null
-grep -F 'ARCH_PACKAGE_SNAPSHOT: "live"' "$workflow" >/dev/null
-grep -F 'CI_ALLOW_LIVE_ARCH_MIRROR: "true"' "$workflow" >/dev/null
 
 test_root="$(mktemp -d /tmp/admin-dr-promotion-test.XXXXXX)"
 trap 'rm -rf "$test_root"' EXIT

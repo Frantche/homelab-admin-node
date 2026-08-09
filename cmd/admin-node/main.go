@@ -161,8 +161,6 @@ func (a app) runVersion(ctx context.Context, args []string) int {
 	pin := read("release pin", a.cfg.ReleaseRefFile)
 	revision := read("installed revision", a.cfg.GitRefFile)
 	schema := read("configuration schema", a.cfg.SchemaVersionFile)
-	packageSnapshot := read("installed package snapshot", a.cfg.PackageSnapshotFile)
-	packageSnapshotMode := read("package snapshot mode", a.cfg.PackageSnapshotModeFile)
 	releaseChannel := read("release channel", a.cfg.ReleaseChannelFile)
 	if len(readErrors) == 0 && pin != "main" && pin != "refs/heads/main" && pin != revision {
 		readErrors = append(readErrors, fmt.Sprintf("release pin %s does not match installed revision %s", pin, revision))
@@ -183,14 +181,6 @@ func (a app) runVersion(ctx context.Context, args []string) int {
 		repositorySchema := read("release configuration schema", filepath.Join(a.cfg.RepoRoot, "release", "config-schema-version"))
 		if repositorySchema != "unknown" && repositorySchema != schema {
 			readErrors = append(readErrors, fmt.Sprintf("repository schema %s does not match installed schema %s", repositorySchema, schema))
-		}
-		requiredSnapshot := read("release package snapshot", filepath.Join(a.cfg.RepoRoot, "release", "arch-package-snapshot"))
-		if packageSnapshot == "live" {
-			if packageSnapshotMode != "ci-live" {
-				readErrors = append(readErrors, "live package snapshot is not bound to explicit ci-live mode")
-			}
-		} else if packageSnapshotMode != "qualified" || requiredSnapshot != packageSnapshot {
-			readErrors = append(readErrors, fmt.Sprintf("installed package snapshot %s (%s) does not match release snapshot %s", packageSnapshot, packageSnapshotMode, requiredSnapshot))
 		}
 	}
 	if len(readErrors) == 0 {
@@ -245,14 +235,13 @@ func (a app) runVersion(ctx context.Context, args []string) int {
 		payload := map[string]string{
 			"release": release, "release_ref": pin,
 			"revision": revision, "config_schema": schema,
-			"package_snapshot": packageSnapshot,
 		}
 		if err := json.NewEncoder(a.out).Encode(payload); err != nil {
 			fmt.Fprintf(a.errOut, "version: %v\n", err)
 			return 1
 		}
 	} else {
-		fmt.Fprintf(a.out, "release: %s\nrelease_ref: %s\nrevision: %s\nconfig_schema: %s\npackage_snapshot: %s\n", release, pin, revision, schema, packageSnapshot)
+		fmt.Fprintf(a.out, "release: %s\nrelease_ref: %s\nrevision: %s\nconfig_schema: %s\n", release, pin, revision, schema)
 	}
 	if len(readErrors) > 0 {
 		for _, message := range readErrors {
@@ -419,25 +408,22 @@ func (a app) executeConverge(ctx context.Context, opts converge.Options) error {
 
 func (a app) convergeOptions(inventory, playbook string, skipGitPull bool, extraArgs []string) converge.Options {
 	return converge.Options{
-		RepoDir:                 a.cfg.RepoRoot,
-		InventoryPath:           inventory,
-		PlaybookPath:            playbook,
-		SkipGitPull:             skipGitPull,
-		ExtraArgs:               extraArgs,
-		ReleaseRefFile:          a.cfg.ReleaseRefFile,
-		ReleaseNameFile:         a.cfg.ReleaseNameFile,
-		ReleaseChannelFile:      a.cfg.ReleaseChannelFile,
-		QualificationFile:       a.cfg.QualificationFile,
-		RevisionFile:            a.cfg.GitRefFile,
-		SchemaSource:            filepath.Join(a.cfg.RepoRoot, "release", "config-schema-version"),
-		SchemaFile:              a.cfg.SchemaVersionFile,
-		BuildScript:             filepath.Join(a.cfg.RepoRoot, "scripts", "build-admin-node.sh"),
-		BinaryPath:              filepath.Join(a.cfg.RepoRoot, "bin", "admin-node"),
-		RequirementsPath:        filepath.Join(a.cfg.RepoRoot, "ansible", "requirements.yml"),
-		CollectionsRoot:         getenv("ADMIN_ANSIBLE_COLLECTIONS_ROOT", "/var/cache/admin-node/ansible-collections"),
-		PackageSnapshotSource:   filepath.Join(a.cfg.RepoRoot, "release", "arch-package-snapshot"),
-		PackageSnapshotFile:     a.cfg.PackageSnapshotFile,
-		PackageSnapshotModeFile: a.cfg.PackageSnapshotModeFile,
+		RepoDir:            a.cfg.RepoRoot,
+		InventoryPath:      inventory,
+		PlaybookPath:       playbook,
+		SkipGitPull:        skipGitPull,
+		ExtraArgs:          extraArgs,
+		ReleaseRefFile:     a.cfg.ReleaseRefFile,
+		ReleaseNameFile:    a.cfg.ReleaseNameFile,
+		ReleaseChannelFile: a.cfg.ReleaseChannelFile,
+		QualificationFile:  a.cfg.QualificationFile,
+		RevisionFile:       a.cfg.GitRefFile,
+		SchemaSource:       filepath.Join(a.cfg.RepoRoot, "release", "config-schema-version"),
+		SchemaFile:         a.cfg.SchemaVersionFile,
+		BuildScript:        filepath.Join(a.cfg.RepoRoot, "scripts", "build-admin-node.sh"),
+		BinaryPath:         filepath.Join(a.cfg.RepoRoot, "bin", "admin-node"),
+		RequirementsPath:   filepath.Join(a.cfg.RepoRoot, "ansible", "requirements.yml"),
+		CollectionsRoot:    getenv("ADMIN_ANSIBLE_COLLECTIONS_ROOT", "/var/cache/admin-node/ansible-collections"),
 	}
 }
 

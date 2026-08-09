@@ -20,7 +20,6 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 RELEASE_TAG = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
 VERSION = re.compile(r"^[0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]+)?$")
-ARCH_SNAPSHOT = re.compile(r"^[0-9]{4}/[0-9]{2}/[0-9]{2}$")
 ARCH_IMAGE_DATE = re.compile(r"/images/([0-9]{4}\.[0-9]{2}\.[0-9]{2})/")
 IMAGE_LINE = re.compile(r"^\s*image:\s*[\"']?([^\"'\s]+)", re.MULTILINE)
 DIGEST_IMAGE = re.compile(r"[a-zA-Z0-9./_-]+:[^\"'\s]+@sha256:[0-9a-f]{64}")
@@ -318,21 +317,10 @@ def validate(
     image_checksum = require(document, "platform.arch_image_sha256")
     if not SHA256.fullmatch(image_checksum):
         raise ValueError("platform.arch_image_sha256 must be a lowercase SHA-256")
-    package_snapshot = require(document, "platform.package_repository_snapshot")
-    if not ARCH_SNAPSHOT.fullmatch(package_snapshot):
-        raise ValueError("platform.package_repository_snapshot must use YYYY/MM/DD syntax")
     try:
-        image_date = datetime.strptime(image_date_match.group(1), "%Y.%m.%d").date()
-        snapshot_date = datetime.strptime(package_snapshot, "%Y/%m/%d").date()
+        datetime.strptime(image_date_match.group(1), "%Y.%m.%d").date()
     except ValueError as exc:
-        raise ValueError("Arch image and package snapshot dates must be valid calendar dates") from exc
-    if snapshot_date < image_date:
-        raise ValueError("Arch package snapshot cannot predate the qualified cloud image")
-    repository_snapshot = Path("release/arch-package-snapshot").read_text().strip()
-    if package_snapshot != repository_snapshot:
-        raise ValueError(
-            f"manifest package snapshot {package_snapshot} does not match repository {repository_snapshot}"
-        )
+        raise ValueError("Arch image date must be a valid calendar date") from exc
     require(document, "platform.package_strategy")
     package_artifact = require(document, "platform.package_state_artifact")
     require_https(package_artifact, "platform.package_state_artifact")
