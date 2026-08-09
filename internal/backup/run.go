@@ -261,6 +261,15 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	if err := WriteManifest(partial, manifest); err != nil {
 		return Info{}, fmt.Errorf("write manifest: %w", err)
 	}
+	if opts.IncludeImages {
+		verifiedManifest, err := Verify(partial)
+		if err != nil {
+			return Info{}, fmt.Errorf("verify offline backup before publication: %w", err)
+		}
+		if err := validateScheduledOfflineRecoveryManifest(verifiedManifest, partial); err != nil {
+			return Info{}, fmt.Errorf("verify offline backup before publication: %w", err)
+		}
+	}
 	if err := os.Rename(partial, target); err != nil {
 		return Info{}, fmt.Errorf("publish backup: %w", err)
 	}

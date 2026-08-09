@@ -816,3 +816,55 @@ func TestVerifyRejectsTamperedBackup(t *testing.T) {
 		t.Fatal("expected checksum failure")
 	}
 }
+
+func TestOfflineValidationRejectsIncompleteRecoveryManifest(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*Manifest)
+	}{
+		{name: "missing repository bundle declaration", mutate: func(manifest *Manifest) { manifest.RepositoryBundle = false }},
+		{name: "missing stack definitions declaration", mutate: func(manifest *Manifest) { manifest.StackDefinitions = false }},
+		{name: "missing image mappings", mutate: func(manifest *Manifest) { manifest.OfflineImageArchives = nil }},
+		{name: "incomplete image mapping", mutate: func(manifest *Manifest) { manifest.OfflineImageArchives[0].ImageID = "" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "offline-images.tar"), []byte("images"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "repository.bundle"), []byte("bundle"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(filepath.Join(dir, "stack-definitions"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			files, err := BuildManifestFiles(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manifest := Manifest{
+				Version:              ManifestVersion,
+				ID:                   "20260809-120000",
+				CreatedAt:            time.Now().UTC(),
+				CLIRevision:          "0123456789abcdef",
+				OfflineImages:        true,
+				OfflineImageArchives: []OfflineImageArchive{{Source: "example/app:1", ArchiveTag: "admin-node-backup.local/test:image-001", ImageID: "sha256:test"}},
+				StackDefinitions:     true,
+				RepositoryBundle:     true,
+				Complete:             true,
+				Files:                files,
+			}
+			test.mutate(&manifest)
+			if err := WriteManifest(dir, manifest); err != nil {
+				t.Fatal(err)
+			}
+			verified, err := Verify(dir)
+			if err == nil {
+				err = validateScheduledOfflineRecoveryManifest(verified, dir)
+			}
+			if err == nil {
+				t.Fatal("offline validation accepted an incomplete recovery manifest")
+			}
+		})
+	}
+}

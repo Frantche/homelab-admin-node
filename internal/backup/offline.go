@@ -1,10 +1,13 @@
 package backup
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Frantche/homelab-admin-node/internal/config"
@@ -54,14 +57,30 @@ func CheckOfflineStatus(cfg config.Config, now time.Time) (OfflineStatus, error)
 		if !status.Fresh {
 			status.Problems = append(status.Problems, fmt.Sprintf("newest offline recovery point is older than %s", cfg.OfflineBackupMaxAge))
 		}
-		if _, err := Verify(latest.Path); err != nil {
+		manifest, err := Verify(latest.Path)
+		if err != nil {
 			status.Problems = append(status.Problems, "offline recovery point verification failed: "+err.Error())
+		} else if err := validateScheduledOfflineRecoveryManifest(manifest, latest.Path); err != nil {
+			status.Problems = append(status.Problems, "offline recovery point is incomplete: "+err.Error())
 		} else {
 			status.Verified = true
 		}
 	}
 	checkRecoveryKit(cfg, now, &status)
 	return status, nil
+}
+
+func validateScheduledOfflineRecoveryManifest(manifest Manifest, dir string) error {
+	if !manifest.OfflineImages {
+		return fmt.Errorf("manifest does not declare offline images")
+	}
+	if !manifest.RepositoryBundle || strings.TrimSpace(manifest.CLIRevision) == "" || !fileExists(filepath.Join(dir, "repository.bundle")) {
+		return fmt.Errorf("repository bundle or revision is missing")
+	}
+	if !manifest.StackDefinitions || !dirExists(filepath.Join(dir, "stack-definitions")) {
+		return fmt.Errorf("rendered stack definitions are missing")
+	}
+	return nil
 }
 
 func checkRecoveryKit(cfg config.Config, now time.Time, status *OfflineStatus) {
@@ -71,7 +90,13 @@ func checkRecoveryKit(cfg config.Config, now time.Time, status *OfflineStatus) {
 		return
 	}
 	var inventory recoveryKitInventory
-	if err := json.Unmarshal(data, &inventory); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&inventory); err != nil {
+		status.Problems = append(status.Problems, "recovery-kit inventory is invalid")
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		status.Problems = append(status.Problems, "recovery-kit inventory is invalid")
 		return
 	}
@@ -96,39 +121,48 @@ func checkRecoveryKit(cfg config.Config, now time.Time, status *OfflineStatus) {
 			status.Problems = append(status.Problems, "recovery-kit prerequisite not attested: "+check.name)
 		}
 	}
-	for _, prerequisite := range []struct {
-		path string
-		name string
-	}{
-		{cfg.AgeKeyFile, "local age identity"},
-		{filepath.Join(cfg.ConfigRepoRoot, ".git"), "private config repository"},
-		{cfg.OpenBaoRecoveryFile, "encrypted OpenBao recovery material"},
-	} {
-		if _, err := os.Stat(prerequisite.path); err != nil {
-			complete = false
-			status.Problems = append(status.Problems, "local recovery prerequisite missing: "+prerequisite.name)
-		}
-	}
-	if !resticRepositoryAccessDeclared(cfg.BackupEnvFile) {
+	if !fileContains(cfg.AgeKeyFile, []byte("AGE-SECRET-KEY-")) {
 		complete = false
-		status.Problems = append(status.Problems, "Restic repository/password declarations are missing")
+		status.Problems = append(status.Problems, "local recovery prerequisite missing or invalid: local age identity")
+	}
+	if _, err := os.Stat(filepath.Join(cfg.ConfigRepoRoot, ".git")); err != nil {
+		complete = false
+		status.Problems = append(status.Problems, "local recovery prerequisite missing: private config repository")
+	}
+	if !fileContains(cfg.OpenBaoRecoveryFile, []byte("ENC[")) || !fileContains(cfg.OpenBaoRecoveryFile, []byte("sops:")) {
+		complete = false
+		status.Problems = append(status.Problems, "local recovery prerequisite missing or invalid: SOPS-encrypted OpenBao recovery material")
+	}
+	if !resticOffsiteAccessDeclared(cfg.BackupEnvFile) {
+		complete = false
+		status.Problems = append(status.Problems, "a non-local Restic repository/password declaration is missing")
 	}
 	status.RecoveryKitComplete = complete
 }
 
-func resticRepositoryAccessDeclared(path string) bool {
-	values, err := parseEnvFile(path)
+func fileContains(path string, marker []byte) bool {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return false
 	}
-	if values["RESTIC_REPOSITORY"] != "" && values["RESTIC_PASSWORD"] != "" {
-		return true
+	return len(data) > 0 && bytes.Contains(data, marker)
+}
+
+func resticOffsiteAccessDeclared(path string) bool {
+	cfg, err := loadResticConfig(path)
+	if err != nil {
+		return false
 	}
-	for _, id := range fields(values["RESTIC_REPOSITORIES"]) {
-		suffix := sanitizeRepoID(id)
-		if values["RESTIC_REPOSITORY_"+suffix] != "" && values["RESTIC_PASSWORD_"+suffix] != "" {
-			return true
+	if len(cfg.Repositories) > 0 {
+		for _, id := range cfg.Repositories {
+			suffix := sanitizeRepoID(id)
+			values := cfg.RepoValues[suffix]
+			repository := values["RESTIC_REPOSITORY"]
+			if repository != "" && values["RESTIC_PASSWORD"] != "" && !strings.HasPrefix(repository, "/") && !strings.HasPrefix(repository, "file:") && validateSecureRepository(repository, cfg.RequireSecureRepos) == nil {
+				return true
+			}
 		}
+		return false
 	}
-	return false
+	return cfg.Repository != "" && cfg.Password != "" && !strings.HasPrefix(cfg.Repository, "/") && !strings.HasPrefix(cfg.Repository, "file:") && validateSecureRepository(cfg.Repository, cfg.RequireSecureRepos) == nil
 }

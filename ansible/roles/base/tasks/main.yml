@@ -212,12 +212,13 @@
     state: "{{ ((admin_mode == 'normal') and ((backup | default({})).gitea_process.enabled | default(false) | bool)) | ternary('started', 'stopped') }}"
     daemon_reload: true
 
-- name: Configure offline backup timer
+- name: Disable offline backup timer when it is not operational
   ansible.builtin.systemd:
     name: admin-offline-backup.timer
-    enabled: "{{ (admin_mode == 'normal') and ((backup | default({})).offline.enabled | default(false) | bool) }}"
-    state: "{{ ((admin_mode == 'normal') and ((backup | default({})).offline.enabled | default(false) | bool)) | ternary('started', 'stopped') }}"
+    enabled: false
+    state: stopped
     daemon_reload: true
+  when: not ((admin_mode == 'normal') and ((backup | default({})).offline.enabled | default(false) | bool))
 
 - name: Enable admin-converge.timer
   ansible.builtin.systemd:

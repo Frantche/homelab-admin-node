@@ -139,6 +139,11 @@ func Verify(dir string) (Manifest, error) {
 	if manifest.ID == "" || filepath.Base(manifest.ID) != manifest.ID || strings.Contains(manifest.ID, "..") {
 		return Manifest{}, fmt.Errorf("invalid manifest id")
 	}
+	if manifest.Version == ManifestVersion {
+		if err := validateOfflineRecoveryManifest(manifest, dir); err != nil {
+			return Manifest{}, err
+		}
+	}
 	seenBoundaries := map[string]struct{}{}
 	for _, boundary := range manifest.ConsistencyBoundaries {
 		if strings.TrimSpace(boundary.Service) == "" || strings.TrimSpace(boundary.Method) == "" {
@@ -195,6 +200,34 @@ func Verify(dir string) (Manifest, error) {
 		}
 	}
 	return manifest, nil
+}
+
+func validateOfflineRecoveryManifest(manifest Manifest, dir string) error {
+	if !manifest.OfflineImages {
+		if len(manifest.OfflineImageArchives) > 0 {
+			return fmt.Errorf("offline image mappings require an offline recovery manifest")
+		}
+		return nil
+	}
+	if !fileExists(filepath.Join(dir, "offline-images.tar")) || len(manifest.OfflineImageArchives) == 0 {
+		return fmt.Errorf("offline recovery manifest requires an image archive and mappings")
+	}
+	seenSources := map[string]struct{}{}
+	seenTags := map[string]struct{}{}
+	for _, image := range manifest.OfflineImageArchives {
+		if strings.TrimSpace(image.Source) == "" || strings.TrimSpace(image.ArchiveTag) == "" || strings.TrimSpace(image.ImageID) == "" {
+			return fmt.Errorf("offline recovery manifest contains an incomplete image mapping")
+		}
+		if _, exists := seenSources[image.Source]; exists {
+			return fmt.Errorf("offline recovery manifest contains duplicate image source %q", image.Source)
+		}
+		if _, exists := seenTags[image.ArchiveTag]; exists {
+			return fmt.Errorf("offline recovery manifest contains duplicate archive tag %q", image.ArchiveTag)
+		}
+		seenSources[image.Source] = struct{}{}
+		seenTags[image.ArchiveTag] = struct{}{}
+	}
+	return nil
 }
 
 func validateManifestArtifacts(manifest Manifest, dir string) error {

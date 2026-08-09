@@ -38,8 +38,8 @@ printf 'normal\n' > "$mode_file"
 printf 'services:\n  app:\n    image: %s\n' "$IMAGE" > "$admin_root/stacks/test/compose.yaml"
 printf 'GITEA_ADMIN_PASSWORD=test\n' > "$admin_root/env/gitea.env"
 printf 'gitea-data\n' > "$admin_root/data/gitea/value.txt"
-printf 'test-age-key\n' > "$age_key"
-printf 'test-openbao-recovery\n' > "$openbao_recovery"
+printf 'AGE-SECRET-KEY-TEST\n' > "$age_key"
+printf 'openbao: ENC[test]\nsops:\n  version: 3.13.2\n' > "$openbao_recovery"
 cat > "$recovery_inventory" <<EOF
 {
   "last_verified_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -51,7 +51,7 @@ cat > "$recovery_inventory" <<EOF
 }
 EOF
 cat > "$backup_env" <<EOF
-RESTIC_REPOSITORY="$tmp_dir/restic-repo"
+RESTIC_REPOSITORY="s3:https://example.invalid/bucket"
 RESTIC_PASSWORD="secret"
 RESTIC_INIT_REPOSITORIES="true"
 RESTIC_DEFAULT_FORGET_ARGS="none"

@@ -20,19 +20,40 @@ func TestCheckOfflineStatusVerifiesRecoveryPointAndRecoveryKit(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(backupDir, "offline-images.tar"), []byte("images"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(backupDir, "repository.bundle"), []byte("bundle"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(backupDir, "stack-definitions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	files, err := BuildManifestFiles(backupDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteManifest(backupDir, Manifest{Version: ManifestVersion, ID: "20260808-110000", CreatedAt: now.Add(-time.Hour), OfflineImages: true, Complete: true, Files: files}); err != nil {
+	if err := WriteManifest(backupDir, Manifest{
+		Version:              ManifestVersion,
+		ID:                   "20260808-110000",
+		CreatedAt:            now.Add(-time.Hour),
+		CLIRevision:          "0123456789abcdef",
+		OfflineImages:        true,
+		OfflineImageArchives: []OfflineImageArchive{{Source: "example/app:1", ArchiveTag: "admin-node-backup.local/test:image-001", ImageID: "sha256:test"}},
+		StackDefinitions:     true,
+		RepositoryBundle:     true,
+		Complete:             true,
+		Files:                files,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	prereq := filepath.Join(root, "prereq")
-	for _, path := range []string{filepath.Join(prereq, "age"), filepath.Join(prereq, "config/.git"), filepath.Join(prereq, "openbao.sops.yaml")} {
+	for path, content := range map[string]string{
+		filepath.Join(prereq, "age"):               "AGE-SECRET-KEY-TEST",
+		filepath.Join(prereq, "config/.git"):       "gitdir: present",
+		filepath.Join(prereq, "openbao.sops.yaml"): "value: ENC[test]\nsops:\n  version: 3.13.2",
+	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, []byte("present"), 0o600); err != nil {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -42,7 +63,7 @@ func TestCheckOfflineStatusVerifiesRecoveryPointAndRecoveryKit(t *testing.T) {
 		t.Fatal(err)
 	}
 	backupEnv := filepath.Join(root, "backup.env")
-	if err := os.WriteFile(backupEnv, []byte("RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=s3:test\nRESTIC_PASSWORD_OFFSITE=present\n"), 0o600); err != nil {
+	if err := os.WriteFile(backupEnv, []byte("RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=s3:https://example.invalid/bucket\nRESTIC_PASSWORD_OFFSITE=present\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	status, err := CheckOfflineStatus(config.Config{
@@ -73,25 +94,43 @@ func TestCheckOfflineStatusReportsMissingPrerequisites(t *testing.T) {
 	}
 }
 
-func TestResticRecoveryKitDeclarationRequiresMatchingNonEmptyPair(t *testing.T) {
+func TestResticRecoveryKitDeclarationRequiresMatchingNonLocalPair(t *testing.T) {
 	root := t.TempDir()
 	for _, test := range []struct {
 		name    string
 		content string
 		want    bool
 	}{
-		{name: "matching repository", content: "RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=s3:test\nRESTIC_PASSWORD_OFFSITE=secret\n", want: true},
-		{name: "different identifiers", content: "RESTIC_REPOSITORIES=one two\nRESTIC_REPOSITORY_ONE=s3:test\nRESTIC_PASSWORD_TWO=secret\n"},
-		{name: "empty quoted password", content: "RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=s3:test\nRESTIC_PASSWORD_OFFSITE=\"\"\n"},
+		{name: "matching remote repository", content: "RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=s3:https://example.invalid/bucket\nRESTIC_PASSWORD_OFFSITE=secret\n", want: true},
+		{name: "invalid remote repository", content: "RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=s3:test\nRESTIC_PASSWORD_OFFSITE=secret\n"},
+		{name: "matching local repository", content: "RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=/srv/backups\nRESTIC_PASSWORD_OFFSITE=secret\n"},
+		{name: "stale legacy remote pair", content: "RESTIC_REPOSITORIES=local\nRESTIC_REPOSITORY_LOCAL=/srv/backups\nRESTIC_PASSWORD_LOCAL=secret\nRESTIC_REPOSITORY=s3:stale\nRESTIC_PASSWORD=stale-secret\n"},
+		{name: "different identifiers", content: "RESTIC_REPOSITORIES=one two\nRESTIC_REPOSITORY_ONE=s3:https://example.invalid/bucket\nRESTIC_PASSWORD_TWO=secret\n"},
+		{name: "empty quoted password", content: "RESTIC_REPOSITORIES=offsite\nRESTIC_REPOSITORY_OFFSITE=s3:https://example.invalid/bucket\nRESTIC_PASSWORD_OFFSITE=\"\"\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			path := filepath.Join(root, test.name+".env")
 			if err := os.WriteFile(path, []byte(test.content), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if got := resticRepositoryAccessDeclared(path); got != test.want {
-				t.Fatalf("resticRepositoryAccessDeclared() = %t, want %t", got, test.want)
+			if got := resticOffsiteAccessDeclared(path); got != test.want {
+				t.Fatalf("resticOffsiteAccessDeclared() = %t, want %t", got, test.want)
 			}
 		})
+	}
+}
+
+func TestCheckOfflineStatusRejectsUnknownRecoveryKitFields(t *testing.T) {
+	root := t.TempDir()
+	inventoryPath := filepath.Join(root, "inventory.json")
+	if err := os.WriteFile(inventoryPath, []byte(`{"last_verified_at":"2026-08-09T12:00:00Z","unexpected_secret":"must-not-be-accepted"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	status, err := CheckOfflineStatus(config.Config{BackupRoot: filepath.Join(root, "backups"), RecoveryKitInventoryFile: inventoryPath}, time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.RecoveryKitComplete || len(status.Problems) < 2 {
+		t.Fatalf("status = %#v", status)
 	}
 }

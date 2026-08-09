@@ -44,6 +44,9 @@ sudo admin-node backup offline-status
 The status command reports the newest offline point, age, freshness, full
 manifest checksum verification, and recovery-kit state. It exits non-zero with
 actionable prerequisite names when anything is missing or stale.
+The Restic prerequisite must be a complete, syntactically valid non-local
+repository declaration; a local path or `file:` repository does not satisfy
+off-node recovery readiness.
 The scheduled service also requires the Ansible-managed
 `/srv/admin/env/backup.env`; a missing policy file is a hard failure rather than
 an invitation to run with permissive defaults.
