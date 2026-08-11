@@ -34,7 +34,7 @@ services:
 
   harbor-db:
     <<: *harbor-hardening
-    image: pgautoupgrade/pgautoupgrade:18-trixie@sha256:65a2b843dcfec2679a92ece765d7bc243eee9b743ecafcf8a0d181f243c14479
+    image: pgautoupgrade/pgautoupgrade:18-trixie@sha256:2931a074ab3eaff9d4f6794740734eabfb4a0ee9121305e9a12645af3916e0c4
     container_name: harbor-db
     restart: "no"
     cap_drop:
