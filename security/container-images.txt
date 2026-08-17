@@ -1,7 +1,7 @@
 # Runtime stack images. This file is the scan inventory and is checked against
 # every stacks/*/compose.yaml or stacks/*/compose.yaml.j2 image declaration.
-cloudflare/cloudflared:2026.7.3@sha256:b392761b711c0e5649d9b64e1fc9a10ba0563fa3e712ed7c26bde5cc1fbe9059
-docker.gitea.com/gitea:1.27.1@sha256:b64126cf5c3f4e5f0f231b510bb13715f6cb8e508188b44de90bdb9a04f3055d
+cloudflare/cloudflared:2026.8.2@sha256:de55830499e9adb1c580f7b5cbbdef86a3ff1715fb3ae6b3ff242f19de0afde8
+docker.gitea.com/gitea:1.27.2@sha256:b67389c604243d96cbc9ba6be18b94e409eb40ceb05dbe61e39edd55b7ceb58a
 goharbor/harbor-core:v2.15.2@sha256:d7b780d23721a000f0fb8e181add6675eafa336de5d033b77fd7da0c171ff7f7
 goharbor/harbor-exporter:v2.15.2@sha256:e1b0a248f61aad5084c5d1612d5f1da89f99c23ce743eaf8cba913d6d00c0547
 goharbor/harbor-jobservice:v2.15.2@sha256:f71a4452a095bcd2a8f0683648a3ae28415432df87ccfb00ec7625f3e340a598
@@ -21,5 +21,5 @@ traefik:v3.7@sha256:0ae6898c4a6ad568e8eabad0839b1660eb54a72aa43089ead05c6f624f86
 
 # Production utility images invoked outside Compose.
 alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
-ghcr.io/frantche/gitea-backup-restore-process:0.3.25@sha256:cfb63e09c82a47d65a911c5dc9140359188c22e42451e598cb41bb4236d05570
+ghcr.io/frantche/gitea-backup-restore-process:0.3.29@sha256:56317240a8657d0161d767d55c734418aa977b7482044aead18b5d7b5711522a
 goharbor/prepare:v2.15.2@sha256:5b9428fb649b3a0e0fe497189a880d7c9f1281538b85de9ad377cb524e427bd5
