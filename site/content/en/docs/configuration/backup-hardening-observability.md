@@ -121,8 +121,11 @@ backup:
 
 When enabled, Ansible starts `admin-gitea-process-backup.timer`, which runs daily
 at 03:30 by default. The systemd calendar can be customized with
-`backup.gitea_process.on_calendar`. The service checks that both `gitea-db` and `gitea` are healthy before
-running `ghcr.io/frantche/gitea-backup-restore-process:0.3.29`; if either
+`backup.gitea_process.on_calendar`. The service waits up to 30 minutes for a
+concurrent admin operation such as convergence to release the global lock. The
+wait duration or timeout is recorded in the journal, and the whole service is
+bounded to 45 minutes. The service checks that both `gitea-db` and `gitea` are
+healthy before running `ghcr.io/frantche/gitea-backup-restore-process:0.3.29`; if either
 container is not healthy, the service fails, emits a systemd failure event,
 and does not refresh its success marker.
 

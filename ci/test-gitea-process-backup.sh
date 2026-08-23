@@ -18,6 +18,7 @@ mkdir -p \
   "$test_root/history-parent"
 docker_log="$test_root/docker.log"
 export BACKUP_STATUS_ROOT="$test_root/status"
+service_unit="$repo_root/systemd/admin-gitea-process-backup.service"
 
 assert_docker_arg_pair() {
   local first="$1"
@@ -37,6 +38,93 @@ assert_network_count() {
     exit 1
   fi
 }
+
+wait_for_file() {
+  local path="$1"
+  local _
+  for _ in {1..100}; do
+    if [[ -e "$path" ]]; then
+      return 0
+    fi
+    sleep 0.01
+  done
+  echo "timed out waiting for test marker $path" >&2
+  return 1
+}
+
+test_service_lock_contention() {
+  local exec_start lock_file marker output ready holder_pid start_ns elapsed_ns
+  local -a service_command
+
+  exec_start="$(sed -n 's/^ExecStart=//p' "$service_unit")"
+  read -r -a service_command <<< "$exec_start"
+  if [[ "${service_command[*]}" != "/usr/bin/flock --verbose --wait 1800 /run/admin-node-operation.lock /opt/homelab-admin-node/scripts/gitea-process-backup.sh" ]]; then
+    echo "Gitea process backup service must wait visibly for the operation lock" >&2
+    exit 1
+  fi
+  if ! grep -Fqx "TimeoutStartSec=45min" "$service_unit"; then
+    echo "Gitea process backup service must bound lock wait and execution time" >&2
+    exit 1
+  fi
+  if ! grep -Fqx "OnFailure=admin-backup-failure@%n.service" "$service_unit"; then
+    echo "Gitea process backup service must retain failure notification" >&2
+    exit 1
+  fi
+
+  lock_file="$test_root/operation.lock"
+  marker="$test_root/lock-backup-ran"
+  ready="$test_root/lock-holder-ready"
+  cat > "$test_root/bin/lock-backup" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+touch "${LOCK_BACKUP_MARKER:?}"
+EOF
+  cat > "$test_root/bin/hold-lock" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+touch "${LOCK_HOLDER_READY:?}"
+sleep "${LOCK_HOLDER_SLEEP:?}"
+EOF
+  chmod +x "$test_root/bin/lock-backup" "$test_root/bin/hold-lock"
+  service_command[3]=3
+  service_command[4]="$lock_file"
+  service_command[5]="$test_root/bin/lock-backup"
+
+  LOCK_HOLDER_READY="$ready" LOCK_HOLDER_SLEEP=0.4 \
+    flock "$lock_file" "$test_root/bin/hold-lock" &
+  holder_pid=$!
+  wait_for_file "$ready"
+  start_ns="$(date +%s%N)"
+  output="$(LOCK_BACKUP_MARKER="$marker" "${service_command[@]}" 2>&1)"
+  elapsed_ns=$(( $(date +%s%N) - start_ns ))
+  wait "$holder_pid"
+  if [[ ! -e "$marker" || "$elapsed_ns" -lt 250000000 ]]; then
+    echo "Gitea process backup did not wait for and acquire the contended lock" >&2
+    exit 1
+  fi
+  if [[ "$output" != *"getting lock took"* ]]; then
+    echo "successful Gitea process backup lock wait was not visible" >&2
+    exit 1
+  fi
+
+  rm -f "$marker" "$ready"
+  service_command[3]=0.05
+  LOCK_HOLDER_READY="$ready" LOCK_HOLDER_SLEEP=0.4 \
+    flock "$lock_file" "$test_root/bin/hold-lock" &
+  holder_pid=$!
+  wait_for_file "$ready"
+  if output="$(LOCK_BACKUP_MARKER="$marker" "${service_command[@]}" 2>&1)"; then
+    echo "Gitea process backup must fail when the bounded lock wait expires" >&2
+    exit 1
+  fi
+  wait "$holder_pid"
+  if [[ -e "$marker" || "$output" != *"timeout while waiting to get lock"* ]]; then
+    echo "Gitea process backup lock timeout was not enforced or visible" >&2
+    exit 1
+  fi
+}
+
+test_service_lock_contention
 
 cat > "$test_root/bin/docker" <<'EOF'
 #!/usr/bin/env bash
