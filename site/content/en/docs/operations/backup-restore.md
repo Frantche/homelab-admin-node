@@ -36,9 +36,12 @@ each Restic repository, and recorded locally only after the snapshot is visible.
 When `backup.gitea_process.enabled` is true, a separate
 `admin-gitea-process-backup.timer` also runs daily at 03:30 by default using
 `Frantche/gitea-backup-restore-process`. The schedule is configurable through
-`backup.gitea_process.on_calendar`. It runs only when both `gitea-db` and `gitea`
-report `healthy`; otherwise the service fails, emits a systemd failure event,
-and does not refresh its success marker. The helper joins the
+`backup.gitea_process.on_calendar`. A collision with convergence or another
+admin operation waits for the global lock for up to 30 minutes instead of
+discarding the daily backup. The journal reports the lock wait or timeout, and
+the service still emits a failure event when the bounded wait expires. It runs
+only when both `gitea-db` and `gitea` report `healthy`; otherwise the service
+fails, emits a systemd failure event, and does not refresh its success marker. The helper joins the
 isolated `gitea-db` Docker network to resolve PostgreSQL and `admin-edge` for
 DNS and remote backup egress. Gitea data stays read-only during backup; helper
 history is stored under `/srv/admin/backups/gitea-process`. S3 uploads use

@@ -16,4 +16,5 @@ ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
 EnvironmentFile=/srv/admin/env/gitea-process-backup.env
-ExecStart=/usr/bin/flock -n /run/admin-node-operation.lock /opt/homelab-admin-node/scripts/gitea-process-backup.sh
+TimeoutStartSec=45min
+ExecStart=/usr/bin/flock --verbose --wait 1800 /run/admin-node-operation.lock /opt/homelab-admin-node/scripts/gitea-process-backup.sh
