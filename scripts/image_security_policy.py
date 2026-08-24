@@ -99,10 +99,20 @@ def parse_date(value: str, field: str) -> dt.date:
 
 
 def validate_policy(policy: dict[str, Any], today: dt.date) -> list[dict[str, Any]]:
-    if policy.get("version") != 2:
-        raise ValueError("policy version must be 2")
+    if policy.get("version") != 3:
+        raise ValueError("policy version must be 3")
     if policy.get("blocked_severities") != ["CRITICAL"]:
         raise ValueError("blocked_severities must contain CRITICAL")
+    enforced_prefixes = policy.get("enforced_repository_prefixes")
+    if (
+        not isinstance(enforced_prefixes, list)
+        or not enforced_prefixes
+        or not all(
+            isinstance(prefix, str) and IMAGE_REPOSITORY.fullmatch(prefix.rstrip("/"))
+            for prefix in enforced_prefixes
+        )
+    ):
+        raise ValueError("enforced_repository_prefixes must contain image repository prefixes")
     exceptions = policy.get("exceptions")
     if not isinstance(exceptions, list):
         raise ValueError("exceptions must be a list")
@@ -132,6 +142,13 @@ def validate_policy(policy: dict[str, Any], today: dt.date) -> list[dict[str, An
         if parse_date(exception["expires_at"], f"exception {exception['id']} expires_at") < today:
             raise ValueError(f"exception {exception['id']} expired on {exception['expires_at']}")
     return exceptions
+
+
+def repository_is_enforced(repository: str, policy: dict[str, Any]) -> bool:
+    return any(
+        repository == prefix.rstrip("/") or repository.startswith(prefix.rstrip("/") + "/")
+        for prefix in policy["enforced_repository_prefixes"]
+    )
 
 
 def violations(report: dict[str, Any], image: str, policy: dict[str, Any], today: dt.date) -> list[str]:
@@ -178,12 +195,22 @@ def main() -> int:
         elif args.command == "validate":
             validate_policy(load_json(args.policy), args.today)
         else:
-            found = violations(load_json(args.report), args.image, load_json(args.policy), args.today)
+            policy = load_json(args.policy)
+            found = violations(load_json(args.report), args.image, policy, args.today)
             if found:
-                print(f"{args.image}: blocked fixable vulnerabilities:", file=sys.stderr)
+                repository = repository_for_image(args.image)
+                enforced = repository_is_enforced(repository, policy)
+                disposition = "blocked" if enforced else "non-blocking warning"
+                if not enforced:
+                    print(
+                        f"::warning title=Third-party image vulnerabilities::{args.image} has "
+                        f"{len(found)} fixable critical vulnerability finding(s)",
+                        file=sys.stderr,
+                    )
+                print(f"{args.image}: {disposition} fixable vulnerabilities:", file=sys.stderr)
                 for item in found:
                     print(f"- {item}", file=sys.stderr)
-                return 1
+                return 1 if enforced else 0
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"image security policy error: {exc}", file=sys.stderr)
         return 2

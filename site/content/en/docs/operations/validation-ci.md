@@ -87,5 +87,9 @@ to run only the standard recovery path.
 
 The Grafana import test and the real Trivy image scan remain specialized jobs.
 They are exposed through Make targets but are not part of `ci-full`.
+The Trivy workflow uploads complete vulnerability reports and SBOMs for every
+pinned image. Fixable critical findings block images maintained under
+`ghcr.io/frantche/`; findings in third-party images are listed as non-blocking
+workflow warnings because their remediation depends on the upstream publisher.
 
 CI can use mock Pi-hole and Cloudflare Tunnel services when real external infrastructure is not available.
