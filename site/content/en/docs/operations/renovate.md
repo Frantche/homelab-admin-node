@@ -7,6 +7,8 @@ Renovate is configured through `renovate.json`.
 
 The repository expects Renovate to run externally. It should open pull requests for dependency and image updates, while CI scenarios validate whether updated components still converge, validate, backup, and restore correctly.
 
+Go patch releases remain in the automatically merged `weekly non-major dependency updates` group. Go minor releases use the separate `weekly Go minor updates` group and require manual review because they can need source, tooling, or CI changes.
+
 `ghcr.io/frantche/gitea-backup-restore-process` is tracked with a Renovate regex
 custom manager because the image appears in the CLI fallback, a script, an
 Ansible template, and restore runbooks instead of a standard Compose file.
