@@ -41,8 +41,36 @@ fi
 SH
 
 export TRIVY_CALL_LOG="$TEST_DIR/trivy-calls"
-if PATH="$TEST_DIR/bin:$PATH" "$REPO_ROOT/ci/scan-container-images.sh" "$TEST_DIR/artifacts"; then
+if scan_output="$(PATH="$TEST_DIR/bin:$PATH" "$REPO_ROOT/ci/scan-container-images.sh" "$TEST_DIR/artifacts" 2>&1)"; then
   echo "scan unexpectedly accepted the sentinel vulnerabilities" >&2
+  exit 1
+fi
+
+if ! grep -Fq "::warning title=Third-party image vulnerabilities::" <<<"$scan_output"; then
+  echo "scan did not emit a GitHub Actions warning for third-party images" >&2
+  exit 1
+fi
+if ! grep -Fq "ghcr.io/frantche/gitea-backup-restore-process" <<<"$scan_output"; then
+  echo "scan did not strictly reject the Frantche-owned image" >&2
+  exit 1
+fi
+if ! grep -Fq "CVE-SCAN-SENTINEL (sentinel) fixable in 2.0.0" <<<"$scan_output"; then
+  echo "scan warning did not list the vulnerability finding" >&2
+  exit 1
+fi
+
+sentinel_report="$TEST_DIR/sentinel-report.json"
+printf '%s\n' '{"Results":[{"Vulnerabilities":[{"VulnerabilityID":"CVE-SCAN-SENTINEL","PkgName":"sentinel","Severity":"CRITICAL","FixedVersion":"2.0.0"}]}]}' > "$sentinel_report"
+if ! "$REPO_ROOT/scripts/image_security_policy.py" evaluate \
+  --image "example.invalid/app:1@sha256:$(printf 'b%.0s' {1..64})" \
+  --report "$sentinel_report" >/dev/null 2>&1; then
+  echo "third-party vulnerability finding was unexpectedly blocking" >&2
+  exit 1
+fi
+if "$REPO_ROOT/scripts/image_security_policy.py" evaluate \
+  --image "ghcr.io/frantche/app:1@sha256:$(printf 'c%.0s' {1..64})" \
+  --report "$sentinel_report" >/dev/null 2>&1; then
+  echo "Frantche-owned vulnerability finding was unexpectedly accepted" >&2
   exit 1
 fi
 
