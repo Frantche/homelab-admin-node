@@ -93,6 +93,15 @@
       "automergeType": "pr",
       "automergeStrategy": "squash",
       "platformAutomerge": true
+    },
+    {
+      "description": "Isoler les mises a jour mineures de Go pour validation manuelle hebdomadaire",
+      "matchDatasources": ["golang-version"],
+      "matchPackageNames": ["go"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": "weekly Go minor updates",
+      "groupSlug": "weekly-go-minor-updates",
+      "automerge": false
     }
   ]
 }
