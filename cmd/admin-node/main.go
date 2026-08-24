@@ -321,7 +321,7 @@ func (a app) runGiteaProcessRestore(ctx context.Context, opts giteaProcessRestor
 	if err != nil {
 		return err
 	}
-	image := envValue(env, "GITEA_PROCESS_BACKUP_IMAGE", "ghcr.io/frantche/gitea-backup-restore-process:0.3.29@sha256:56317240a8657d0161d767d55c734418aa977b7482044aead18b5d7b5711522a")
+	image := envValue(env, "GITEA_PROCESS_BACKUP_IMAGE", "ghcr.io/frantche/gitea-backup-restore-process:0.3.35@sha256:12da0b7807d2ed87a9d71cfec00d4f51ece60a7bf5827deb98bc54000721ad6f")
 	databaseNetwork := envValue(env, "GITEA_PROCESS_BACKUP_NETWORK", "gitea-db")
 	egressNetwork := envValue(env, "GITEA_PROCESS_BACKUP_EGRESS_NETWORK", "admin-edge")
 	restoreTmp := envValue(env, "RESTORE_TMP_FOLDER", "/srv/admin/backups/gitea-process/restore-tmp")
