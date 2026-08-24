@@ -222,6 +222,7 @@
     - (harbor_validate_registry_mirrors | bool) or (harbor_mirror_item.validation.enabled | default(false) | bool)
     - not (harbor_mirror_item.public | default(false))
   no_log: true
+  changed_when: false
 
 - name: Write temporary Docker auth config for private mirror validation
   ansible.builtin.copy:
@@ -238,6 +239,7 @@
   when:
     - harbor_mirror_auth_config.path is defined
   no_log: true
+  changed_when: false
 
 - name: Build Harbor registry mirror validation image reference
   ansible.builtin.set_fact:
@@ -334,3 +336,4 @@
   when:
     - harbor_mirror_auth_config.path is defined
   no_log: true
+  changed_when: false

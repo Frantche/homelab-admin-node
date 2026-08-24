@@ -135,6 +135,54 @@
     - not (gitea_config_test_mode | default(false))
   no_log: true
 
+- name: Read current Gitea OIDC source configuration
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - gitea-db
+      - psql
+      - -U
+      - gitea
+      - -d
+      - gitea
+      - -At
+      - -v
+      - ON_ERROR_STOP=1
+      - -c
+      - "select cfg from login_source where id = {{ gitea_oidc_source_id | int }};"
+  register: gitea_oidc_source_config_query
+  changed_when: false
+  when:
+    - gitea_config.oidc.enabled | default(false)
+    - not (gitea_config_test_mode | default(false))
+    - (gitea_oidc_source_id | default('') | length) > 0
+  no_log: true
+
+- name: Detect Gitea OIDC source configuration drift
+  ansible.builtin.set_fact:
+    gitea_oidc_source_needs_update: >-
+      {{
+        (gitea_oidc_source_config.Provider | default('') != 'openidConnect')
+        or (gitea_oidc_source_config.ClientID | default('') != gitea_oidc_client_id)
+        or (gitea_oidc_source_config.ClientSecret | default('') != gitea_oidc_client_secret)
+        or (
+          gitea_oidc_source_config.OpenIDConnectAutoDiscoveryURL | default('')
+          != gitea_oidc_discovery_url
+        )
+        or (
+          gitea_oidc_source_config.Scopes | default([])
+          != [gitea_oidc_scopes]
+        )
+      }}
+  vars:
+    gitea_oidc_source_config: "{{ gitea_oidc_source_config_query.stdout | from_json }}"
+  when:
+    - gitea_config.oidc.enabled | default(false)
+    - not (gitea_config_test_mode | default(false))
+    - (gitea_oidc_source_id | default('') | length) > 0
+  no_log: true
+
 - name: Configure Gitea Keycloak OIDC source
   ansible.builtin.command:
     argv:
@@ -201,6 +249,7 @@
     - gitea_config.oidc.enabled | default(false)
     - not (gitea_config_test_mode | default(false))
     - (gitea_oidc_source_id | default('') | length) > 0
+    - gitea_oidc_source_needs_update | default(false) | bool
   no_log: true
 
 - name: Configure Gitea Keycloak OIDC user synchronization
