@@ -1,0 +1,205 @@
+---
+- name: Build OpenBao operation token lifecycle facts
+  ansible.builtin.set_fact:
+    openbao_operation_token_file: "{{ admin_node_root }}/env/openbao-{{ openbao_operation_token_name }}-token"
+    openbao_operation_token_policy: "admin-node-{{ openbao_operation_token_name }}"
+    openbao_operation_token_capability: "{{ 'read' if openbao_operation_token_name == 'backup' else 'update' }}"
+    openbao_operation_token_snapshot_path: "sys/storage/raft/snapshot"
+  no_log: true
+
+- name: Inspect existing OpenBao operation token file
+  ansible.builtin.stat:
+    path: "{{ openbao_operation_token_file }}"
+  register: openbao_operation_token_file_stat
+  no_log: true
+
+- name: Read existing OpenBao operation token
+  ansible.builtin.slurp:
+    path: "{{ openbao_operation_token_file }}"
+  register: openbao_operation_token_file_content
+  when: openbao_operation_token_file_stat.stat.exists
+  no_log: true
+
+- name: Select existing OpenBao operation token
+  ansible.builtin.set_fact:
+    openbao_operation_token_current: >-
+      {{
+        (openbao_operation_token_file_content.content | b64decode | trim)
+        if (openbao_operation_token_file_content is defined and not (openbao_operation_token_file_content is skipped | default(false)))
+        else ''
+      }}
+  no_log: true
+
+- name: Inspect existing OpenBao operation token lease
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/auth/token/lookup"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_config_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      token: "{{ openbao_operation_token_current }}"
+    return_content: true
+    status_code: [200, 400, 403]
+  register: openbao_operation_token_lookup
+  when: openbao_operation_token_current | length > 0
+  no_log: true
+
+- name: Inspect existing OpenBao operation token capabilities
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/capabilities"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_config_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      token: "{{ openbao_operation_token_current }}"
+      paths: ["{{ openbao_operation_token_snapshot_path }}"]
+    return_content: true
+    status_code: [200, 400, 403]
+  register: openbao_operation_token_capabilities
+  when: openbao_operation_token_lookup.status | default(0) | int == 200
+  no_log: true
+
+- name: Decide whether the OpenBao operation token must be replaced
+  ansible.builtin.set_fact:
+    openbao_operation_token_replace: >-
+      {{
+        (openbao_operation_token_lookup.status | default(0) | int != 200)
+        or (openbao_operation_token_policy not in (openbao_operation_token_lookup.json.data.policies | default([])))
+        or not (openbao_operation_token_lookup.json.data.renewable | default(false) | bool)
+        or (openbao_operation_token_lookup.json.data.period | default(0) | int != openbao_operation_token_period_seconds | int)
+        or (openbao_operation_token_capabilities.status | default(0) | int != 200)
+        or (
+          openbao_operation_token_capability
+          not in (
+            (openbao_operation_token_capabilities.json.capabilities | default({})).get(
+              openbao_operation_token_snapshot_path,
+              []
+            )
+          )
+        )
+      }}
+  no_log: true
+
+- name: Renew OpenBao operation token before expiry
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/auth/token/renew"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_config_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      token: "{{ openbao_operation_token_current }}"
+    return_content: true
+    status_code: 200
+  register: openbao_operation_token_renewed
+  when:
+    - not (openbao_operation_token_replace | bool)
+    - openbao_operation_token_lookup.json.data.ttl | default(0) | int <= openbao_operation_token_renew_before_seconds | int
+  changed_when: true
+  no_log: true
+
+- name: Validate renewed OpenBao operation token lease
+  ansible.builtin.assert:
+    that:
+      - openbao_operation_token_renewed.json.auth.renewable | default(false) | bool
+      - openbao_operation_token_renewed.json.auth.lease_duration | default(0) | int > openbao_operation_token_renew_before_seconds | int
+    fail_msg: "OpenBao did not renew the {{ openbao_operation_token_name }} token beyond its renewal threshold"
+  when: openbao_operation_token_renewed is defined and not (openbao_operation_token_renewed is skipped | default(false))
+  no_log: true
+
+- name: Create replacement OpenBao operation token
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/auth/token/create-orphan"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_config_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      policies: ["{{ openbao_operation_token_policy }}"]
+      display_name: "admin-node-{{ openbao_operation_token_name }}"
+      period: "{{ openbao_operation_token_period_seconds }}s"
+      renewable: true
+      no_default_policy: true
+    return_content: true
+    status_code: 200
+  register: openbao_operation_token_created
+  when: openbao_operation_token_replace | bool
+  no_log: true
+
+- name: Inspect replacement OpenBao operation token lease
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/auth/token/lookup"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_config_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      token: "{{ openbao_operation_token_created.json.auth.client_token }}"
+    return_content: true
+    status_code: 200
+  register: openbao_operation_token_created_lookup
+  when: openbao_operation_token_replace | bool
+  no_log: true
+
+- name: Inspect replacement OpenBao operation token capabilities
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/capabilities"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_config_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      token: "{{ openbao_operation_token_created.json.auth.client_token }}"
+      paths: ["{{ openbao_operation_token_snapshot_path }}"]
+    return_content: true
+    status_code: 200
+  register: openbao_operation_token_created_capabilities
+  when: openbao_operation_token_replace | bool
+  no_log: true
+
+- name: Validate replacement OpenBao operation token
+  ansible.builtin.assert:
+    that:
+      - openbao_operation_token_created.json.auth.client_token | default('') | length > 0
+      - openbao_operation_token_created_lookup.json.data.renewable | default(false) | bool
+      - openbao_operation_token_created_lookup.json.data.period | default(0) | int == openbao_operation_token_period_seconds | int
+      - openbao_operation_token_policy in (openbao_operation_token_created_lookup.json.data.policies | default([]))
+      - openbao_operation_token_capability in ((openbao_operation_token_created_capabilities.json.capabilities | default({})).get(openbao_operation_token_snapshot_path, []))
+    fail_msg: "Replacement OpenBao {{ openbao_operation_token_name }} token does not satisfy its lifecycle contract"
+  when: openbao_operation_token_replace | bool
+  no_log: true
+
+- name: Persist replacement OpenBao operation token atomically
+  ansible.builtin.copy:
+    dest: "{{ openbao_operation_token_file }}"
+    content: "{{ openbao_operation_token_created.json.auth.client_token }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  when: openbao_operation_token_replace | bool
+  no_log: true
+
+- name: Revoke superseded OpenBao operation token
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/auth/token/revoke"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_config_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      token: "{{ openbao_operation_token_current }}"
+    status_code: 204
+  when:
+    - openbao_operation_token_replace | bool
+    - openbao_operation_token_lookup.status | default(0) | int == 200
+    - openbao_operation_token_current != openbao_operation_token_created.json.auth.client_token
+  no_log: true

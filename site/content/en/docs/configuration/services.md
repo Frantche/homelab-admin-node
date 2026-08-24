@@ -188,6 +188,13 @@ openbao_config:
 | `openbao_config.oidc.role.allowed_redirect_uris` | `[]` | Allowed OIDC callback URLs. |
 | `openbao_config.oidc.role.bound_audiences` | `[]` | Accepted token audiences. |
 | `openbao_config.oidc.role.policies` | ignored | Legacy field. The default OIDC role is always limited to `["default"]`. |
+| `openbao_operation_token_period_seconds` | `2592000` (30 days) | Period assigned to the dedicated backup and restore tokens. |
+| `openbao_operation_token_renew_before_seconds` | `604800` (7 days) | Remaining lifetime at which convergence renews an operation token. |
+
+Convergence reconciles the dedicated backup and restore tokens without logging
+their values. Valid periodic tokens are renewed before expiry. Missing, expired,
+non-renewable, or incorrectly scoped tokens are replaced atomically and the old
+token is revoked only after the replacement has been validated and persisted.
 | `openbao_config.oidc.roles[]` | `[]` | Explicit OIDC roles that grant access to KV-v2 secret engines. Each item requires `name`, `group`, and `secret_engines`. |
 | `openbao_config.oidc.roles[].name` | example: `admin` | OpenBao OIDC role name and suffix for the generated `oidc-<name>` ACL policy. |
 | `openbao_config.oidc.roles[].group` | example: `admin` | Required OIDC `groups` claim value for the role. |
