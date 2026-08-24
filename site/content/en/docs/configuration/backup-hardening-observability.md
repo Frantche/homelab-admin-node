@@ -125,7 +125,7 @@ at 03:30 by default. The systemd calendar can be customized with
 concurrent admin operation such as convergence to release the global lock. The
 wait duration or timeout is recorded in the journal, and the whole service is
 bounded to 45 minutes. The service checks that both `gitea-db` and `gitea` are
-healthy before running `ghcr.io/frantche/gitea-backup-restore-process:0.3.29`; if either
+healthy before running `ghcr.io/frantche/gitea-backup-restore-process:0.3.35`; if either
 container is not healthy, the service fails, emits a systemd failure event,
 and does not refresh its success marker.
 
@@ -134,7 +134,7 @@ and does not refresh its success marker.
 | `backup.gitea_process.enabled` | `false` | Enables the additional Gitea backup timer. |
 | `backup.gitea_process.on_calendar` | `*-*-* 03:30:00` | systemd `OnCalendar` schedule for the timer. |
 | `backup.gitea_process.method` | `s3` or `ftp` | Storage backend passed as `BACKUP_METHODE`. |
-| `backup.gitea_process.image` | `ghcr.io/frantche/gitea-backup-restore-process:0.3.29` | Backup container image. |
+| `backup.gitea_process.image` | `ghcr.io/frantche/gitea-backup-restore-process:0.3.35` | Backup container image. |
 | `backup.gitea_process.network` | `gitea-db` | Docker network used by the helper to reach PostgreSQL. Override only when the Gitea database uses a different isolated network. |
 | `backup.gitea_process.egress_network` | `admin-edge` | Second Docker network used for DNS and access to the remote S3 or FTP backend. If it matches `network`, the helper attaches it only once. |
 | `backup.gitea_process.backup_file_log` | `/srv/admin/backups/gitea-process/history/backupFileLog.txt` | Writable helper history outside the read-only Gitea data mount. Its parent is mounted as scratch storage. |
