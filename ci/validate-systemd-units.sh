@@ -25,4 +25,11 @@ if rg -n '/opt/homelab-admin-node/bin/admin-node' "$validation_root/systemd"; th
   exit 1
 fi
 
+integrity_timer="$validation_root/systemd/admin-backup-integrity.timer"
+rg -F 'OnCalendar=Sun *-*-* 04:30:00' "$integrity_timer" >/dev/null
+if rg -q '^OnActiveSec=' "$integrity_timer"; then
+  echo "integrity timer must not be rearmed by systemd daemon reloads" >&2
+  exit 1
+fi
+
 systemd-analyze verify "$validation_root"/systemd/*
