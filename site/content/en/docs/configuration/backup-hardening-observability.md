@@ -56,8 +56,10 @@ Two monitoring timers are enabled in `normal` mode:
 
 - `admin-backup-status.timer` validates freshness every hour, starting 30
   minutes after the timer is activated;
-- `admin-backup-integrity.timer` runs `restic check` 10 minutes after activation
-  and weekly.
+- `admin-backup-integrity.timer` runs `restic check` weekly. Run
+  `admin-node backup restic-check` explicitly after initial installation to
+  create the first integrity status marker without coupling the weekly timer to
+  systemd reloads.
 
 Failures trigger `admin-backup-failure@.service`, which writes a stable
 `admin-node-backup` journal event suitable for forwarding to homelab alerting.

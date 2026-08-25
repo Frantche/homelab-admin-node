@@ -109,7 +109,6 @@
     name: admin-offline-backup.timer
     enabled: true
     state: started
-    daemon_reload: true
   when:
     - admin_mode == 'normal'
     - backup.offline.enabled | default(false) | bool

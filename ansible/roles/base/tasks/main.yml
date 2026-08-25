@@ -162,6 +162,9 @@
     mode: "0644"
   notify: systemd daemon-reload
 
+- name: Apply updated systemd unit definitions before activation
+  ansible.builtin.meta: flush_handlers
+
 - name: Ensure admin-converge drop-in directory is inspectable
   ansible.builtin.file:
     path: /etc/systemd/system/admin-converge.service.d
@@ -187,7 +190,6 @@
   ansible.builtin.systemd:
     name: admin-stacks.target
     enabled: true
-    daemon_reload: true
 
 - name: Enable admin-backup.timer
   ansible.builtin.systemd:
@@ -200,7 +202,6 @@
     name: "{{ item }}"
     enabled: "{{ admin_mode == 'normal' }}"
     state: "{{ (admin_mode == 'normal') | ternary('started', 'stopped') }}"
-    daemon_reload: true
   loop:
     - admin-backup-status.timer
     - admin-backup-integrity.timer
@@ -210,14 +211,12 @@
     name: admin-gitea-process-backup.timer
     enabled: "{{ (admin_mode == 'normal') and ((backup | default({})).gitea_process.enabled | default(false) | bool) }}"
     state: "{{ ((admin_mode == 'normal') and ((backup | default({})).gitea_process.enabled | default(false) | bool)) | ternary('started', 'stopped') }}"
-    daemon_reload: true
 
 - name: Disable offline backup timer when it is not operational
   ansible.builtin.systemd:
     name: admin-offline-backup.timer
     enabled: false
     state: stopped
-    daemon_reload: true
   when: not ((admin_mode == 'normal') and ((backup | default({})).offline.enabled | default(false) | bool))
 
 - name: Enable admin-converge.timer
