@@ -57,6 +57,10 @@ PostgreSQL databases are exported with `pg_dump -Fc`:
 
 An active OpenBao stack must also produce `openbao.snap`. Install the dedicated
 snapshot token through convergence before relying on scheduled backups.
+The dedicated backup and restore tokens are periodic credentials managed by
+convergence. They are renewed seven days before the end of their 30-day period;
+an expired or otherwise invalid token is replaced automatically while retaining
+the least-privilege snapshot policy for the operation.
 
 Remote delivery is required by default. Set
 `backup.require_remote_repository: false` explicitly only for a deployment that

@@ -173,6 +173,62 @@ run_openbao_config_phase() {
   "$REPO_ROOT/bin/admin-node" validate observability
 }
 
+assert_openbao_operation_token_contract() {
+  local name="$1"
+  local capability="$2"
+  local token_file="/srv/admin/env/openbao-${name}-token"
+  local operation_token lookup_json capabilities
+
+  operation_token="$(sudo cat "$token_file")"
+  [[ -n "$operation_token" ]]
+  lookup_json="$(
+    docker exec \
+      -e BAO_ADDR=https://127.0.0.1:8200 \
+      -e BAO_CACERT=/openbao/tls/ca.pem \
+      -e VAULT_TOKEN="$OPENBAO_TOKEN" \
+      -e ADMIN_OPERATION_TOKEN="$operation_token" \
+      openbao sh -c \
+      'bao token lookup -format=json "$ADMIN_OPERATION_TOKEN"'
+  )"
+  jq -e \
+    --arg policy "admin-node-${name}" \
+    '.data.renewable == true and .data.period == 2592000 and (.data.policies | index($policy) != null)' \
+    <<<"$lookup_json" >/dev/null
+  capabilities="$(
+    docker exec \
+      -e BAO_ADDR=https://127.0.0.1:8200 \
+      -e BAO_CACERT=/openbao/tls/ca.pem \
+      -e VAULT_TOKEN="$OPENBAO_TOKEN" \
+      openbao bao token capabilities "$operation_token" sys/storage/raft/snapshot
+  )"
+  grep -Eq "(^|, ?)$capability(,|$)" <<<"$capabilities"
+  sudo test "$(sudo stat -c '%a:%U:%G' "$token_file")" = "600:root:root"
+}
+
+exercise_openbao_operation_token_recovery() {
+  local legacy_restore_token
+
+  printf '%s\n' invalid-operation-token | sudo tee /srv/admin/env/openbao-backup-token >/dev/null
+  legacy_restore_token="$(
+    docker exec \
+      -e BAO_ADDR=https://127.0.0.1:8200 \
+      -e BAO_CACERT=/openbao/tls/ca.pem \
+      -e VAULT_TOKEN="$OPENBAO_TOKEN" \
+      openbao bao token create \
+      -orphan \
+      -policy=admin-node-restore \
+      -ttl=1h \
+      -renewable=false \
+      -field=token
+  )"
+  printf '%s\n' "$legacy_restore_token" | sudo tee /srv/admin/env/openbao-restore-token >/dev/null
+  sudo chmod 0600 /srv/admin/env/openbao-backup-token /srv/admin/env/openbao-restore-token
+
+  run_openbao_config_phase
+  assert_openbao_operation_token_contract backup read
+  assert_openbao_operation_token_contract restore update
+}
+
 trap dump_debug ERR
 trap stop_otel_mock EXIT
 
@@ -181,6 +237,9 @@ run_init_phase
 initialize_openbao_for_normal_mode
 run_normal_phase
 run_openbao_config_phase
+assert_openbao_operation_token_contract backup read
+assert_openbao_operation_token_contract restore update
+exercise_openbao_operation_token_recovery
 
 # --- Verify final mode is normal ---
 assert_contains /etc/admin-node/mode "normal"

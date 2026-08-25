@@ -1,3 +1,5 @@
 ---
 openbao_config_url: "https://{{ service_domains.openbao }}"
 openbao_config_validate_certs: "{{ not (ci_mode | default(false)) }}"
+openbao_operation_token_period_seconds: 2592000
+openbao_operation_token_renew_before_seconds: 604800
