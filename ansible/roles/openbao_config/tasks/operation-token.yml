@@ -75,11 +75,12 @@
         or (
           openbao_operation_token_capability
           not in (
-            (openbao_operation_token_capabilities.json.capabilities | default({})).get(
-              openbao_operation_token_snapshot_path,
-              []
+            openbao_operation_token_capabilities.json[openbao_operation_token_snapshot_path]
+            | default(
+                openbao_operation_token_capabilities.json.capabilities
+                | default([])
+              )
             )
-          )
         )
       }}
   no_log: true
@@ -172,7 +173,10 @@
       - openbao_operation_token_created_lookup.json.data.renewable | default(false) | bool
       - openbao_operation_token_created_lookup.json.data.period | default(0) | int == openbao_operation_token_period_seconds | int
       - openbao_operation_token_policy in (openbao_operation_token_created_lookup.json.data.policies | default([]))
-      - openbao_operation_token_capability in ((openbao_operation_token_created_capabilities.json.capabilities | default({})).get(openbao_operation_token_snapshot_path, []))
+      - >-
+        openbao_operation_token_capability in
+        (openbao_operation_token_created_capabilities.json[openbao_operation_token_snapshot_path]
+         | default(openbao_operation_token_created_capabilities.json.capabilities | default([])))
     fail_msg: "Replacement OpenBao {{ openbao_operation_token_name }} token does not satisfy its lifecycle contract"
   when: openbao_operation_token_replace | bool
   no_log: true
