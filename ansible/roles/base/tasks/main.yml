@@ -68,6 +68,7 @@
     GOCACHE: /var/cache/admin-node/go-build
     GOMODCACHE: /var/cache/admin-node/go-mod
     GOPATH: /var/cache/admin-node/go-path
+    GOTOOLCHAIN: auto
   register: admin_node_build
   changed_when: "'changed=true' in admin_node_build.stdout"
 

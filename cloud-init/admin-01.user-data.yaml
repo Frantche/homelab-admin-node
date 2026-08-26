@@ -72,6 +72,7 @@ write_files:
       Environment=GOCACHE=/var/cache/admin-node/go-build
       Environment=GOMODCACHE=/var/cache/admin-node/go-mod
       Environment=GOPATH=/var/cache/admin-node/go-path
+      Environment=GOTOOLCHAIN=auto
       ExecStart=/usr/local/bin/admin-node-converge
   - path: /etc/systemd/system/admin-converge.timer
     owner: root:root
