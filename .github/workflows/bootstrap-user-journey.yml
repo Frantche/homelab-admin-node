@@ -67,7 +67,7 @@ jobs:
           python3 -m venv .ci/quality-venv
           .ci/quality-venv/bin/python -m pip install -r ci/requirements-dev.txt
           echo "$PWD/.ci/quality-venv/bin" >> "$GITHUB_PATH"
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           .ci/quality-venv/bin/ansible-galaxy collection install -r ansible/requirements.yml
 

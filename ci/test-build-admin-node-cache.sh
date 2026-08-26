@@ -26,12 +26,24 @@ cp -a \
   "$REPO_ROOT/scripts" \
   "$TEST_REPO/"
 
+selected_go_version="$(
+  sudo env -i \
+    PATH="$PATH" \
+    GOCACHE="$TEST_GO_CACHE" \
+    GOMODCACHE="$TEST_GO_MOD_CACHE" \
+    GOPATH="$TEST_GO_PATH" \
+    GOTOOLCHAIN=go1.26.7+auto \
+    go -C "$TEST_REPO" version
+)"
+grep -Fq "go version go1.27.0 " <<<"$selected_go_version"
+
 first_output="$(
   sudo env -i \
     PATH="$PATH" \
     ADMIN_NODE_GO_CACHE="$TEST_GO_CACHE" \
     ADMIN_NODE_GO_MOD_CACHE="$TEST_GO_MOD_CACHE" \
     ADMIN_NODE_GO_PATH="$TEST_GO_PATH" \
+    GOTOOLCHAIN=go1.26.7+auto \
     "$TEST_REPO/scripts/build-admin-node.sh"
 )"
 grep -Fq "changed=true" <<<"$first_output"
@@ -42,6 +54,7 @@ second_output="$(
     ADMIN_NODE_GO_CACHE="$TEST_GO_CACHE" \
     ADMIN_NODE_GO_MOD_CACHE="$TEST_GO_MOD_CACHE" \
     ADMIN_NODE_GO_PATH="$TEST_GO_PATH" \
+    GOTOOLCHAIN=go1.26.7+auto \
     "$TEST_REPO/scripts/build-admin-node.sh"
 )"
 grep -Fq "changed=false" <<<"$second_output"

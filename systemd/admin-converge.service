@@ -9,4 +9,5 @@ UMask=0027
 Environment=GOCACHE=/var/cache/admin-node/go-build
 Environment=GOMODCACHE=/var/cache/admin-node/go-mod
 Environment=GOPATH=/var/cache/admin-node/go-path
+Environment=GOTOOLCHAIN=auto
 ExecStart=/opt/homelab-admin-node/bin/admin-node converge run

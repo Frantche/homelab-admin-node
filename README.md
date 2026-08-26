@@ -91,5 +91,9 @@ make ci-bootstrap
 ```
 
 Some targets require local tools such as Ansible, ShellCheck, SOPS, Docker, QEMU, or Hugo.
+The Go modules require Go 1.27. Existing admin nodes may keep an older Arch
+`go` package temporarily: convergence uses `GOTOOLCHAIN=auto` and the managed
+root caches under `/var/cache/admin-node` to fetch and verify Go 1.27 before
+rebuilding the CLI.
 Contribution conventions and the validation matrix are documented in
 [`CONTRIBUTING.md`](CONTRIBUTING.md).

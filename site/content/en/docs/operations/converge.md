@@ -13,6 +13,18 @@ It:
 4. Builds `bin/admin-node` when Go sources changed.
 5. Applies roles according to `/etc/admin-node/mode`.
 
+The project requires Go 1.27. Convergence explicitly enables Go's managed
+toolchain selection, so an existing node whose Arch `go` package is still on
+Go 1.26 downloads and verifies Go 1.27 automatically before rebuilding the
+CLI. The downloaded toolchain is retained in the root caches under
+`/var/cache/admin-node`; convergence does not perform a partial Arch package
+upgrade.
+
+The first convergence after a Go version change therefore requires access to
+the configured `GOPROXY` and `GOSUMDB`. If the download or verification fails,
+the convergence fails and the existing CLI remains in place because the build
+installs its replacement atomically.
+
 Run:
 
 ```bash
