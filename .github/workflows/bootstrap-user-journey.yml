@@ -126,10 +126,14 @@ jobs:
             sshpass \
             curl \
             jq \
+            socat \
             python3-yaml
 
       - name: Enable KVM permissions when available
         run: ./ci/enable-kvm.sh
+
+      - name: Start ephemeral Garage
+        run: ./ci/setup-garage.sh
 
       - name: Download Arch cloud image
         run: |
@@ -257,12 +261,33 @@ jobs:
               "grep -q locked /etc/admin-node/mode"
           echo "VM is in locked mode as expected"
 
+      - name: Install Garage access in VM
+        run: |
+          source .ci/garage/runtime.env
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -P "${SSH_PORT}" \
+              "$CI_GARAGE_CA_FILE" admin@127.0.0.1:/tmp/ci-garage-ca.crt
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -P "${SSH_PORT}" \
+              .ci/garage/runtime.env admin@127.0.0.1:/tmp/ci-offsite.env
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i .ci/ssh/id_ed25519 -p "${SSH_PORT}" admin@127.0.0.1 \
+              "set -euo pipefail; \
+               sudo install -m 0644 /tmp/ci-garage-ca.crt /etc/ssl/certs/ci-garage-ca.crt && \
+               sudo install -D -m 0644 /tmp/ci-garage-ca.crt /etc/ca-certificates/trust-source/anchors/ci-garage-ca.crt && \
+               sudo update-ca-trust && \
+               if ! grep -qF garage.test /etc/hosts; then \
+                 echo '10.0.2.2 garage.test' | sudo tee -a /etc/hosts >/dev/null; \
+               fi; \
+               sudo install -m 0600 /tmp/ci-offsite.env /etc/admin-node/ci-offsite.env"
+
       - name: Initialize CI config repo from examples
         run: |
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -i .ci/ssh/id_ed25519 -p ${SSH_PORT} admin@127.0.0.1 \
-              "sudo ADMIN_REPO_URL='https://github.com/${{ github.repository }}.git' \
-                    /opt/homelab-admin-node/ci/setup-bootstrap-config-repo.sh"
+              -i .ci/ssh/id_ed25519 -p "${SSH_PORT}" admin@127.0.0.1 \
+              "sudo bash -c 'set -a; source /etc/admin-node/ci-offsite.env; set +a; \
+                    ADMIN_REPO_URL=https://github.com/${{ github.repository }}.git \
+                    /opt/homelab-admin-node/ci/setup-bootstrap-config-repo.sh'"
 
       - name: Run bootstrap user journey in VM
         timeout-minutes: 45
@@ -512,6 +537,19 @@ jobs:
               echo "QEMU process already stopped"
             fi
           fi
+
+      - name: Stop ephemeral Garage
+        if: always()
+        run: |
+          garage_container=admin-node-ci-garage
+          if [ -f .ci/garage/runtime.env ]; then
+            source .ci/garage/runtime.env
+            garage_container="$CI_GARAGE_CONTAINER"
+          fi
+          if [ -f .ci/garage/socat.pid ]; then
+            kill "$(cat .ci/garage/socat.pid)" 2>/dev/null || true
+          fi
+          docker rm -f "$garage_container" >/dev/null 2>&1 || true
 
   main-to-candidate-disaster-recovery:
     name: Disaster recovery (${{ matrix.mode }})

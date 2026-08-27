@@ -24,7 +24,6 @@ type resticConfig struct {
 	Password           string
 	RepoValues         map[string]map[string]string
 	RequireRemote      bool
-	CIMode             bool
 }
 
 type ResticResult struct {
@@ -186,7 +185,6 @@ func loadResticConfig(path string) (resticConfig, error) {
 	cfg.DefaultForgetArgs = values["RESTIC_DEFAULT_FORGET_ARGS"]
 	cfg.RequireSecureRepos = parseBool(values["RESTIC_REQUIRE_SECURE_REPOSITORIES"], true)
 	cfg.RequireRemote = parseBool(values["BACKUP_REQUIRE_REMOTE_REPOSITORY"], false)
-	cfg.CIMode = parseBool(values["CI_MODE"], false)
 	cfg.BackupPaths = fields(values["RESTIC_BACKUP_PATHS"])
 	cfg.Repository = values["RESTIC_REPOSITORY"]
 	cfg.Password = values["RESTIC_PASSWORD"]
@@ -209,11 +207,11 @@ func loadResticConfig(path string) (resticConfig, error) {
 func hasRemoteRepository(cfg resticConfig) bool {
 	for _, id := range cfg.Repositories {
 		repo := cfg.RepoValues[sanitizeRepoID(id)]["RESTIC_REPOSITORY"]
-		if isRemoteRepository(repo) || (cfg.CIMode && repo != "") {
+		if isRemoteRepository(repo) {
 			return true
 		}
 	}
-	return isRemoteRepository(cfg.Repository) || (cfg.CIMode && cfg.Repository != "")
+	return isRemoteRepository(cfg.Repository)
 }
 
 func isRemoteRepository(repository string) bool {

@@ -147,25 +147,6 @@ RESTIC_PASSWORD_LOCAL=test-password
 	}
 }
 
-func TestLoadResticConfigAllowsLocalRepositoryOnlyInCIMode(t *testing.T) {
-	envFile := filepath.Join(t.TempDir(), "backup.env")
-	content := "CI_MODE=true\n" +
-		"BACKUP_REQUIRE_REMOTE_REPOSITORY=true\n" +
-		"RESTIC_REPOSITORIES=local\n" +
-		"RESTIC_REPOSITORY_LOCAL=/tmp/ci-restic\n" +
-		"RESTIC_PASSWORD_LOCAL=test-password\n"
-	if err := os.WriteFile(envFile, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := loadResticConfig(envFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !cfg.CIMode || !hasRemoteRepository(cfg) {
-		t.Fatalf("CI repository was not accepted as remote mock: %#v", cfg)
-	}
-}
-
 func TestVerifyResticSnapshotFailsWhenDeliveryCannotBeObserved(t *testing.T) {
 	root := t.TempDir()
 	resticPath := filepath.Join(root, "restic")
