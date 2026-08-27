@@ -151,7 +151,7 @@ if [[ "$*" == "cat config" ]]; then
   exit 1
 fi
 if [[ "${1:-}" == "snapshots" ]]; then
-  printf '[{"id":"verified-snapshot"}]\n'
+  printf '[{"id":"verified-snapshot","time":"2026-08-27T03:00:00Z"}]\n'
 fi
 exit 0
 `), 0o755); err != nil {
@@ -371,7 +371,7 @@ func TestRunStandardBackupIncludesActiveStackDefinitions(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(binDir, "docker"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(binDir, "restic"), []byte("#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1:-}\" == \"snapshots\" ]]; then printf '[{\"id\":\"test-snapshot\"}]\\n'; fi\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(binDir, "restic"), []byte("#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1:-}\" == \"snapshots\" ]]; then printf '[{\"id\":\"test-snapshot\",\"time\":\"2026-08-27T03:00:00Z\"}]\\n'; fi\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))

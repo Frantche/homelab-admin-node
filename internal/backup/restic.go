@@ -379,7 +379,7 @@ func resticKindTag(kind string) string {
 
 func latestCompatibleParent(ctx context.Context, env, options []string, kind string) (string, error) {
 	tags := resticLayoutTag + "," + resticKindTag(kind)
-	args := append(append([]string{}, options...), "snapshots", "--json", "--latest", "1", "--tag", tags)
+	args := append(append([]string{}, options...), "snapshots", "--json", "--tag", tags)
 	cmd := exec.CommandContext(ctx, "restic", args...)
 	cmd.Env = env
 	output, err := cmd.Output()
@@ -387,18 +387,24 @@ func latestCompatibleParent(ctx context.Context, env, options []string, kind str
 		return "", err
 	}
 	var snapshots []struct {
-		ID string `json:"id"`
+		ID   string    `json:"id"`
+		Time time.Time `json:"time"`
 	}
 	if err := json.Unmarshal(output, &snapshots); err != nil {
 		return "", fmt.Errorf("decode compatible snapshot inventory: %w", err)
 	}
-	if len(snapshots) == 0 {
-		return "", nil
+	latestID := ""
+	latestTime := time.Time{}
+	for _, snapshot := range snapshots {
+		if snapshot.ID == "" || snapshot.Time.IsZero() {
+			return "", fmt.Errorf("compatible snapshot inventory contains an invalid entry")
+		}
+		if snapshot.Time.After(latestTime) || (snapshot.Time.Equal(latestTime) && snapshot.ID > latestID) {
+			latestID = snapshot.ID
+			latestTime = snapshot.Time
+		}
 	}
-	if len(snapshots) != 1 || snapshots[0].ID == "" {
-		return "", fmt.Errorf("expected at most one compatible snapshot, found %d", len(snapshots))
-	}
-	return snapshots[0].ID, nil
+	return latestID, nil
 }
 
 func backupIDFromPaths(paths []string) string {

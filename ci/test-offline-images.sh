@@ -115,7 +115,7 @@ if [[ "$*" == "cat config" ]]; then
   exit 1
 fi
 if [[ "${1:-}" == "snapshots" ]]; then
-  printf '[{"id":"verified-offline-snapshot"}]\n'
+  printf '[{"id":"verified-offline-snapshot","time":"2026-08-27T03:00:00Z"}]\n'
 fi
 exit 0
 EOF
