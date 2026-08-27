@@ -24,8 +24,10 @@ registry data, or the OpenBao snapshot.
 
 The backup manifest contains an `artifacts` inventory. Required entries must be
 `produced`; optional offline-image and repository-bundle entries are explicitly
-`disabled` during a standard backup. `admin-node backup verify` checks this
-inventory in addition to file hashes.
+`disabled` during a standard backup. Manifest version 4 records file paths and
+sizes without rereading every file to calculate an application-level SHA-256.
+Restic is the integrity authority for new remote recovery points. Historical
+version 2 and 3 manifests retain their SHA-256 verification during restore.
 
 Failed runs retain a non-restorable artifact inventory under
 `/srv/admin/backups/local/.failed/<backup-id>/manifest.json`. This record shows
@@ -62,12 +64,20 @@ convergence. They are renewed seven days before the end of their 30-day period;
 an expired or otherwise invalid token is replaced automatically while retaining
 the least-privilege snapshot policy for the operation.
 
-Remote delivery is required by default. Set
-`backup.require_remote_repository: false` explicitly only for a deployment that
-intentionally accepts local-only backups. When remote delivery is required, a
-missing Restic binary, missing non-local repository, incomplete credentials, or
-repository failure makes the backup command fail while preserving any complete
-local recovery point already created.
+Remote delivery is mandatory for standard and offline-image backups. Keep
+`backup.require_remote_repository: true` and configure at least one non-local
+repository. A missing Restic binary, missing non-local repository, incomplete
+credentials, or repository failure makes the backup command fail. Local backup
+directories are short-lived staging and operational cache, not the production
+recovery authority.
+
+Version 4 recovery points are stored from a stable relative root and tagged
+with `backup-layout:relative-v1` plus their standard or offline-image kind.
+Restic explicitly selects the latest compatible same-kind snapshot as parent.
+Retention is applied only to snapshots using this new layout during migration;
+historical absolute-path snapshots remain restorable and are not deleted
+automatically. Review them separately with `restic forget --dry-run` before any
+manual cleanup.
 
 ### Consistency contract
 
@@ -84,10 +94,10 @@ Each successful Gitea boundary is recorded in `manifest.json` with its method,
 start, and completion timestamps. A Btrfs source records a quiesced logical
 dump plus Btrfs snapshot; the portable fallback records a quiesced logical dump
 plus bounded filesystem copy. Neither pair is described as globally atomic.
-This contract is emitted as manifest version 3. Restore and listing remain
-compatible with historical version 2 recovery points, while every version 3
-manifest with an active Gitea stack is rejected unless it contains exactly one
-recognized Gitea consistency boundary.
+This contract was introduced by manifest version 3 and remains required by
+version 4. Restore and listing remain compatible with historical version 2 and
+3 recovery points. Every version 3 or 4 manifest with an active Gitea stack is
+rejected unless it contains exactly one recognized Gitea consistency boundary.
 
 The other stateful stacks use these contracts:
 
@@ -117,8 +127,12 @@ Run an integrity check immediately when needed:
 sudo /opt/homelab-admin-node/bin/admin-node backup restic-check
 ```
 
-The scheduled `admin-backup-integrity.timer` runs the same check weekly. Inspect
-failures with:
+The scheduled `admin-backup-integrity.timer` checks one deterministic quarter
+of every configured repository each week with
+`restic check --read-data-subset=n/4`. The quarter advances only after every
+repository succeeds, so failures retry the same quarter and a successful
+four-week cycle reads all repository data. Its state is stored under
+`/srv/admin/backups/status`. Inspect failures with:
 
 ```bash
 journalctl -t admin-node-backup --since today
