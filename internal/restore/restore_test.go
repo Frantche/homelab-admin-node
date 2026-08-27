@@ -1357,7 +1357,7 @@ exit 1
 
 func sealBackupV2(t *testing.T, dir, id string) {
 	t.Helper()
-	files, err := backup.BuildManifestFiles(dir)
+	files, err := backup.BuildChecksummedManifestFiles(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

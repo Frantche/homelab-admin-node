@@ -75,8 +75,8 @@ func TestManifestRoundTrip(t *testing.T) {
 
 func TestListAcceptsSupportedManifestVersions(t *testing.T) {
 	root := t.TempDir()
-	for index, version := range []int{LegacyManifestVersion, ManifestVersion} {
-		id := []string{"20260624-120000", "20260625-120000"}[index]
+	for index, version := range []int{LegacyManifestVersion, ChecksummedManifestVersion, ManifestVersion} {
+		id := []string{"20260623-120000", "20260624-120000", "20260625-120000"}[index]
 		dir := filepath.Join(root, id)
 		if err := os.Mkdir(dir, 0o700); err != nil {
 			t.Fatal(err)
@@ -89,8 +89,8 @@ func TestListAcceptsSupportedManifestVersions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(backups) != 2 {
-		t.Fatalf("len(backups) = %d, want 2", len(backups))
+	if len(backups) != 3 {
+		t.Fatalf("len(backups) = %d, want 3", len(backups))
 	}
 	for _, info := range backups {
 		if info.ManifestInvalid {

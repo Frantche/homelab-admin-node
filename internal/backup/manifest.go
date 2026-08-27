@@ -17,18 +17,19 @@ import (
 const ManifestName = "manifest.json"
 
 const (
-	LegacyManifestVersion = 2
-	ManifestVersion       = 3
+	LegacyManifestVersion      = 2
+	ChecksummedManifestVersion = 3
+	ManifestVersion            = 4
 )
 
 func SupportedManifestVersion(version int) bool {
-	return version == LegacyManifestVersion || version == ManifestVersion
+	return version == LegacyManifestVersion || version == ChecksummedManifestVersion || version == ManifestVersion
 }
 
 type ManifestFile struct {
 	Path   string `json:"path"`
 	Size   int64  `json:"size"`
-	SHA256 string `json:"sha256"`
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 type OfflineImageArchive struct {
@@ -86,6 +87,16 @@ func WriteManifest(dir string, manifest Manifest) error {
 }
 
 func BuildManifestFiles(root string) ([]ManifestFile, error) {
+	return buildManifestFiles(root, false)
+}
+
+// BuildChecksummedManifestFiles is retained for reading and testing historical
+// manifest formats. New backups must use BuildManifestFiles.
+func BuildChecksummedManifestFiles(root string) ([]ManifestFile, error) {
+	return buildManifestFiles(root, true)
+}
+
+func buildManifestFiles(root string, checksummed bool) ([]ManifestFile, error) {
 	var files []ManifestFile
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -105,20 +116,24 @@ func BuildManifestFiles(root string) ([]ManifestFile, error) {
 		if err != nil {
 			return err
 		}
-		file, err := os.Open(path)
-		if err != nil {
-			return err
+		manifestFile := ManifestFile{Path: filepath.ToSlash(rel), Size: info.Size()}
+		if checksummed {
+			file, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			hash := sha256.New()
+			_, copyErr := io.Copy(hash, file)
+			closeErr := file.Close()
+			if copyErr != nil {
+				return copyErr
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+			manifestFile.SHA256 = fmt.Sprintf("%x", hash.Sum(nil))
 		}
-		hash := sha256.New()
-		_, copyErr := io.Copy(hash, file)
-		closeErr := file.Close()
-		if copyErr != nil {
-			return copyErr
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-		files = append(files, ManifestFile{Path: filepath.ToSlash(rel), Size: info.Size(), SHA256: fmt.Sprintf("%x", hash.Sum(nil))})
+		files = append(files, manifestFile)
 		return nil
 	})
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
@@ -139,7 +154,7 @@ func Verify(dir string) (Manifest, error) {
 	if manifest.ID == "" || filepath.Base(manifest.ID) != manifest.ID || strings.Contains(manifest.ID, "..") {
 		return Manifest{}, fmt.Errorf("invalid manifest id")
 	}
-	if manifest.Version == ManifestVersion {
+	if manifest.Version >= ChecksummedManifestVersion {
 		if err := validateOfflineRecoveryManifest(manifest, dir); err != nil {
 			return Manifest{}, err
 		}
@@ -164,7 +179,7 @@ func Verify(dir string) (Manifest, error) {
 		}
 	}
 	hasActiveGitea := stackscope.Contains(manifest.ActiveStacks, "gitea")
-	if manifest.Version == ManifestVersion && hasActiveGitea && manifest.Consistency != "service-specific-consistency-boundaries" {
+	if manifest.Version >= ChecksummedManifestVersion && hasActiveGitea && manifest.Consistency != "service-specific-consistency-boundaries" {
 		return Manifest{}, fmt.Errorf("manifest version %d requires a Gitea consistency boundary", manifest.Version)
 	}
 	if manifest.Consistency == "service-specific-consistency-boundaries" {
@@ -187,7 +202,8 @@ func Verify(dir string) (Manifest, error) {
 			return Manifest{}, err
 		}
 	}
-	actual, err := BuildManifestFiles(dir)
+	checksummed := manifest.Version < ManifestVersion
+	actual, err := buildManifestFiles(dir, checksummed)
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -196,7 +212,10 @@ func Verify(dir string) (Manifest, error) {
 	}
 	for i := range actual {
 		if actual[i] != manifest.Files[i] {
-			return Manifest{}, fmt.Errorf("checksum mismatch for %s", actual[i].Path)
+			if checksummed {
+				return Manifest{}, fmt.Errorf("checksum mismatch for %s", actual[i].Path)
+			}
+			return Manifest{}, fmt.Errorf("manifest metadata mismatch for %s", actual[i].Path)
 		}
 	}
 	return manifest, nil

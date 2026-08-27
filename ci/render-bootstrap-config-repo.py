@@ -59,7 +59,7 @@ def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
             "mock_state_dir": "/tmp/admin-node-otel-mock-bootstrap-user-journey",
         },
         "backup": {
-            "require_remote_repository": False,
+            "require_remote_repository": True,
         },
     }
     with (group_vars / "ci-bootstrap-vars.yml").open("w") as f:

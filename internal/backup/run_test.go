@@ -260,10 +260,11 @@ func TestRunFailsWhenActiveOpenBaoSnapshotTokenIsMissing(t *testing.T) {
 	t.Setenv("OPENBAO_TOKEN", "")
 
 	_, err := Run(context.Background(), config.Config{
-		AdminRoot:  adminRoot,
-		RepoRoot:   filepath.Join(root, "repo-without-token"),
-		ModeFile:   writeBackupMode(t, root),
-		BackupRoot: filepath.Join(root, "backups"),
+		AdminRoot:     adminRoot,
+		RepoRoot:      filepath.Join(root, "repo-without-token"),
+		ModeFile:      writeBackupMode(t, root),
+		BackupRoot:    filepath.Join(root, "backups"),
+		BackupEnvFile: writeRequiredRemoteConfig(t, root),
 	}, RunOptions{})
 	if err == nil || !strings.Contains(err.Error(), "snapshot token") {
 		t.Fatalf("error = %v, want missing OpenBao snapshot token", err)
@@ -305,9 +306,10 @@ func TestRunFailsWhenActiveGiteaDatabaseIsUnavailable(t *testing.T) {
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	_, err := Run(context.Background(), config.Config{
-		AdminRoot:  adminRoot,
-		ModeFile:   writeBackupMode(t, root),
-		BackupRoot: filepath.Join(root, "backups"),
+		AdminRoot:     adminRoot,
+		ModeFile:      writeBackupMode(t, root),
+		BackupRoot:    filepath.Join(root, "backups"),
+		BackupEnvFile: writeRequiredRemoteConfig(t, root),
 	}, RunOptions{})
 	if err == nil || !strings.Contains(err.Error(), "gitea-db is not running") {
 		t.Fatalf("error = %v, want unavailable Gitea database", err)
@@ -334,6 +336,20 @@ func writeBackupMode(t *testing.T, root string) string {
 	return path
 }
 
+func writeRequiredRemoteConfig(t *testing.T, root string) string {
+	t.Helper()
+	path := filepath.Join(root, "backup.env")
+	content := "BACKUP_REQUIRE_REMOTE_REPOSITORY=true\n" +
+		"RESTIC_REPOSITORIES=offsite\n" +
+		"RESTIC_REPOSITORY_OFFSITE=sftp:backup:/srv/restic\n" +
+		"RESTIC_PASSWORD_OFFSITE=test-password\n" +
+		"RESTIC_FORGET_ARGS_OFFSITE=none\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func TestRunStandardBackupIncludesActiveStackDefinitions(t *testing.T) {
 	root := t.TempDir()
 	adminRoot := filepath.Join(root, "admin")
@@ -355,13 +371,16 @@ func TestRunStandardBackupIncludesActiveStackDefinitions(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(binDir, "docker"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(binDir, "restic"), []byte("#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1:-}\" == \"snapshots\" ]]; then printf '[{\"id\":\"test-snapshot\"}]\\n'; fi\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	info, err := Run(context.Background(), config.Config{
 		AdminRoot:     adminRoot,
 		ModeFile:      modeFile,
 		BackupRoot:    filepath.Join(root, "backups"),
-		BackupEnvFile: filepath.Join(root, "missing-backup.env"),
+		BackupEnvFile: writeRequiredRemoteConfig(t, root),
 	}, RunOptions{
 		Now: func() time.Time {
 			return time.Date(2026, 6, 25, 13, 0, 0, 0, time.UTC)
@@ -658,7 +677,7 @@ func TestVerifyKeepsLegacyV2GiteaRecoveryPointsReadable(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(backupDir, "stack-definitions", "gitea", "compose.yaml"), []byte("services: {}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	files, err := BuildManifestFiles(backupDir)
+	files, err := BuildChecksummedManifestFiles(backupDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -739,24 +758,28 @@ func TestRotateLocalKeepsNewest(t *testing.T) {
 	}
 }
 
-func TestOfflineRunRequiresRemoteDeliveryPolicy(t *testing.T) {
-	root := t.TempDir()
-	modeFile := filepath.Join(root, "mode")
-	if err := os.WriteFile(modeFile, []byte("normal\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	backupEnv := filepath.Join(root, "backup.env")
-	if err := os.WriteFile(backupEnv, []byte("BACKUP_REQUIRE_REMOTE_REPOSITORY=false\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, err := Run(context.Background(), config.Config{
-		ModeFile:                   modeFile,
-		OperationLock:              filepath.Join(root, "operation.lock"),
-		BackupOperationLockTimeout: time.Second,
-		BackupEnvFile:              backupEnv,
-	}, RunOptions{IncludeImages: true})
-	if err == nil || !strings.Contains(err.Error(), "BACKUP_REQUIRE_REMOTE_REPOSITORY=true") {
-		t.Fatalf("Run() error = %v", err)
+func TestRunRequiresRemoteDeliveryPolicyForEveryBackupKind(t *testing.T) {
+	for _, includeImages := range []bool{false, true} {
+		t.Run(strconv.FormatBool(includeImages), func(t *testing.T) {
+			root := t.TempDir()
+			modeFile := filepath.Join(root, "mode")
+			if err := os.WriteFile(modeFile, []byte("normal\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			backupEnv := filepath.Join(root, "backup.env")
+			if err := os.WriteFile(backupEnv, []byte("BACKUP_REQUIRE_REMOTE_REPOSITORY=false\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Run(context.Background(), config.Config{
+				ModeFile:                   modeFile,
+				OperationLock:              filepath.Join(root, "operation.lock"),
+				BackupOperationLockTimeout: time.Second,
+				BackupEnvFile:              backupEnv,
+			}, RunOptions{IncludeImages: includeImages})
+			if err == nil || !strings.Contains(err.Error(), "BACKUP_REQUIRE_REMOTE_REPOSITORY=true") {
+				t.Fatalf("Run() error = %v", err)
+			}
+		})
 	}
 }
 
@@ -878,7 +901,7 @@ func TestWriteManifestFromRunOptionsTime(t *testing.T) {
 	}
 }
 
-func TestVerifyRejectsTamperedBackup(t *testing.T) {
+func TestVerifyV4UsesMetadataWithoutContentChecksum(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "payload")
 	if err := os.WriteFile(path, []byte("before"), 0o600); err != nil {
@@ -891,11 +914,35 @@ func TestVerifyRejectsTamperedBackup(t *testing.T) {
 	if err := WriteManifest(dir, Manifest{Version: ManifestVersion, ID: "20260625-120000", Complete: true, Files: files}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("after"), 0o600); err != nil {
+	if files[0].SHA256 != "" {
+		t.Fatalf("v4 manifest unexpectedly contains SHA-256: %#v", files[0])
+	}
+	if err := os.WriteFile(path, []byte("AFTER!"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Verify(dir); err == nil {
-		t.Fatal("expected checksum failure")
+	if _, err := Verify(dir); err != nil {
+		t.Fatalf("same-size content change should be delegated to Restic: %v", err)
+	}
+}
+
+func TestVerifyV3StillRejectsTamperedBackup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "payload")
+	if err := os.WriteFile(path, []byte("before"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files, err := BuildChecksummedManifestFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteManifest(dir, Manifest{Version: ChecksummedManifestVersion, ID: "20260625-120000", Complete: true, Files: files}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("AFTER!"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(dir); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("error = %v, want historical checksum failure", err)
 	}
 }
 

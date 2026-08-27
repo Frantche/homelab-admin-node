@@ -45,14 +45,12 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 			return Info{}, err
 		}
 	}
-	if opts.IncludeImages {
-		resticCfg, err := loadResticConfig(cfg.BackupEnvFile)
-		if err != nil {
-			return Info{}, fmt.Errorf("inspect offline remote-delivery policy: %w", err)
-		}
-		if !resticCfg.RequireRemote {
-			return Info{}, fmt.Errorf("offline backup requires BACKUP_REQUIRE_REMOTE_REPOSITORY=true")
-		}
+	resticCfg, err := loadResticConfig(cfg.BackupEnvFile)
+	if err != nil {
+		return Info{}, fmt.Errorf("inspect remote-delivery policy: %w", err)
+	}
+	if !resticCfg.RequireRemote {
+		return Info{}, fmt.Errorf("backup requires BACKUP_REQUIRE_REMOTE_REPOSITORY=true")
 	}
 
 	now := time.Now
@@ -270,11 +268,11 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	if err := WriteManifest(partial, manifest); err != nil {
 		return Info{}, fmt.Errorf("write manifest: %w", err)
 	}
+	verifiedManifest, err := Verify(partial)
+	if err != nil {
+		return Info{}, fmt.Errorf("verify backup before publication: %w", err)
+	}
 	if opts.IncludeImages {
-		verifiedManifest, err := Verify(partial)
-		if err != nil {
-			return Info{}, fmt.Errorf("verify offline backup before publication: %w", err)
-		}
 		if err := validateScheduledOfflineRecoveryManifest(verifiedManifest, partial); err != nil {
 			return Info{}, fmt.Errorf("verify offline backup before publication: %w", err)
 		}
@@ -284,25 +282,13 @@ func Run(ctx context.Context, cfg config.Config, opts RunOptions) (Info, error) 
 	}
 	completed = true
 
-	resticCfg, resticConfigErr := loadResticConfig(cfg.BackupEnvFile)
-	remoteRequired := resticCfg.RequireRemote
-	if resticConfigErr != nil {
-		if remoteRequired {
-			_ = recordRemoteDelivery(target, ArtifactFailed, false)
-		}
-		return Info{}, fmt.Errorf("restic backup: %w", resticConfigErr)
-	}
 	resticResult, err := RunRestic(ctx, cfg.BackupEnvFile, []string{target})
 	if err != nil {
-		if remoteRequired {
-			_ = recordRemoteDelivery(target, ArtifactFailed, false)
-		}
+		_ = recordRemoteDelivery(target, ArtifactFailed, false)
 		return Info{}, fmt.Errorf("restic backup: %w", err)
 	}
-	if remoteRequired {
-		if err := recordRemoteDelivery(target, ArtifactProduced, true); err != nil {
-			return Info{}, fmt.Errorf("record remote delivery: %w", err)
-		}
+	if err := recordRemoteDelivery(target, ArtifactProduced, true); err != nil {
+		return Info{}, fmt.Errorf("record remote delivery: %w", err)
 	}
 	retention := cfg.LocalBackupRetention
 	if opts.IncludeImages {

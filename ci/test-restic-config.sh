@@ -112,6 +112,7 @@ RESTIC_BACKUP_ENV_FILE="$tmp_dir/backup.env" \
 BACKUP_STATUS_ROOT="$tmp_dir/status" \
   "$REPO_ROOT/bin/admin-node" backup restic-check
 test -s "$tmp_dir/status/integrity-check.json"
+grep -q '"next_subset": 2' "$tmp_dir/status/restic-integrity-subset.json"
 
 RESTIC_REPOSITORY="$tmp_dir/local-repo" RESTIC_PASSWORD="ci-local-restic-password" restic snapshots >/dev/null
 if [[ "$sftp_enabled" == "true" ]]; then
