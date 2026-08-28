@@ -60,6 +60,14 @@ RESTIC_PASSWORD_LOCAL='ci-restic-pass'
 	}
 }
 
+func TestForgetRetentionArgsDefersPrune(t *testing.T) {
+	got := forgetRetentionArgs("--keep-daily 7 --prune --keep-weekly 4 --prune=true")
+	want := []string{"--keep-daily", "7", "--keep-weekly", "4"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("retention args = %#v, want %#v", got, want)
+	}
+}
+
 func TestValidateSecureRepository(t *testing.T) {
 	if err := validateSecureRepository("ftp://example/restic", true); err == nil {
 		t.Fatal("expected insecure ftp repository to fail")
@@ -353,6 +361,13 @@ func TestCheckResticRotatesSubsetOnlyAfterEveryRepositorySucceeds(t *testing.T) 
 	if _, err := CheckRestic(context.Background(), envFile, statusRoot); err == nil {
 		t.Fatal("expected second repository failure")
 	}
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(logData), "|prune") {
+		t.Fatalf("prune ran before every integrity check succeeded:\n%s", logData)
+	}
 	if subset, err := loadIntegritySubset(statusRoot); err != nil || subset != 1 {
 		t.Fatalf("subset after failure = %d, error = %v", subset, err)
 	}
@@ -369,12 +384,15 @@ func TestCheckResticRotatesSubsetOnlyAfterEveryRepositorySucceeds(t *testing.T) 
 	if subset, err := loadIntegritySubset(statusRoot); err != nil || subset != 3 {
 		t.Fatalf("subset after second success = %d, error = %v", subset, err)
 	}
-	logData, err := os.ReadFile(logPath)
+	logData, err = os.ReadFile(logPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Count(string(logData), "1/4") != 4 || strings.Count(string(logData), "2/4") != 2 {
 		t.Fatalf("unexpected subset calls:\n%s", logData)
+	}
+	if strings.Count(string(logData), "|prune") != 4 {
+		t.Fatalf("expected one prune per repository after each successful check:\n%s", logData)
 	}
 }
 

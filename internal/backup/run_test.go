@@ -224,6 +224,16 @@ BACKUP_REQUIRE_REMOTE_REPOSITORY="true"
 	if string(resticCalls) == "" || !strings.Contains(string(resticCalls), "backup") {
 		t.Fatalf("restic was not called correctly: %q", string(resticCalls))
 	}
+	if !strings.Contains(string(resticCalls), "backup --tag admin-node-v3") ||
+		!strings.Contains(string(resticCalls), "--ignore-inode") ||
+		!strings.Contains(string(resticCalls), "--no-scan") {
+		t.Fatalf("relative Restic optimizations are missing: %q", string(resticCalls))
+	}
+	for _, line := range strings.Split(string(resticCalls), "\n") {
+		if strings.Contains(line, "forget") && strings.Contains(line, "--prune") {
+			t.Fatalf("daily retention still prunes the repository: %q", line)
+		}
+	}
 	manifest, ok, err := ReadManifest(info.Path)
 	if err != nil {
 		t.Fatal(err)
@@ -488,12 +498,28 @@ func TestCopyPathStillRestrictsNonStackArtifacts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(source, "artifact"), []byte("sensitive\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	wantModTime := time.Date(2026, 8, 20, 12, 34, 56, 0, time.UTC)
+	if err := os.Chtimes(filepath.Join(source, "artifact"), wantModTime, wantModTime); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(source, wantModTime, wantModTime); err != nil {
+		t.Fatal(err)
+	}
 	target := filepath.Join(root, "target")
 	if err := copyPath(source, target); err != nil {
 		t.Fatal(err)
 	}
 	assertBackupMode(t, target, 0o700)
 	assertBackupMode(t, filepath.Join(target, "artifact"), 0o600)
+	for _, path := range []string{target, filepath.Join(target, "artifact")} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !info.ModTime().Equal(wantModTime) {
+			t.Fatalf("mtime for %s = %s, want %s", path, info.ModTime(), wantModTime)
+		}
+	}
 }
 
 func TestBackupGiteaQuiescesWritesAcrossDumpAndFilesystemCopy(t *testing.T) {

@@ -48,21 +48,21 @@ Format historique, toujours supporte :
 backup:
   restic_repository: "/srv/admin/backups/restic"
   restic_password: "CHANGE_ME"
-  restic_forget_args: "--keep-last 3 --prune"
+  restic_forget_args: "--keep-last 3"
 ```
 
 Format multi-destinations :
 
 ```yaml
 backup:
-  restic_default_forget_args: "--keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune"
+  restic_default_forget_args: "--keep-daily 7 --keep-weekly 4 --keep-monthly 12"
   restic_init_repositories: false
   restic_require_secure_repositories: true
   restic_repositories:
     - name: local
       repository: "/srv/admin/backups/restic"
       password: "CHANGE_ME"
-      forget_args: "--keep-last 3 --prune"
+      forget_args: "--keep-last 3"
 
     - name: sftp
       repository: "sftp:backup-admin:/srv/restic/admin-node"
@@ -83,13 +83,13 @@ Les connexions non chiffrees sont refusees par defaut. Les repositories `ftp:`, 
 
 ## Retention
 
-Chaque destination peut definir `forget_args`. Sinon, `restic_default_forget_args` est utilise, avec `--keep-last 3 --prune` par defaut.
+Chaque destination peut definir `forget_args`. Sinon, `restic_default_forget_args` est utilise, avec `--keep-last 3` par defaut. Le nettoyage physique `prune` est execute une fois par semaine, apres la reussite du controle d'integrite de tous les depots. Un `--prune` encore present dans une ancienne configuration est retire automatiquement du `forget` quotidien.
 
 Exemples :
 
 ```yaml
-forget_args: "--keep-last 3 --prune"
-forget_args: "--keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune"
+forget_args: "--keep-last 3"
+forget_args: "--keep-daily 7 --keep-weekly 4 --keep-monthly 12"
 forget_args: "--keep-within-daily 7d --keep-within-weekly 1m --keep-within-monthly 1y --prune"
 forget_args: "none"
 ```
