@@ -117,7 +117,7 @@ harbor:
   jobservice_secret: "secret-jobservice-harbor"
   registry_password: "mot-de-passe-registry-harbor"
 backup:
-  restic_default_forget_args: "--keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune"
+  restic_default_forget_args: "--keep-daily 7 --keep-weekly 4 --keep-monthly 12"
   restic_require_secure_repositories: true
   restic_repositories:
     - name: local

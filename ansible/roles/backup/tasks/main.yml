@@ -14,7 +14,7 @@
               'name': 'default',
               'repository': backup.restic_repository,
               'password': backup.restic_password | default(''),
-              'forget_args': backup.restic_forget_args | default('--keep-last 3 --prune')
+              'forget_args': backup.restic_forget_args | default('--keep-last 3')
             }]
             if (backup.restic_repository | default('', true) | length > 0)
             else []

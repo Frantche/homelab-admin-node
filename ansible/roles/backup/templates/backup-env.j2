@@ -39,7 +39,7 @@ HARBOR_ADMIN_USER={{ harbor.admin_user | default('admin') | to_json }}
 HARBOR_ADMIN_PASSWORD={{ harbor.admin_password | mandatory('harbor.admin_password is required') | to_json }}
 RESTIC_REPOSITORIES={{ (backup_restic_repositories_effective | map(attribute='name') | list | join(' ')) | quote }}
 RESTIC_INIT_REPOSITORIES={{ ((backup.restic_init_repositories | default(false) | bool) | ternary('true', 'false')) | quote }}
-RESTIC_DEFAULT_FORGET_ARGS={{ (backup.restic_default_forget_args | default('--keep-last 3 --prune')) | quote }}
+RESTIC_DEFAULT_FORGET_ARGS={{ (backup.restic_default_forget_args | default('--keep-last 3')) | quote }}
 RESTIC_REQUIRE_SECURE_REPOSITORIES={{ ((backup.restic_require_secure_repositories | default(true) | bool) | ternary('true', 'false')) | quote }}
 {% if backup.restic_backup_paths is defined %}
 RESTIC_BACKUP_PATHS={{ backup.restic_backup_paths | quote }}

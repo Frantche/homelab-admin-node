@@ -702,7 +702,7 @@ func copyPathWithin(ctx context.Context, root, src, dst string, preserveMode boo
 				return err
 			}
 		}
-		return nil
+		return os.Chtimes(dst, info.ModTime(), info.ModTime())
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("unsupported backup source: %s", src)
@@ -711,7 +711,10 @@ func copyPathWithin(ctx context.Context, root, src, dst string, preserveMode boo
 	if !preserveMode {
 		mode &= 0o600
 	}
-	return copyFileContext(ctx, src, dst, mode)
+	if err := copyFileContext(ctx, src, dst, mode); err != nil {
+		return err
+	}
+	return os.Chtimes(dst, info.ModTime(), info.ModTime())
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {

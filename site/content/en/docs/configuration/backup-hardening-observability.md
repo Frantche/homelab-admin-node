@@ -12,7 +12,7 @@ Reference: [restic documentation](https://restic.readthedocs.io/en/stable/).
 ```yaml
 backup:
   require_remote_repository: true
-  restic_default_forget_args: "--keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune"
+  restic_default_forget_args: "--keep-daily 7 --keep-weekly 4 --keep-monthly 12"
   restic_require_secure_repositories: true
   restic_repositories:
     - name: local
@@ -33,8 +33,8 @@ Repositories can be local, SFTP, S3, or any restic-supported backend.
 | `backup.restic_repositories[].env` | `{}` | Backend-specific environment variables such as S3 credentials. Store sensitive values encrypted. |
 | `backup.restic_repository` | unset | Legacy single repository URL used when `restic_repositories` is absent. |
 | `backup.restic_password` | unset | Legacy single repository password. Store encrypted. |
-| `backup.restic_forget_args` | `--keep-last 3 --prune` | Legacy single repository retention arguments. |
-| `backup.restic_default_forget_args` | `--keep-last 3 --prune` | Default retention arguments for repositories. |
+| `backup.restic_forget_args` | `--keep-last 3` | Legacy single repository retention arguments. `--prune` is deferred to the weekly integrity job when still present in an older configuration. |
+| `backup.restic_default_forget_args` | `--keep-last 3` | Default retention arguments for repositories. |
 | `backup.restic_init_repositories` | `false` | Initializes repositories before backup when enabled. |
 | `backup.restic_require_secure_repositories` | `true` | Rejects insecure repository declarations when enabled. |
 | `backup.require_remote_repository` | `true` | Must remain `true`; standard and offline-image backups require at least one non-local repository. Missing tooling, configuration, credentials, or delivery is fatal. |
@@ -57,7 +57,8 @@ Two monitoring timers are enabled in `normal` mode:
 - `admin-backup-status.timer` validates freshness every hour, starting 30
   minutes after the timer is activated;
 - `admin-backup-integrity.timer` reads one deterministic quarter of each Restic
-  repository weekly. It advances only after all repositories pass, providing a
+  repository weekly, then prunes every repository only after all integrity
+  checks succeed. It advances only after checks and pruning succeed, providing a
   complete cryptographic data read over four successful checks. Run
   `admin-node backup restic-check` explicitly after initial installation to
   create the first integrity status marker without coupling the weekly timer to

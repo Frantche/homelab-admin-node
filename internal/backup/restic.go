@@ -74,7 +74,7 @@ func RunRestic(ctx context.Context, envFile string, backupPaths []string) (Resti
 		cfg.BackupPaths = []string{"/srv/admin/stacks", "/srv/admin/env", "/srv/admin/data"}
 	}
 	if cfg.DefaultForgetArgs == "" {
-		cfg.DefaultForgetArgs = "--keep-last 3 --prune"
+		cfg.DefaultForgetArgs = "--keep-last 3"
 	}
 	spec, err := newResticBackupSpec(cfg.BackupPaths)
 	if err != nil {
@@ -142,6 +142,21 @@ func CheckRestic(ctx context.Context, envFile, statusRoot string) (ResticResult,
 		env := append(os.Environ(), "RESTIC_REPOSITORY="+cfg.Repository, "RESTIC_PASSWORD="+cfg.Password)
 		if err := restic(ctx, env, "check", "--read-data-subset", readSubset); err != nil {
 			return ResticResult{}, fmt.Errorf("check legacy restic repository: %w", err)
+		}
+	}
+	for _, repoID := range cfg.Repositories {
+		values := cfg.RepoValues[sanitizeRepoID(repoID)]
+		repo, password := values["RESTIC_REPOSITORY"], values["RESTIC_PASSWORD"]
+		fmt.Printf("[restic] pruning repository '%s' after successful integrity checks\n", repoID)
+		if err := restic(ctx, repoEnv(values, repo, password), append(fields(values["RESTIC_OPTIONS"]), "prune")...); err != nil {
+			return ResticResult{}, fmt.Errorf("prune restic repository %q: %w", repoID, err)
+		}
+	}
+	if cfg.Repository != "" {
+		fmt.Println("[restic] pruning legacy repository after successful integrity checks")
+		env := append(os.Environ(), "RESTIC_REPOSITORY="+cfg.Repository, "RESTIC_PASSWORD="+cfg.Password)
+		if err := restic(ctx, env, "prune"); err != nil {
+			return ResticResult{}, fmt.Errorf("prune legacy restic repository: %w", err)
 		}
 	}
 	count := len(cfg.Repositories)
@@ -315,7 +330,7 @@ func runResticRepo(ctx context.Context, cfg resticConfig, id string, spec restic
 		backupArgs = append(backupArgs, "--tag", "backup-id:"+spec.BackupID)
 	}
 	if spec.Relative {
-		backupArgs = append(backupArgs, "--tag", resticLayoutTag, "--tag", resticKindTag(spec.Kind))
+		backupArgs = append(backupArgs, "--ignore-inode", "--no-scan", "--tag", resticLayoutTag, "--tag", resticKindTag(spec.Kind))
 		parent, err := latestCompatibleParent(ctx, env, options, spec.Kind)
 		if err != nil {
 			return fmt.Errorf("find compatible parent in repository %q: %w", id, err)
@@ -485,7 +500,7 @@ func runResticLegacy(ctx context.Context, cfg resticConfig, spec resticBackupSpe
 	}
 	if spec.Relative {
 		backupArgs[2] = "admin-node-v3"
-		backupArgs = append(backupArgs, "--tag", resticLayoutTag, "--tag", resticKindTag(spec.Kind))
+		backupArgs = append(backupArgs, "--ignore-inode", "--no-scan", "--tag", resticLayoutTag, "--tag", resticKindTag(spec.Kind))
 		parent, err := latestCompatibleParent(ctx, env, options, spec.Kind)
 		if err != nil {
 			return fmt.Errorf("find compatible parent in legacy repository: %w", err)
@@ -541,20 +556,37 @@ func forgetRestic(ctx context.Context, env []string, options []string, forgetArg
 	if forgetArgs == "none" {
 		return nil
 	}
-	if strings.TrimSpace(forgetArgs) == "" {
+	retentionArgs := forgetRetentionArgs(forgetArgs)
+	if len(retentionArgs) == 0 {
 		return nil
 	}
-	return restic(ctx, env, append(append(options, "forget"), fields(forgetArgs)...)...)
+	return restic(ctx, env, append(append(options, "forget"), retentionArgs...)...)
 }
 
 func forgetResticLayout(ctx context.Context, env []string, options []string, forgetArgs, kind string) error {
 	if forgetArgs == "none" || strings.TrimSpace(forgetArgs) == "" {
 		return nil
 	}
+	retentionArgs := forgetRetentionArgs(forgetArgs)
+	if len(retentionArgs) == 0 {
+		return nil
+	}
 	args := append(append([]string{}, options...), "forget")
-	args = append(args, fields(forgetArgs)...)
+	args = append(args, retentionArgs...)
 	args = append(args, "--tag", resticLayoutTag+","+resticKindTag(kind), "--group-by", "")
 	return restic(ctx, env, args...)
+}
+
+func forgetRetentionArgs(value string) []string {
+	args := fields(value)
+	retentionArgs := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg == "--prune" || strings.HasPrefix(arg, "--prune=") {
+			continue
+		}
+		retentionArgs = append(retentionArgs, arg)
+	}
+	return retentionArgs
 }
 
 func repoEnv(values map[string]string, repo, password string) []string {

@@ -74,6 +74,14 @@ recovery authority.
 Version 4 recovery points are stored from a stable relative root and tagged
 with `backup-layout:relative-v1` plus their standard or offline-image kind.
 Restic explicitly selects the latest compatible same-kind snapshot as parent.
+Relative-layout backups use `--ignore-inode` because each local recovery point
+is assembled in a new staging tree whose copied files have new inode numbers.
+They also use `--no-scan` to avoid Restic's separate progress-estimation walk.
+The portable non-Btrfs copy preserves modification times so stable files remain
+eligible for parent reuse. This optimization deliberately trusts an unchanged
+path, size, and modification time after the controlled snapshot/copy step; do
+not preserve timestamps manually when replacing files in persistent service
+data.
 Retention is applied only to snapshots using this new layout during migration;
 historical absolute-path snapshots remain restorable and are not deleted
 automatically. Review them separately with `restic forget --dry-run` before any
@@ -129,9 +137,12 @@ sudo /opt/homelab-admin-node/bin/admin-node backup restic-check
 
 The scheduled `admin-backup-integrity.timer` checks one deterministic quarter
 of every configured repository each week with
-`restic check --read-data-subset=n/4`. The quarter advances only after every
-repository succeeds, so failures retry the same quarter and a successful
-four-week cycle reads all repository data. Its state is stored under
+`restic check --read-data-subset=n/4`, then runs `restic prune` only after every
+repository check succeeds. Daily backups still apply `forget` retention but
+defer physical cleanup; a legacy `--prune` retention argument is stripped
+automatically. The quarter advances only after every check and prune succeeds,
+so failures retry the same quarter and a successful four-week cycle reads all
+repository data. Its state is stored under
 `/srv/admin/backups/status`. Inspect failures with:
 
 ```bash
