@@ -32,7 +32,25 @@ type ResticResult struct {
 	RepositoryCount int
 }
 
-const defaultResticCacheHome = "/var/cache/admin-node/restic"
+const (
+	defaultResticCacheHome = "/var/cache/admin-node/restic"
+	resticLayoutTag        = "backup-layout:relative-v1"
+	resticIntegrityParts   = 4
+	resticIntegrityState   = "restic-integrity-subset.json"
+)
+
+type resticBackupSpec struct {
+	Paths      []string
+	WorkingDir string
+	BackupID   string
+	Kind       string
+	Relative   bool
+}
+
+type integritySubsetState struct {
+	Version    int `json:"version"`
+	NextSubset int `json:"next_subset"`
+}
 
 func RunRestic(ctx context.Context, envFile string, backupPaths []string) (ResticResult, error) {
 	cfg, err := loadResticConfig(envFile)
@@ -58,17 +76,21 @@ func RunRestic(ctx context.Context, envFile string, backupPaths []string) (Resti
 	if cfg.DefaultForgetArgs == "" {
 		cfg.DefaultForgetArgs = "--keep-last 3 --prune"
 	}
+	spec, err := newResticBackupSpec(cfg.BackupPaths)
+	if err != nil {
+		return ResticResult{}, err
+	}
 
 	if len(cfg.Repositories) > 0 {
 		for _, repoID := range cfg.Repositories {
-			if err := runResticRepo(ctx, cfg, repoID); err != nil {
+			if err := runResticRepo(ctx, cfg, repoID, spec); err != nil {
 				return ResticResult{}, err
 			}
 		}
 		return ResticResult{Configured: true, RemoteDelivered: hasRemoteRepository(cfg), RepositoryCount: len(cfg.Repositories)}, nil
 	}
 	if cfg.Repository != "" {
-		if err := runResticLegacy(ctx, cfg); err != nil {
+		if err := runResticLegacy(ctx, cfg, spec); err != nil {
 			return ResticResult{}, err
 		}
 		return ResticResult{Configured: true, RemoteDelivered: hasRemoteRepository(cfg), RepositoryCount: 1}, nil
@@ -77,7 +99,7 @@ func RunRestic(ctx context.Context, envFile string, backupPaths []string) (Resti
 	return ResticResult{}, nil
 }
 
-func CheckRestic(ctx context.Context, envFile string) (ResticResult, error) {
+func CheckRestic(ctx context.Context, envFile, statusRoot string) (ResticResult, error) {
 	if _, err := exec.LookPath("restic"); err != nil {
 		return ResticResult{}, fmt.Errorf("restic is required for integrity checks")
 	}
@@ -92,6 +114,11 @@ func CheckRestic(ctx context.Context, envFile string) (ResticResult, error) {
 		fmt.Println("[restic] no repositories configured, skipping integrity check")
 		return ResticResult{}, nil
 	}
+	subset, err := loadIntegritySubset(statusRoot)
+	if err != nil {
+		return ResticResult{}, err
+	}
+	readSubset := fmt.Sprintf("%d/%d", subset, resticIntegrityParts)
 	for _, repoID := range cfg.Repositories {
 		values := cfg.RepoValues[sanitizeRepoID(repoID)]
 		repo, password := values["RESTIC_REPOSITORY"], values["RESTIC_PASSWORD"]
@@ -101,8 +128,9 @@ func CheckRestic(ctx context.Context, envFile string) (ResticResult, error) {
 		if err := validateSecureRepository(repo, cfg.RequireSecureRepos); err != nil {
 			return ResticResult{}, err
 		}
-		fmt.Printf("[restic] checking repository '%s'\n", repoID)
-		if err := restic(ctx, repoEnv(values, repo, password), append(fields(values["RESTIC_OPTIONS"]), "check")...); err != nil {
+		fmt.Printf("[restic] checking repository '%s' data subset %s\n", repoID, readSubset)
+		args := append(fields(values["RESTIC_OPTIONS"]), "check", "--read-data-subset", readSubset)
+		if err := restic(ctx, repoEnv(values, repo, password), args...); err != nil {
 			return ResticResult{}, fmt.Errorf("check restic repository %q: %w", repoID, err)
 		}
 	}
@@ -110,15 +138,18 @@ func CheckRestic(ctx context.Context, envFile string) (ResticResult, error) {
 		if cfg.Password == "" {
 			return ResticResult{}, fmt.Errorf("RESTIC_PASSWORD is required when RESTIC_REPOSITORY is set")
 		}
-		fmt.Println("[restic] checking legacy repository")
+		fmt.Printf("[restic] checking legacy repository data subset %s\n", readSubset)
 		env := append(os.Environ(), "RESTIC_REPOSITORY="+cfg.Repository, "RESTIC_PASSWORD="+cfg.Password)
-		if err := restic(ctx, env, "check"); err != nil {
+		if err := restic(ctx, env, "check", "--read-data-subset", readSubset); err != nil {
 			return ResticResult{}, fmt.Errorf("check legacy restic repository: %w", err)
 		}
 	}
 	count := len(cfg.Repositories)
 	if cfg.Repository != "" {
 		count++
+	}
+	if err := storeNextIntegritySubset(statusRoot, subset); err != nil {
+		return ResticResult{}, err
 	}
 	return ResticResult{Configured: true, RemoteDelivered: hasRemoteRepository(cfg), RepositoryCount: count}, nil
 }
@@ -254,7 +285,7 @@ func splitRepoVar(key string) (string, string, bool) {
 	return "", "", false
 }
 
-func runResticRepo(ctx context.Context, cfg resticConfig, id string) error {
+func runResticRepo(ctx context.Context, cfg resticConfig, id string, spec resticBackupSpec) error {
 	safeID := sanitizeRepoID(id)
 	values := cfg.RepoValues[safeID]
 	repo := values["RESTIC_REPOSITORY"]
@@ -275,11 +306,25 @@ func runResticRepo(ctx context.Context, cfg resticConfig, id string) error {
 	}
 	fmt.Printf("[restic] backing up to repository '%s'\n", id)
 	verificationTag := fmt.Sprintf("admin-node-run:%d", time.Now().UTC().UnixNano())
-	backupArgs := append(append([]string{}, options...), "backup", "--tag", "admin-node-v2", "--tag", verificationTag)
-	if backupID := backupIDFromPaths(cfg.BackupPaths); backupID != "" {
-		backupArgs = append(backupArgs, "--tag", "backup-id:"+backupID)
+	formatTag := "admin-node-v2"
+	if spec.Relative {
+		formatTag = "admin-node-v3"
 	}
-	if err := restic(ctx, env, append(backupArgs, cfg.BackupPaths...)...); err != nil {
+	backupArgs := append(append([]string{}, options...), "backup", "--tag", formatTag, "--tag", verificationTag)
+	if spec.BackupID != "" {
+		backupArgs = append(backupArgs, "--tag", "backup-id:"+spec.BackupID)
+	}
+	if spec.Relative {
+		backupArgs = append(backupArgs, "--tag", resticLayoutTag, "--tag", resticKindTag(spec.Kind))
+		parent, err := latestCompatibleParent(ctx, env, options, spec.Kind)
+		if err != nil {
+			return fmt.Errorf("find compatible parent in repository %q: %w", id, err)
+		}
+		if parent != "" {
+			backupArgs = append(backupArgs, "--parent", parent)
+		}
+	}
+	if err := resticInDir(ctx, env, spec.WorkingDir, append(backupArgs, spec.Paths...)...); err != nil {
 		return err
 	}
 	if err := verifyResticSnapshot(ctx, env, options, verificationTag); err != nil {
@@ -289,7 +334,75 @@ func runResticRepo(ctx context.Context, cfg resticConfig, id string) error {
 	if forgetArgs == "" {
 		forgetArgs = cfg.DefaultForgetArgs
 	}
+	if spec.Relative {
+		return forgetResticLayout(ctx, env, options, forgetArgs, spec.Kind)
+	}
 	return forgetRestic(ctx, env, options, forgetArgs)
+}
+
+func newResticBackupSpec(paths []string) (resticBackupSpec, error) {
+	spec := resticBackupSpec{Paths: append([]string{}, paths...)}
+	if len(paths) != 1 {
+		return spec, nil
+	}
+	root := filepath.Clean(paths[0])
+	spec.BackupID = backupIDFromPaths(paths)
+	manifest, ok, err := ReadManifest(root)
+	if err != nil {
+		return spec, err
+	}
+	if !ok || manifest.Version != ManifestVersion {
+		return spec, nil
+	}
+	manifest, err = Verify(root)
+	if err != nil {
+		return spec, fmt.Errorf("verify relative-layout backup: %w", err)
+	}
+	if manifest.ID != spec.BackupID {
+		return spec, fmt.Errorf("manifest id %q does not match backup path", manifest.ID)
+	}
+	spec.Relative = true
+	spec.WorkingDir = root
+	spec.Paths = []string{"."}
+	spec.Kind = "standard"
+	if manifest.OfflineImages {
+		spec.Kind = "offline-images"
+	}
+	return spec, nil
+}
+
+func resticKindTag(kind string) string {
+	return "backup-kind:" + kind
+}
+
+func latestCompatibleParent(ctx context.Context, env, options []string, kind string) (string, error) {
+	tags := resticLayoutTag + "," + resticKindTag(kind)
+	args := append(append([]string{}, options...), "snapshots", "--json", "--tag", tags)
+	cmd := exec.CommandContext(ctx, "restic", args...)
+	cmd.Env = env
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	var snapshots []struct {
+		ID   string    `json:"id"`
+		Time time.Time `json:"time"`
+	}
+	if err := json.Unmarshal(output, &snapshots); err != nil {
+		return "", fmt.Errorf("decode compatible snapshot inventory: %w", err)
+	}
+	latestID := ""
+	latestTime := time.Time{}
+	for _, snapshot := range snapshots {
+		if snapshot.ID == "" || snapshot.Time.IsZero() {
+			return "", fmt.Errorf("compatible snapshot inventory contains an invalid entry")
+		}
+		if snapshot.Time.After(latestTime) || (snapshot.Time.Equal(latestTime) && snapshot.ID > latestID) {
+			latestID = snapshot.ID
+			latestTime = snapshot.Time
+		}
+	}
+	return latestID, nil
 }
 
 func backupIDFromPaths(paths []string) string {
@@ -332,11 +445,16 @@ func RestoreFromRestic(ctx context.Context, envFile, repositoryID, backupRoot, i
 	defer os.RemoveAll(tmp)
 	env := repoEnv(values, repo, password)
 	options := fields(values["RESTIC_OPTIONS"])
-	args := append(append([]string{}, options...), "restore", "latest", "--tag", "backup-id:"+id, "--target", tmp)
+	args := append(append([]string{}, options...), "restore", "latest", "--tag", "backup-id:"+id, "--target", tmp, "--verify")
 	if err := restic(ctx, env, args...); err != nil {
 		return err
 	}
-	restored := filepath.Join(tmp, strings.TrimPrefix(filepath.Clean(filepath.Join(backupRoot, id)), string(os.PathSeparator)))
+	restored := tmp
+	if _, ok, err := ReadManifest(restored); err != nil {
+		return err
+	} else if !ok {
+		restored = filepath.Join(tmp, strings.TrimPrefix(filepath.Clean(filepath.Join(backupRoot, id)), string(os.PathSeparator)))
+	}
 	if _, err := Verify(restored); err != nil {
 		return fmt.Errorf("verify remote backup: %w", err)
 	}
@@ -347,7 +465,7 @@ func RestoreFromRestic(ctx context.Context, envFile, repositoryID, backupRoot, i
 	return os.Rename(restored, target)
 }
 
-func runResticLegacy(ctx context.Context, cfg resticConfig) error {
+func runResticLegacy(ctx context.Context, cfg resticConfig, spec resticBackupSpec) error {
 	if cfg.Password == "" {
 		return fmt.Errorf("RESTIC_PASSWORD is required when RESTIC_REPOSITORY is set")
 	}
@@ -362,14 +480,28 @@ func runResticLegacy(ctx context.Context, cfg resticConfig) error {
 	fmt.Println("[restic] backing up to legacy RESTIC_REPOSITORY")
 	verificationTag := fmt.Sprintf("admin-node-run:%d", time.Now().UTC().UnixNano())
 	backupArgs := []string{"backup", "--tag", "admin-node-v2", "--tag", verificationTag}
-	if backupID := backupIDFromPaths(cfg.BackupPaths); backupID != "" {
-		backupArgs = append(backupArgs, "--tag", "backup-id:"+backupID)
+	if spec.BackupID != "" {
+		backupArgs = append(backupArgs, "--tag", "backup-id:"+spec.BackupID)
 	}
-	if err := restic(ctx, env, append(backupArgs, cfg.BackupPaths...)...); err != nil {
+	if spec.Relative {
+		backupArgs[2] = "admin-node-v3"
+		backupArgs = append(backupArgs, "--tag", resticLayoutTag, "--tag", resticKindTag(spec.Kind))
+		parent, err := latestCompatibleParent(ctx, env, options, spec.Kind)
+		if err != nil {
+			return fmt.Errorf("find compatible parent in legacy repository: %w", err)
+		}
+		if parent != "" {
+			backupArgs = append(backupArgs, "--parent", parent)
+		}
+	}
+	if err := resticInDir(ctx, env, spec.WorkingDir, append(backupArgs, spec.Paths...)...); err != nil {
 		return err
 	}
 	if err := verifyResticSnapshot(ctx, env, nil, verificationTag); err != nil {
 		return fmt.Errorf("verify legacy repository delivery: %w", err)
+	}
+	if spec.Relative {
+		return forgetResticLayout(ctx, env, options, cfg.DefaultForgetArgs, spec.Kind)
 	}
 	return forgetRestic(ctx, env, options, cfg.DefaultForgetArgs)
 }
@@ -415,6 +547,16 @@ func forgetRestic(ctx context.Context, env []string, options []string, forgetArg
 	return restic(ctx, env, append(append(options, "forget"), fields(forgetArgs)...)...)
 }
 
+func forgetResticLayout(ctx context.Context, env []string, options []string, forgetArgs, kind string) error {
+	if forgetArgs == "none" || strings.TrimSpace(forgetArgs) == "" {
+		return nil
+	}
+	args := append(append([]string{}, options...), "forget")
+	args = append(args, fields(forgetArgs)...)
+	args = append(args, "--tag", resticLayoutTag+","+resticKindTag(kind), "--group-by", "")
+	return restic(ctx, env, args...)
+}
+
 func repoEnv(values map[string]string, repo, password string) []string {
 	env := append(os.Environ(), "RESTIC_REPOSITORY="+repo, "RESTIC_PASSWORD="+password)
 	for key, value := range values {
@@ -427,11 +569,72 @@ func repoEnv(values map[string]string, repo, password string) []string {
 }
 
 func restic(ctx context.Context, env []string, args ...string) error {
+	return resticInDir(ctx, env, "", args...)
+}
+
+func resticInDir(ctx context.Context, env []string, dir string, args ...string) error {
 	cmd := exec.CommandContext(ctx, "restic", args...)
 	cmd.Env = env
+	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func loadIntegritySubset(statusRoot string) (int, error) {
+	path := filepath.Join(statusRoot, resticIntegrityState)
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return 1, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("read restic integrity state: %w", err)
+	}
+	var state integritySubsetState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return 0, fmt.Errorf("decode restic integrity state: %w", err)
+	}
+	if state.Version != 1 || state.NextSubset < 1 || state.NextSubset > resticIntegrityParts {
+		return 0, fmt.Errorf("invalid restic integrity state")
+	}
+	return state.NextSubset, nil
+}
+
+func storeNextIntegritySubset(statusRoot string, completed int) error {
+	if err := os.MkdirAll(statusRoot, 0o700); err != nil {
+		return fmt.Errorf("create backup status directory: %w", err)
+	}
+	next := completed%resticIntegrityParts + 1
+	data, err := json.MarshalIndent(integritySubsetState{Version: 1, NextSubset: next}, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	tmp, err := os.CreateTemp(statusRoot, ".restic-integrity-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, filepath.Join(statusRoot, resticIntegrityState)); err != nil {
+		return fmt.Errorf("publish restic integrity state: %w", err)
+	}
+	return nil
 }
 
 func resticQuiet(ctx context.Context, env []string, args ...string) error {

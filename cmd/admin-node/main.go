@@ -777,7 +777,7 @@ func (a app) runBackup(ctx context.Context, args []string) int {
 		}
 		return 0
 	case "restic-check":
-		result, err := backup.CheckRestic(ctx, a.cfg.BackupEnvFile)
+		result, err := backup.CheckRestic(ctx, a.cfg.BackupEnvFile, a.cfg.BackupStatusRoot)
 		if err != nil {
 			fmt.Fprintf(a.errOut, "backup restic-check: %v\n", err)
 			return 1

@@ -41,8 +41,8 @@ sudo systemctl start admin-offline-backup.service
 sudo admin-node backup offline-status
 ```
 
-The status command reports the newest offline point, age, freshness, full
-manifest checksum verification, and recovery-kit state. It exits non-zero with
+The status command reports the newest offline point, age, freshness, manifest
+structure and size verification, and recovery-kit state. It exits non-zero with
 actionable prerequisite names when anything is missing or stale.
 The Restic prerequisite must be a complete, syntactically valid non-local
 repository declaration; a local path or `file:` repository does not satisfy

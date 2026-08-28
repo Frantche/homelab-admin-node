@@ -75,6 +75,14 @@ def validate_harbor_scan_matches_mirror(all_vars, ci_vars) -> None:
     raise SystemExit(f"Harbor Trivy scan project {project} has no registry mirror validation image")
 
 
+def validate_backup_secrets_are_not_shadowed(ci_vars) -> None:
+    if "backup" in ci_vars:
+        raise SystemExit(
+            "ci-bootstrap-vars.yml must not override backup: Ansible extra-vars would "
+            "replace the encrypted Restic repository configuration"
+        )
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit("usage: validate-bootstrap-config-repo.py <yaml>... [--secrets-example <example>]")
@@ -99,6 +107,7 @@ def main() -> None:
         example = load_yaml(secrets_example)
         validate_generated_secrets(example, rendered)
     if len(loaded) >= 3:
+        validate_backup_secrets_are_not_shadowed(loaded[2])
         validate_harbor_scan_matches_mirror(loaded[1], loaded[2])
 
 
