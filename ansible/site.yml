@@ -147,7 +147,7 @@
     - role: pihole_dns
       when: admin_mode in ['init', 'normal'] and not (ci_mode | default(false)) and ((pihole.enabled | default(true)) | bool)
     - role: validate_apis
-      when: admin_mode in ['init', 'normal']
+      when: admin_mode == 'normal'
     - role: backup
       when: admin_mode == 'normal'
 
