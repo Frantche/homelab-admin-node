@@ -8,11 +8,18 @@ import (
 	"time"
 )
 
+func isolateManagedRuntimeFiles(t *testing.T) {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv("RESTIC_BACKUP_ENV_FILE", filepath.Join(root, "missing-backup.env"))
+	t.Setenv("ADMIN_RUNTIME_ENV_FILE", filepath.Join(root, "missing-runtime.env"))
+}
+
 func TestFromEnvDefaults(t *testing.T) {
+	isolateManagedRuntimeFiles(t)
 	t.Setenv("ADMIN_NODE_REPO_ROOT", "")
 	t.Setenv("ADMIN_NODE_ROOT", "")
 	t.Setenv("CI_MODE", "")
-	t.Setenv("RESTIC_BACKUP_ENV_FILE", filepath.Join(t.TempDir(), "missing.env"))
 
 	cfg := FromEnv()
 
@@ -49,6 +56,7 @@ func TestFromEnvDefaults(t *testing.T) {
 }
 
 func TestFromEnvReadsStackFlagsFromBackupEnv(t *testing.T) {
+	isolateManagedRuntimeFiles(t)
 	envFile := filepath.Join(t.TempDir(), "backup.env")
 	if err := os.WriteFile(envFile, []byte("CLOUDFLARE_ENABLED=\"false\"\nOBSERVABILITY_ENABLED=\"true\"\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -74,6 +82,7 @@ func TestFromEnvReadsStackFlagsFromBackupEnv(t *testing.T) {
 }
 
 func TestFromEnvOverrides(t *testing.T) {
+	isolateManagedRuntimeFiles(t)
 	t.Setenv("ADMIN_NODE_REPO_ROOT", "/tmp/repo")
 	t.Setenv("ADMIN_NODE_ROOT", "/tmp/admin")
 	t.Setenv("KEYCLOAK_DOMAIN", "keycloak.test")
@@ -137,6 +146,7 @@ func TestFromEnvOverrides(t *testing.T) {
 }
 
 func TestLoadUsesManagedRuntimeFileWithProcessPrecedence(t *testing.T) {
+	isolateManagedRuntimeFiles(t)
 	envFile := filepath.Join(t.TempDir(), "backup.env")
 	content := `# managed values
 CI_MODE=true
@@ -217,8 +227,43 @@ HARBOR_ADMIN_PASSWORD="this deliberately unterminated secret is ignored
 	}
 }
 
+func TestLoadUsesDedicatedRuntimeFileBeforeBackupEnv(t *testing.T) {
+	isolateManagedRuntimeFiles(t)
+	root := t.TempDir()
+	backupEnvFile := filepath.Join(root, "backup.env")
+	runtimeEnvFile := filepath.Join(root, "runtime.env")
+	if err := os.WriteFile(backupEnvFile, []byte("GITEA_DOMAIN=gitea.backup.test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	content := `KEYCLOAK_DOMAIN=keycloak.runtime.test
+HARBOR_DOMAIN=harbor.runtime.test
+GITEA_DOMAIN=gitea.runtime.test
+TRAEFIK_DOMAIN=traefik.runtime.test
+OPENBAO_DOMAIN=bao.runtime.test
+`
+	if err := os.WriteFile(runtimeEnvFile, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RESTIC_BACKUP_ENV_FILE", backupEnvFile)
+	t.Setenv("ADMIN_RUNTIME_ENV_FILE", runtimeEnvFile)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ManagedRuntimeFileLoaded {
+		t.Fatal("dedicated runtime file was not marked loaded")
+	}
+	if cfg.KeycloakDomain != "keycloak.runtime.test" || cfg.HarborDomain != "harbor.runtime.test" || cfg.GiteaDomain != "gitea.runtime.test" || cfg.TraefikDomain != "traefik.runtime.test" || cfg.OpenBaoDomain != "bao.runtime.test" {
+		t.Fatalf("dedicated runtime domains not loaded with precedence: %#v", cfg)
+	}
+	if err := cfg.ValidateOperational(); err != nil {
+		t.Fatalf("runtime domains rejected: %v", err)
+	}
+}
+
 func TestLoadMissingManagedRuntimeFileUsesSafeDefaults(t *testing.T) {
-	t.Setenv("RESTIC_BACKUP_ENV_FILE", filepath.Join(t.TempDir(), "missing.env"))
+	isolateManagedRuntimeFiles(t)
 	for _, key := range []string{"KEYCLOAK_DOMAIN", "HARBOR_DOMAIN", "GITEA_DOMAIN", "TRAEFIK_DOMAIN", "OPENBAO_DOMAIN"} {
 		t.Setenv(key, "")
 	}
@@ -235,6 +280,7 @@ func TestLoadMissingManagedRuntimeFileUsesSafeDefaults(t *testing.T) {
 }
 
 func TestLoadAllowsDisabledOfflineFreshnessPolicy(t *testing.T) {
+	isolateManagedRuntimeFiles(t)
 	envFile := filepath.Join(t.TempDir(), "backup.env")
 	if err := os.WriteFile(envFile, []byte("BACKUP_OFFLINE_MAX_AGE=0\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -262,6 +308,7 @@ func TestLoadRejectsMalformedManagedEntriesWithoutExposingValues(t *testing.T) {
 		{name: "invalid CI mode", content: "CI_MODE=private-invalid\n", marker: "invalid runtime configuration value for CI_MODE"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			isolateManagedRuntimeFiles(t)
 			envFile := filepath.Join(t.TempDir(), "backup.env")
 			if err := os.WriteFile(envFile, []byte(test.content), 0o600); err != nil {
 				t.Fatal(err)

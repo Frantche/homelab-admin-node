@@ -12,7 +12,15 @@ import (
 	"github.com/Frantche/homelab-admin-node/internal/config"
 )
 
+func isolateManagedRuntimeFiles(t *testing.T) {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv("RESTIC_BACKUP_ENV_FILE", filepath.Join(root, "missing-backup.env"))
+	t.Setenv("ADMIN_RUNTIME_ENV_FILE", filepath.Join(root, "missing-runtime.env"))
+}
+
 func TestRootHelp(t *testing.T) {
+	isolateManagedRuntimeFiles(t)
 	var out, errOut bytes.Buffer
 	a := app{out: &out, errOut: &errOut, cfg: config.FromEnv()}
 
@@ -24,7 +32,7 @@ func TestRootHelp(t *testing.T) {
 	if !strings.Contains(out.String(), "Usage: admin-node") {
 		t.Fatalf("help output missing usage: %q", out.String())
 	}
-	if !strings.Contains(out.String(), "process environment, then /srv/admin/env/backup.env") {
+	if !strings.Contains(out.String(), "process environment, then /etc/admin-node/runtime.env, then /srv/admin/env/backup.env") {
 		t.Fatalf("help output missing runtime precedence: %q", out.String())
 	}
 }
@@ -69,6 +77,7 @@ func TestOperationalCommandRejectsBuiltInExampleDomains(t *testing.T) {
 }
 
 func TestManualAndSystemdEquivalentCommandsResolveSameManagedConfig(t *testing.T) {
+	isolateManagedRuntimeFiles(t)
 	root := t.TempDir()
 	backupRoot := filepath.Join(root, "backups")
 	if err := os.MkdirAll(filepath.Join(backupRoot, "20260808-120000"), 0o700); err != nil {
@@ -144,6 +153,7 @@ func TestReadEnvFileDecodesQuotedValues(t *testing.T) {
 }
 
 func TestUnknownCommand(t *testing.T) {
+	isolateManagedRuntimeFiles(t)
 	var out, errOut bytes.Buffer
 	a := app{out: &out, errOut: &errOut, cfg: config.FromEnv()}
 
@@ -168,6 +178,7 @@ func TestSubcommandsExist(t *testing.T) {
 
 	for _, args := range tests {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			isolateManagedRuntimeFiles(t)
 			var out, errOut bytes.Buffer
 			cfg := config.FromEnv()
 			cfg.AdminRoot = t.TempDir()

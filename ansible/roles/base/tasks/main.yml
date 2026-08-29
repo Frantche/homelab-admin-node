@@ -14,11 +14,20 @@
     mode: "{{ item.mode | default('0755') }}"
   loop:
     - { path: /opt/homelab-admin-node, owner: "{{ admin_node_repo_owner }}", group: "{{ admin_node_repo_group }}", mode: "2775" }
+    - { path: /etc/admin-node }
     - { path: "{{ admin_node_root }}" }
     - { path: "{{ admin_node_root }}/stacks" }
     - { path: "{{ admin_node_root }}/env", mode: "0700" }
     - { path: "{{ admin_node_root }}/data" }
     - { path: "{{ admin_node_root }}/backups" }
+
+- name: Render admin-node runtime environment
+  ansible.builtin.template:
+    src: runtime-env.j2
+    dest: /etc/admin-node/runtime.env
+    owner: root
+    group: root
+    mode: "0644"
 
 - name: Resolve admin repository source
   ansible.builtin.command:
