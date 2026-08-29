@@ -236,7 +236,6 @@
 - name: Reset configured OpenBao KV-v2 secret engine list
   ansible.builtin.set_fact:
     openbao_configured_kv_v2_secret_engines: []
-  when: openbao_config.oidc.enabled | default(false)
 
 - name: Build configured OpenBao KV-v2 secret engine list
   ansible.builtin.set_fact:
@@ -245,8 +244,27 @@
   loop_control:
     label: "{{ item.path }}"
   when:
-    - openbao_config.oidc.enabled | default(false)
     - item.type | default('') == 'kv-v2'
+
+- name: Validate Keycloak credential OpenBao destinations
+  ansible.builtin.assert:
+    that:
+      - item.mount | length > 0
+      - item.path | length > 0
+      - "'..' not in item.path.split('/')"
+      - (item.mount ~ '/') in openbao_configured_kv_v2_secret_engines
+      - (item.mount ~ '/') in openbao_secret_engine_map
+    fail_msg: "Keycloak credential destination {{ item.mount }}/{{ item.path }} must use a KV-v2 engine declared in openbao_config.secret_engines."
+  loop: "{{ keycloak_openbao_credentials | default([]) }}"
+  loop_control:
+    label: "{{ item.mount }}/{{ item.path }}"
+
+- name: Publish Keycloak credentials to OpenBao
+  ansible.builtin.include_tasks: keycloak-credential.yml
+  loop: "{{ keycloak_openbao_credentials | default([]) }}"
+  loop_control:
+    loop_var: openbao_keycloak_credential
+    label: "{{ openbao_keycloak_credential.mount }}/{{ openbao_keycloak_credential.path }}"
 
 - name: Validate OpenBao explicit OIDC role secret engines
   ansible.builtin.assert:

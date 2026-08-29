@@ -22,6 +22,10 @@
     cloudflare:
       dns_api_token: ""
       tunnel_id: validation-tunnel-id
+    cloudflare_local_ingress_enabled: false
+    keycloak_config:
+      realm_management:
+        enabled: true
     hardening:
       apparmor:
         enabled: true
@@ -76,8 +80,8 @@
           - "'./credentials.json:/etc/cloudflared/credentials.json:ro' in (rendered_cloudflared_compose.content | b64decode)"
           - "'--token' not in (rendered_cloudflared_compose.content | b64decode)"
 
-    - name: Copy static Keycloak Compose configuration
-      ansible.builtin.copy:
+    - name: Render Keycloak Compose configuration
+      ansible.builtin.template:
         src: "{{ playbook_dir }}/../../stacks/keycloak/compose.yaml"
         dest: "{{ validation_output }}/keycloak/compose.yaml"
         mode: "0644"

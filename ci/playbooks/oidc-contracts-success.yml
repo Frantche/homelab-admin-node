@@ -54,8 +54,29 @@
             - "https://git.example.com/user/oauth2/keycloak/callback"
           web_origins:
             - "https://git.example.com"
+        - client_id: "automation-client"
+          standard_flow_enabled: false
+          service_accounts_enabled: true
+          openbao:
+            mount: "secret"
+            path: "keycloak/clients/automation-client"
+      realm_management:
+        enabled: true
+        client_id: "crossplane-keycloak"
+        realm_roles:
+          - "admin"
+        openbao:
+          mount: "secret"
+          path: "crossplane/keycloak"
+        rotation:
+          period_seconds: 604800
+          overlap_seconds: 172800
+          renew_before_seconds: 3600
     openbao_config:
       enabled: true
+      secret_engines:
+        - path: "secret"
+          type: "kv-v2"
       oidc:
         enabled: true
     harbor_config:
@@ -105,6 +126,10 @@
     - name: Render Harbor compose with Traefik local CA enabled
       ansible.builtin.set_fact:
         harbor_compose_with_local_ca: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/harbor/compose.yaml.j2') }}"
+
+    - name: Render Keycloak compose with realm management enabled
+      ansible.builtin.set_fact:
+        keycloak_compose_with_rotation: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/keycloak/compose.yaml') }}"
 
     - name: Capture Harbor Keycloak client
       ansible.builtin.set_fact:
@@ -156,5 +181,8 @@
           - gitea_oidc_client_id == oidc_clients.gitea.client_id
           - gitea_oidc_client_secret == oidc_clients.gitea.client_secret
           - gitea_oidc_discovery_url == 'https://keycloak.example.com/realms/homelab/.well-known/openid-configuration'
+          - keycloak_openbao_publication_clients | map(attribute='client_id') | list == ['automation-client']
+          - (keycloak_effective_clients | selectattr('client_id', 'equalto', 'automation-client') | list | length) == 1
+          - "'--features=client-secret-rotation' in keycloak_compose_with_rotation"
           - "'SSL_CERT_FILE: /etc/ssl/certs/admin-node-ca.pem' in harbor_compose_with_local_ca"
           - "'/srv/admin/certs/ca.pem:/etc/ssl/certs/admin-node-ca.pem:ro' in harbor_compose_with_local_ca"

@@ -122,6 +122,17 @@ keycloak_config:
   groups: []
   clients: []
   users: []
+  realm_management:
+    enabled: false
+    client_id: "crossplane-keycloak"
+    realm_roles: ["admin"]
+    openbao:
+      mount: "secret"
+      path: "crossplane/keycloak"
+    rotation:
+      period_seconds: 604800
+      overlap_seconds: 172800
+      renew_before_seconds: 3600
 
 openbao_config:
   enabled: false

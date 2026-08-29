@@ -1,0 +1,384 @@
+---
+- name: Set Keycloak realm management facts
+  ansible.builtin.set_fact:
+    keycloak_realm_management_client_id: "{{ keycloak_config.realm_management.client_id }}"
+    keycloak_realm_management_rotation_role: "admin-node-secret-rotation"
+    keycloak_realm_management_profile_name: "admin-node-weekly-secret-rotation"
+    keycloak_realm_management_policy_name: "admin-node-crossplane-secret-rotation"
+  no_log: true
+
+- name: Ensure Keycloak realm management client exists
+  community.general.keycloak_client:
+    auth_keycloak_url: "{{ keycloak_config_url }}"
+    auth_realm: master
+    auth_username: "{{ keycloak.admin_user | default('admin') }}"
+    auth_password: "{{ keycloak.admin_password }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    realm: master
+    client_id: "{{ keycloak_realm_management_client_id }}"
+    name: "{{ keycloak_realm_management_client_id }}"
+    enabled: true
+    public_client: false
+    client_authenticator_type: client-secret
+    standard_flow_enabled: false
+    direct_access_grants_enabled: false
+    service_accounts_enabled: true
+    full_scope_allowed: false
+    state: present
+  no_log: true
+
+- name: Find Keycloak realm management client
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/clients?clientId={{ keycloak_realm_management_client_id | urlencode }}"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_realm_management_client_lookup
+  changed_when: false
+  no_log: true
+
+- name: Require one exact Keycloak realm management client
+  ansible.builtin.assert:
+    that:
+      - keycloak_realm_management_client_matches | length == 1
+    fail_msg: "Expected exactly one Keycloak master realm client named {{ keycloak_realm_management_client_id }}."
+  vars:
+    keycloak_realm_management_client_matches: "{{ keycloak_realm_management_client_lookup.json | selectattr('clientId', 'equalto', keycloak_realm_management_client_id) | list }}"
+
+- name: Set Keycloak realm management client UUID
+  ansible.builtin.set_fact:
+    keycloak_realm_management_client_uuid: "{{ (keycloak_realm_management_client_lookup.json | selectattr('clientId', 'equalto', keycloak_realm_management_client_id) | list | first).id }}"
+  no_log: true
+
+- name: Check Keycloak secret rotation marker role
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/clients/{{ keycloak_realm_management_client_uuid }}/roles/{{ keycloak_realm_management_rotation_role }}"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: [200, 404]
+  register: keycloak_realm_management_rotation_role_lookup
+  changed_when: false
+  no_log: true
+
+- name: Create Keycloak secret rotation marker role
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/clients/{{ keycloak_realm_management_client_uuid }}/roles"
+    method: POST
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    body_format: json
+    body:
+      name: "{{ keycloak_realm_management_rotation_role }}"
+      description: "Selects this client for admin-node managed secret rotation."
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 201
+  when: keycloak_realm_management_rotation_role_lookup.status == 404
+  no_log: true
+
+- name: Read Keycloak master realm client profiles
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/client-policies/profiles"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_realm_management_profiles_response
+  changed_when: false
+  no_log: true
+
+- name: Build Keycloak secret rotation profile
+  ansible.builtin.set_fact:
+    keycloak_realm_management_profile:
+      name: "{{ keycloak_realm_management_profile_name }}"
+      description: "Rotate the Crossplane Keycloak client secret every week with a two-day overlap."
+      executors:
+        - executor: secret-rotation
+          configuration:
+            expiration-period: "{{ keycloak_config.realm_management.rotation.period_seconds | int }}"
+            rotated-expiration-period: "{{ keycloak_config.realm_management.rotation.overlap_seconds | int }}"
+            remaining-rotation-period: "{{ keycloak_config.realm_management.rotation.renew_before_seconds | int }}"
+
+- name: Build effective Keycloak master realm client profiles
+  ansible.builtin.set_fact:
+    keycloak_realm_management_profiles: >-
+      {{
+        (keycloak_realm_management_profiles_response.json.profiles | default([])
+          | rejectattr('name', 'equalto', keycloak_realm_management_profile_name) | list)
+        + [keycloak_realm_management_profile]
+      }}
+
+- name: Configure Keycloak secret rotation profile
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/client-policies/profiles"
+    method: PUT
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    body_format: json
+    body:
+      profiles: "{{ keycloak_realm_management_profiles }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: [200, 204]
+  when: keycloak_realm_management_profiles != (keycloak_realm_management_profiles_response.json.profiles | default([]))
+  no_log: true
+
+- name: Read Keycloak master realm client policies
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/client-policies/policies"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_realm_management_policies_response
+  changed_when: false
+  no_log: true
+
+- name: Build Keycloak Crossplane secret rotation policy
+  ansible.builtin.set_fact:
+    keycloak_realm_management_policy:
+      name: "{{ keycloak_realm_management_policy_name }}"
+      description: "Apply weekly secret rotation only to the Crossplane realm management client."
+      enabled: true
+      conditions:
+        - condition: client-roles
+          configuration:
+            roles:
+              - "{{ keycloak_realm_management_rotation_role }}"
+      profiles:
+        - "{{ keycloak_realm_management_profile_name }}"
+
+- name: Build effective Keycloak master realm client policies
+  ansible.builtin.set_fact:
+    keycloak_realm_management_policies: >-
+      {{
+        (keycloak_realm_management_policies_response.json.policies | default([])
+          | rejectattr('name', 'equalto', keycloak_realm_management_policy_name) | list)
+        + [keycloak_realm_management_policy]
+      }}
+
+- name: Configure Keycloak Crossplane secret rotation policy
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/client-policies/policies"
+    method: PUT
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    body_format: json
+    body:
+      policies: "{{ keycloak_realm_management_policies }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: [200, 204]
+  when: keycloak_realm_management_policies != (keycloak_realm_management_policies_response.json.policies | default([]))
+  no_log: true
+
+- name: Read Keycloak realm management client representation
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/clients/{{ keycloak_realm_management_client_uuid }}"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_realm_management_client_response
+  changed_when: false
+  no_log: true
+
+- name: Initialize Keycloak realm management client rotation metadata
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/clients/{{ keycloak_realm_management_client_uuid }}"
+    method: PUT
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    body_format: json
+    body: "{{ keycloak_realm_management_client_response.json }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: [200, 204]
+  when: (keycloak_realm_management_client_response.json.attributes | default({})).get('client.secret.expiration.time', '') | length == 0
+  no_log: true
+
+- name: Reload Keycloak realm management client representation
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/clients/{{ keycloak_realm_management_client_uuid }}"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_realm_management_client_final
+  changed_when: false
+  no_log: true
+
+- name: Rotate Keycloak realm management client secret before expiry
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/clients/{{ keycloak_realm_management_client_uuid }}/client-secret"
+    method: POST
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_realm_management_rotated_secret
+  when: >-
+    ((keycloak_realm_management_client_final.json.attributes | default({})).get('client.secret.expiration.time', '0') | int)
+    <= ((ansible_date_time.epoch | int) + (keycloak_config.realm_management.rotation.renew_before_seconds | int))
+  no_log: true
+
+- name: Read current Keycloak realm management client secret
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/clients/{{ keycloak_realm_management_client_uuid }}/client-secret"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_realm_management_secret
+  changed_when: false
+  no_log: true
+
+- name: Read Keycloak realm management service account
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/clients/{{ keycloak_realm_management_client_uuid }}/service-account-user"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_realm_management_service_account
+  changed_when: false
+  no_log: true
+
+- name: Read required Keycloak master realm roles
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/roles/{{ keycloak_realm_management_role_name | urlencode }}"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  loop: "{{ keycloak_config.realm_management.realm_roles }}"
+  loop_control:
+    loop_var: keycloak_realm_management_role_name
+    label: "{{ keycloak_realm_management_role_name }}"
+  register: keycloak_realm_management_role_representations
+  changed_when: false
+  no_log: true
+
+- name: Read current Keycloak realm management service account roles
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/users/{{ keycloak_realm_management_service_account.json.id }}/role-mappings/realm"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_realm_management_current_roles
+  changed_when: false
+  no_log: true
+
+- name: Assign missing Keycloak master realm roles to service account
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/users/{{ keycloak_realm_management_service_account.json.id }}/role-mappings/realm"
+    method: POST
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    body_format: json
+    body: "{{ keycloak_realm_management_missing_roles }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 204
+  vars:
+    keycloak_realm_management_missing_roles: >-
+      {{
+        keycloak_realm_management_role_representations.results | map(attribute='json')
+        | rejectattr('name', 'in', keycloak_realm_management_current_roles.json | map(attribute='name') | list)
+        | list
+      }}
+  when: keycloak_realm_management_missing_roles | length > 0
+  no_log: true
+
+- name: Read current Keycloak realm management client scope mappings
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/clients/{{ keycloak_realm_management_client_uuid }}/scope-mappings/realm"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_realm_management_scope_roles
+  changed_when: false
+  no_log: true
+
+- name: Add missing Keycloak master realm roles to client scope
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/clients/{{ keycloak_realm_management_client_uuid }}/scope-mappings/realm"
+    method: POST
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    body_format: json
+    body: "{{ keycloak_realm_management_missing_scope_roles }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 204
+  vars:
+    keycloak_realm_management_missing_scope_roles: >-
+      {{
+        keycloak_realm_management_role_representations.results | map(attribute='json')
+        | rejectattr('name', 'in', keycloak_realm_management_scope_roles.json | map(attribute='name') | list)
+        | list
+      }}
+  when: keycloak_realm_management_missing_scope_roles | length > 0
+  no_log: true
+
+- name: Validate Keycloak realm management client credentials
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/realms/master/protocol/openid-connect/token"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      grant_type: client_credentials
+      client_id: "{{ keycloak_realm_management_client_id }}"
+      client_secret: "{{ keycloak_realm_management_secret.json.value }}"
+    return_content: true
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_realm_management_token
+  changed_when: false
+  no_log: true
+
+- name: Validate Keycloak realm management API authorization
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ keycloak_realm_management_token.json.access_token }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  changed_when: false
+  no_log: true
+
+- name: Queue Keycloak realm management credentials for OpenBao
+  ansible.builtin.set_fact:
+    keycloak_openbao_credentials: >-
+      {{
+        keycloak_openbao_credentials + [{
+          'mount': keycloak_config.realm_management.openbao.mount | regex_replace('^/+|/+$', ''),
+          'path': keycloak_config.realm_management.openbao.path | regex_replace('^/+|/+$', ''),
+          'data': {
+            'client_id': keycloak_realm_management_client_id,
+            'client_secret': keycloak_realm_management_secret.json.value,
+            'realm': 'master',
+            'url': keycloak_config_url,
+            'base_path': '',
+            'token_url': keycloak_config_url ~ '/realms/master/protocol/openid-connect/token',
+            'credentials': ({
+              'client_id': keycloak_realm_management_client_id,
+              'client_secret': keycloak_realm_management_secret.json.value,
+              'realm': 'master',
+              'url': keycloak_config_url,
+              'base_path': ''
+            } | to_json)
+          }
+        }]
+      }}
+  no_log: true
