@@ -17,10 +17,17 @@ Conservez la clé privée hors du dépôt Git.
 
 ## Installer la clé privée sur l'admin-node
 
+Le répertoire `bin/` est généré localement et n'est pas versionné. Après avoir cloné le dépôt, construisez d'abord la CLI :
+
+```bash
+cd /opt/homelab-admin-node
+sudo make build-admin-node
+```
+
 Copiez ensuite la clé privée sur le nœud d'administration :
 
 ```bash
-sudo ./bin/admin-node secret install-age-key /path/to/age-key.txt
+sudo /opt/homelab-admin-node/bin/admin-node secret install-age-key /path/to/age-key.txt
 ```
 
 La commande crée `/etc/sops/age/keys.txt` avec les bons droits.

@@ -21,19 +21,26 @@ Use this path when you already know Proxmox cloud-init, Git, SOPS, and Ansible.
    .sops.yaml
    ```
 
-6. Generate an age key and install the private key on the node:
+6. Build the CLI, which is generated locally and is not stored in Git:
 
    ```bash
-   sudo ./bin/admin-node secret install-age-key /path/to/age-key.txt
+   cd /opt/homelab-admin-node
+   sudo make build-admin-node
    ```
 
-7. Copy or clone the config repo into:
+7. Generate an age key and install the private key on the node:
+
+   ```bash
+   sudo /opt/homelab-admin-node/bin/admin-node secret install-age-key /path/to/age-key.txt
+   ```
+
+8. Copy or clone the config repo into:
 
    ```text
    /etc/admin-config/homelab-node-admin-config
    ```
 
-8. Select the `di` inventory for this VM:
+9. Select the inventory for this VM. The example below uses `di`; use `pr` instead for the production environment:
 
    ```bash
    sudo systemctl edit admin-converge.service
@@ -54,40 +61,42 @@ Use this path when you already know Proxmox cloud-init, Git, SOPS, and Ansible.
    sudo systemctl daemon-reload
    ```
 
-9. Confirm the initial mode is locked:
+10. Confirm the initial mode is locked:
 
    ```bash
    cat /etc/admin-node/mode
    ```
 
-10. Switch to init mode and converge:
+11. Switch to init mode and converge:
 
    ```bash
    sudo /opt/homelab-admin-node/bin/admin-node mode set init
-   sudo /opt/homelab-admin-node/bin/admin-node converge run
+   sudo systemctl start admin-converge.service
    ```
 
-11. Initialize OpenBao if required by your deployment:
+   Starting the service uses the `INVENTORY_PATH` configured in its systemd drop-in. A direct `sudo ... admin-node converge run` command does not inherit that service environment.
+
+12. Initialize OpenBao if required by your deployment:
 
     ```bash
     sudo /opt/homelab-admin-node/bin/admin-node openbao init-if-needed
     ```
 
-12. Update `di/group_vars/secrets.sops.yaml` with the generated OpenBao token, then commit and push only the encrypted config repo.
-13. Switch to normal mode and converge:
+13. Update the selected environment's `group_vars/secrets.sops.yaml` with the generated OpenBao token (`pr/group_vars/secrets.sops.yaml` for production), then commit and push only the encrypted config repo.
+14. Switch to normal mode and converge:
 
     ```bash
     sudo /opt/homelab-admin-node/bin/admin-node mode set normal
-    sudo /opt/homelab-admin-node/bin/admin-node converge run
+    sudo systemctl start admin-converge.service
     ```
 
-14. Validate the node:
+15. Validate the node:
 
     ```bash
     sudo /opt/homelab-admin-node/bin/admin-node validate all
     ```
 
-15. Run a first backup after validation succeeds:
+16. Run a first backup after validation succeeds:
 
     ```bash
     sudo /opt/homelab-admin-node/bin/admin-node backup run
