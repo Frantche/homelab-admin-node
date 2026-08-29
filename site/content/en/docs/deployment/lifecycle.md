@@ -12,11 +12,13 @@ sudo git -C /etc/admin-config/homelab-node-admin-config status --short --branch
 systemctl cat admin-converge.service
 ```
 
-For the current VM, the inventory should be:
+For an integration VM, the inventory should be the following path; use the corresponding `pr/inventory.ini` path for production:
 
 ```text
 /etc/admin-config/homelab-node-admin-config/di/inventory.ini
 ```
+
+The inventory configured in the systemd drop-in is available only to the service. The commands below therefore start `admin-converge.service`; invoking the CLI directly with `sudo` would require passing `INVENTORY_PATH` explicitly.
 
 ## Locked mode
 
@@ -34,7 +36,7 @@ Switch to `init` mode:
 
 ```bash
 sudo /opt/homelab-admin-node/bin/admin-node mode set init
-sudo /opt/homelab-admin-node/bin/admin-node converge run
+sudo systemctl start admin-converge.service
 ```
 
 Init mode deploys the first service state needed to bootstrap the node.
@@ -45,12 +47,12 @@ Initialize OpenBao if needed:
 sudo /opt/homelab-admin-node/bin/admin-node openbao init-if-needed
 ```
 
-When OpenBao generates or updates encrypted material, update the encrypted config repo before moving to normal mode:
+When OpenBao generates or updates encrypted material, update the selected environment in the encrypted config repo before moving to normal mode. This production example uses `pr`:
 
 ```bash
 cd /etc/admin-config/homelab-node-admin-config
-sudo env SOPS_AGE_KEY_FILE=/etc/sops/age/keys.txt sops di/group_vars/secrets.sops.yaml
-sudo git add di/group_vars/secrets.sops.yaml
+sudo env SOPS_AGE_KEY_FILE=/etc/sops/age/keys.txt sops pr/group_vars/secrets.sops.yaml
+sudo git add pr/group_vars/secrets.sops.yaml
 sudo git commit -m "update OpenBao bootstrap token"
 sudo git push
 ```
@@ -63,7 +65,7 @@ Switch to steady-state operation:
 
 ```bash
 sudo /opt/homelab-admin-node/bin/admin-node mode set normal
-sudo /opt/homelab-admin-node/bin/admin-node converge run
+sudo systemctl start admin-converge.service
 ```
 
 Normal mode deploys and validates the operational service set, then runs backup tasks according to configuration.
@@ -71,7 +73,8 @@ Normal mode deploys and validates the operational service set, then runs backup 
 If the code repo is already aligned and root cannot fetch it over SSH, use `--skip-git-pull` for the local convergence run:
 
 ```bash
-sudo /opt/homelab-admin-node/bin/admin-node converge run --skip-git-pull
+sudo env INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/pr/inventory.ini \
+  /opt/homelab-admin-node/bin/admin-node converge run --skip-git-pull
 ```
 
 ## Validate

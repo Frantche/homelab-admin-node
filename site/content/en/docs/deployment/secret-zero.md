@@ -52,20 +52,21 @@ Keep an offline copy of the private key in a password manager or another secure 
 
 Before the first convergence, the age private key is the only local secret that must already exist on the VM. The encrypted config repo must contain the application secrets needed to create databases, users, admin accounts, and provider credentials.
 
-OpenBao is different: its root token is generated during initialization. Before initialization, keep `openbao.root_token` and `openbao_config.root_token` empty or absent in `di/group_vars/secrets.sops.yaml`.
+OpenBao is different: its root token is generated during initialization. Before initialization, keep `openbao.root_token` and `openbao_config.root_token` empty or absent in the selected environment's secrets file, such as `pr/group_vars/secrets.sops.yaml` for production.
 
 During initialization:
 
 ```bash
 sudo /opt/homelab-admin-node/bin/admin-node mode set init
-sudo /opt/homelab-admin-node/bin/admin-node converge run
+sudo env INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/pr/inventory.ini \
+  /opt/homelab-admin-node/bin/admin-node converge run
 sudo /opt/homelab-admin-node/bin/admin-node openbao init-if-needed
 ```
 
 After initialization, store only the encrypted result:
 
 1. Read the generated OpenBao root token from the local encrypted material.
-2. Update `di/group_vars/secrets.sops.yaml` with SOPS.
+2. Update the selected environment's `group_vars/secrets.sops.yaml` with SOPS.
 3. Set the token values needed by the OpenBao configuration role.
 4. Commit and push the encrypted config repo.
 

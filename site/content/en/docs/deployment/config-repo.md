@@ -89,7 +89,7 @@ On the node, place or clone the repo at:
 /etc/admin-config/homelab-node-admin-config
 ```
 
-The active environment is selected by `INVENTORY_PATH`. For the current VM, use `di`:
+The active environment is selected by `INVENTORY_PATH`. Use `di` for the integration environment or `pr` for the production environment. For example, to select `di`:
 
 ```text
 INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/di/inventory.ini
@@ -123,4 +123,17 @@ Reload systemd after changing the drop-in:
 
 ```bash
 sudo systemctl daemon-reload
+```
+
+The drop-in environment belongs to `admin-converge.service`; an interactive shell or a command launched directly with `sudo` does not inherit it. Start convergence through the configured service with:
+
+```bash
+sudo systemctl start admin-converge.service
+```
+
+If you intentionally invoke the CLI directly, pass the inventory explicitly. This production example selects `pr`:
+
+```bash
+sudo env INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/pr/inventory.ini \
+  /opt/homelab-admin-node/bin/admin-node converge run
 ```

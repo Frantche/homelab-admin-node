@@ -25,22 +25,25 @@ the configured `GOPROXY` and `GOSUMDB`. If the download or verification fails,
 the convergence fails and the existing CLI remains in place because the build
 installs its replacement atomically.
 
-Run:
+For a manual run, pass the selected inventory explicitly. This production example uses `pr`:
 
 ```bash
-sudo /opt/homelab-admin-node/bin/admin-node converge run
+sudo env INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/pr/inventory.ini \
+  /opt/homelab-admin-node/bin/admin-node converge run
 ```
 
 Skip the repository pull when testing local changes:
 
 ```bash
-sudo /opt/homelab-admin-node/bin/admin-node converge run --skip-git-pull
+sudo env INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/pr/inventory.ini \
+  /opt/homelab-admin-node/bin/admin-node converge run --skip-git-pull
 ```
 
 Pass extra Ansible arguments:
 
 ```bash
-sudo /opt/homelab-admin-node/bin/admin-node converge run --extra-vars "--check"
+sudo env INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/pr/inventory.ini \
+  /opt/homelab-admin-node/bin/admin-node converge run --extra-vars "--check"
 ```
 
 The built-in legacy inventory path is:
@@ -61,6 +64,14 @@ For boot and timer runs, keep that setting in a systemd drop-in:
 [Service]
 Environment=INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/di/inventory.ini
 ```
+
+That drop-in is applied only when systemd launches the service. Start a convergence with the configured service environment using:
+
+```bash
+sudo systemctl start admin-converge.service
+```
+
+A direct `sudo ... admin-node converge run` invocation does not inherit the service environment and must pass `INVENTORY_PATH`, as shown above.
 
 The explicit CI/production execution mode, service domains, the admin-node LAN
 address, runtime paths, feature flags, and backup policy are loaded from the managed
@@ -87,5 +98,6 @@ hardening:
 When the code repository is already on the intended commit, or root cannot fetch the code repository, use:
 
 ```bash
-sudo /opt/homelab-admin-node/bin/admin-node converge run --skip-git-pull
+sudo env INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/pr/inventory.ini \
+  /opt/homelab-admin-node/bin/admin-node converge run --skip-git-pull
 ```

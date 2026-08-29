@@ -40,7 +40,7 @@ Use this path when you already know Proxmox cloud-init, Git, SOPS, and Ansible.
    /etc/admin-config/homelab-node-admin-config
    ```
 
-9. Select the `di` inventory for this VM:
+9. Select the inventory for this VM. The example below uses `di`; use `pr` instead for the production environment:
 
    ```bash
    sudo systemctl edit admin-converge.service
@@ -71,8 +71,10 @@ Use this path when you already know Proxmox cloud-init, Git, SOPS, and Ansible.
 
    ```bash
    sudo /opt/homelab-admin-node/bin/admin-node mode set init
-   sudo /opt/homelab-admin-node/bin/admin-node converge run
+   sudo systemctl start admin-converge.service
    ```
+
+   Starting the service uses the `INVENTORY_PATH` configured in its systemd drop-in. A direct `sudo ... admin-node converge run` command does not inherit that service environment.
 
 12. Initialize OpenBao if required by your deployment:
 
@@ -80,12 +82,12 @@ Use this path when you already know Proxmox cloud-init, Git, SOPS, and Ansible.
     sudo /opt/homelab-admin-node/bin/admin-node openbao init-if-needed
     ```
 
-13. Update `di/group_vars/secrets.sops.yaml` with the generated OpenBao token, then commit and push only the encrypted config repo.
+13. Update the selected environment's `group_vars/secrets.sops.yaml` with the generated OpenBao token (`pr/group_vars/secrets.sops.yaml` for production), then commit and push only the encrypted config repo.
 14. Switch to normal mode and converge:
 
     ```bash
     sudo /opt/homelab-admin-node/bin/admin-node mode set normal
-    sudo /opt/homelab-admin-node/bin/admin-node converge run
+    sudo systemctl start admin-converge.service
     ```
 
 15. Validate the node:

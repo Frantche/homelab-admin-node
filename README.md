@@ -33,10 +33,10 @@ The project keeps the admin node reproducible and recoverable:
 2. Attach `cloud-init/admin-01.user-data.yaml`.
 3. Boot the VM and wait for cloud-init to clone this repository into `/opt/homelab-admin-node`.
 4. Create or clone the private config repository under `/etc/admin-config/homelab-node-admin-config`.
-   The current layout uses `di/` and `pr/`; the VM selects `di` with:
+   The current layout uses `di/` and `pr/`. Select `di` for integration or `pr` for production. A production VM uses:
 
    ```text
-   INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/di/inventory.ini
+   INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/pr/inventory.ini
    ```
 
 5. Build the CLI, which is generated locally and is not stored in Git:
@@ -56,7 +56,8 @@ The project keeps the admin node reproducible and recoverable:
 
    ```bash
    sudo /opt/homelab-admin-node/bin/admin-node mode set init
-   sudo /opt/homelab-admin-node/bin/admin-node converge run
+   sudo env INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/pr/inventory.ini \
+     /opt/homelab-admin-node/bin/admin-node converge run
    sudo /opt/homelab-admin-node/bin/admin-node openbao init-if-needed
    ```
 
@@ -65,7 +66,8 @@ The project keeps the admin node reproducible and recoverable:
 
    ```bash
    sudo /opt/homelab-admin-node/bin/admin-node mode set normal
-   sudo /opt/homelab-admin-node/bin/admin-node converge run
+   sudo env INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/pr/inventory.ini \
+     /opt/homelab-admin-node/bin/admin-node converge run
    sudo /opt/homelab-admin-node/bin/admin-node validate all
    ```
 
