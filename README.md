@@ -39,13 +39,20 @@ The project keeps the admin node reproducible and recoverable:
    INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/di/inventory.ini
    ```
 
-5. Install the age private key with:
+5. Build the CLI, which is generated locally and is not stored in Git:
+
+   ```bash
+   cd /opt/homelab-admin-node
+   sudo make build-admin-node
+   ```
+
+6. Install the age private key with:
 
    ```bash
    sudo /opt/homelab-admin-node/bin/admin-node secret install-age-key ./age-key.txt
    ```
 
-6. Switch to init mode, converge, then initialize OpenBao if needed:
+7. Switch to init mode, converge, then initialize OpenBao if needed:
 
    ```bash
    sudo /opt/homelab-admin-node/bin/admin-node mode set init
@@ -53,8 +60,8 @@ The project keeps the admin node reproducible and recoverable:
    sudo /opt/homelab-admin-node/bin/admin-node openbao init-if-needed
    ```
 
-7. Commit the generated or updated encrypted secrets to the private config repo.
-8. Switch to normal mode and validate:
+8. Commit the generated or updated encrypted secrets to the private config repo.
+9. Switch to normal mode and validate:
 
    ```bash
    sudo /opt/homelab-admin-node/bin/admin-node mode set normal

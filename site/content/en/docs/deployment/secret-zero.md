@@ -23,6 +23,15 @@ creation_rules:
 
 For the first deployment pass, both environments can use the admin/NAS age recipient. Do not create separate `di` and `pr` age keys until the access model is ready to enforce them.
 
+The `bin/` directory is generated locally and is not stored in Git. After cloning the repository, build the CLI from the repository root:
+
+```bash
+cd /opt/homelab-admin-node
+sudo make build-admin-node
+```
+
+The cloud-init convergence timer also runs this idempotent build, but running it explicitly makes the CLI available immediately for the secret-zero step.
+
 Install the private key on the admin node:
 
 ```bash
