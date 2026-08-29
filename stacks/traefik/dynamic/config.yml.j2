@@ -4,7 +4,12 @@ http:
       rule: "Host(`{{ service_domains.openbao }}`)"
       entryPoints:
         - websecure
+{% if traefik_letsencrypt_enabled | default(false) %}
+      tls:
+        certResolver: letsencrypt
+{% else %}
       tls: true
+{% endif %}
       service: openbao
       middlewares:
         - interactive-protection
@@ -12,7 +17,12 @@ http:
       rule: "Host(`{{ service_domains.keycloak }}`)"
       entryPoints:
         - websecure
+{% if traefik_letsencrypt_enabled | default(false) %}
+      tls:
+        certResolver: letsencrypt
+{% else %}
       tls: true
+{% endif %}
       service: keycloak
       middlewares:
         - interactive-protection
@@ -20,7 +30,12 @@ http:
       rule: "Host(`{{ service_domains.gitea | default('git.example.com') }}`)"
       entryPoints:
         - websecure
+{% if traefik_letsencrypt_enabled | default(false) %}
+      tls:
+        certResolver: letsencrypt
+{% else %}
       tls: true
+{% endif %}
       service: gitea
       # Git LFS uploads are intentionally not subject to request rate or body
       # limits. Concurrency still protects the backend from exhaustion.
@@ -30,7 +45,12 @@ http:
       rule: "Host(`{{ service_domains.harbor }}`)"
       entryPoints:
         - websecure
+{% if traefik_letsencrypt_enabled | default(false) %}
+      tls:
+        certResolver: letsencrypt
+{% else %}
       tls: true
+{% endif %}
       service: harbor
       # Registry pushes can be large and long-lived: do not add buffering or a
       # request rate limit to this router.
@@ -41,7 +61,12 @@ http:
       rule: "Host(`{{ service_domains.traefik }}`)"
       entryPoints:
         - websecure
+{% if traefik_letsencrypt_enabled | default(false) %}
+      tls:
+        certResolver: letsencrypt
+{% else %}
       tls: true
+{% endif %}
       service: api@internal
       middlewares:
         - dashboard-auth
@@ -52,7 +77,12 @@ http:
       rule: "Host(`{{ external_service.hostname }}`)"
       entryPoints:
         - websecure
+{% if traefik_letsencrypt_enabled | default(false) %}
+      tls:
+        certResolver: letsencrypt
+{% else %}
       tls: true
+{% endif %}
       service: {{ external_service.name }}
       middlewares:
         - security-headers
