@@ -14,6 +14,7 @@ const (
 	DefaultRestoreIDFile    = "/etc/admin-node/restore-id"
 	DefaultBackupRoot       = "/srv/admin/backups/local"
 	DefaultBackupEnvFile    = "/srv/admin/env/backup.env"
+	DefaultRuntimeEnvFile   = "/etc/admin-node/runtime.env"
 	DefaultOperationLock    = "/run/admin-node-operation.lock"
 	DefaultGiteaStackPath   = "/srv/admin/data/gitea-stack"
 	DefaultSnapshotRoot     = "/srv/admin/backups/snapshots"
@@ -82,6 +83,17 @@ func Load() (Config, error) {
 	values, loaded, err := readManagedRuntimeFile(backupEnvFile)
 	if err != nil {
 		return Config{}, err
+	}
+	runtimeEnvFile := getenv("ADMIN_RUNTIME_ENV_FILE", DefaultRuntimeEnvFile)
+	if runtimeEnvFile != backupEnvFile {
+		runtimeValues, runtimeLoaded, err := readManagedRuntimeFile(runtimeEnvFile)
+		if err != nil {
+			return Config{}, err
+		}
+		for key, value := range runtimeValues {
+			values[key] = value
+		}
+		loaded = loaded || runtimeLoaded
 	}
 	return load(values, loaded)
 }

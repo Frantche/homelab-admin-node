@@ -110,7 +110,7 @@ func (a app) printRootUsage() {
 	fmt.Fprintln(a.out, "  openbao    Initialize and unseal OpenBao")
 	fmt.Fprintln(a.out, "  ci         Run CI helper operations")
 	fmt.Fprintln(a.out)
-	fmt.Fprintln(a.out, "Runtime configuration: process environment, then /srv/admin/env/backup.env, then safe defaults.")
+	fmt.Fprintln(a.out, "Runtime configuration: process environment, then /etc/admin-node/runtime.env, then /srv/admin/env/backup.env, then safe defaults.")
 }
 
 func (a app) requireOperationalConfig() bool {
