@@ -54,7 +54,9 @@ Before the first convergence, the age private key is the only local secret that 
 
 OpenBao is different: its root token is generated during initialization. Before initialization, keep `openbao.root_token` and `openbao_config.root_token` empty or absent in the selected environment's secrets file, such as `pr/group_vars/secrets.sops.yaml` for production.
 
-During initialization:
+During initialization, convergence in `init` mode automatically runs
+`openbao init-if-needed`. The final command below is optional and can be used
+to verify or retry the idempotent operation explicitly:
 
 ```bash
 sudo /opt/homelab-admin-node/bin/admin-node mode set init

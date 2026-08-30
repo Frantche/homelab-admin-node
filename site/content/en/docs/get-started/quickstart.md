@@ -76,7 +76,8 @@ Use this path when you already know Proxmox cloud-init, Git, SOPS, and Ansible.
 
    Starting the service uses the `INVENTORY_PATH` configured in its systemd drop-in. A direct `sudo ... admin-node converge run` command does not inherit that service environment.
 
-12. Initialize OpenBao if required by your deployment:
+12. The `init` convergence automatically initializes OpenBao when required.
+    Optionally verify or retry that idempotent operation explicitly:
 
     ```bash
     sudo /opt/homelab-admin-node/bin/admin-node openbao init-if-needed

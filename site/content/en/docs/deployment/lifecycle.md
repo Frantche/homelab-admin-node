@@ -41,7 +41,9 @@ sudo systemctl start admin-converge.service
 
 Init mode deploys the first service state needed to bootstrap the node.
 
-Initialize OpenBao if needed:
+The preceding convergence automatically initializes OpenBao when needed. The
+following idempotent command is optional and is useful to verify or retry the
+operation explicitly:
 
 ```bash
 sudo /opt/homelab-admin-node/bin/admin-node openbao init-if-needed

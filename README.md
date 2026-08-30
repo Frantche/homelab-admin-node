@@ -52,7 +52,9 @@ The project keeps the admin node reproducible and recoverable:
    sudo /opt/homelab-admin-node/bin/admin-node secret install-age-key ./age-key.txt
    ```
 
-7. Switch to init mode, converge, then initialize OpenBao if needed:
+7. Switch to init mode and converge. This convergence automatically runs the
+   idempotent OpenBao initialization. The final command below is optional and
+   can be used to verify or retry that operation explicitly:
 
    ```bash
    sudo /opt/homelab-admin-node/bin/admin-node mode set init
