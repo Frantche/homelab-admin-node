@@ -26,6 +26,10 @@ traefik:
 | `traefik.access_logs` | `true` | Enables access logs. |
 | `traefik.local_tls_enabled` | `false` | Forces local CA certificates instead of ACME. Local TLS is also used in CI or when Cloudflare DNS/ACME inputs are missing. |
 
+See [TLS Certificates]({{< relref "/docs/configuration/tls-certificates" >}})
+for the complete local CA and Let's Encrypt activation procedures, client trust,
+mode-selection rules, and verification commands.
+
 ## Pi-hole DNS
 
 Pi-hole integration creates or validates local DNS records.

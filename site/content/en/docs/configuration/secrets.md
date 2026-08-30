@@ -72,4 +72,12 @@ Before the first OpenBao initialization, keep generated OpenBao values empty or 
 
 After `admin-node openbao init-if-needed` succeeds, update the encrypted environment secrets with the generated OpenBao root token values consumed by the OpenBao configuration role. Commit and push only the SOPS-encrypted file.
 
+The generated token is in
+`/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml`. Copy the
+`openbao.root_token` value to the same key in the selected environment's
+encrypted config-repo file. The generated `openbao_config.root_token` value is
+identical and exists only as a fallback; do not store both. See
+[Secret Zero]({{< relref "/docs/deployment/secret-zero#secret-lifecycle" >}})
+for the exact retrieval and editing commands.
+
 The local OpenBao unseal material is recovery material, not normal deployment configuration. Store a secure offline copy and do not commit decrypted tokens or unseal keys.

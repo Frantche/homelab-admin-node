@@ -42,7 +42,13 @@ OpenBao root tokens are generated during initialization. After `openbao init-if-
 
 ## TLS names
 
-When adding or renaming service domains, verify that the local certificate contains every hostname used by validation. If local TLS certificates were generated before the domain was added, regenerate them and restart Traefik.
+When adding or renaming service domains, run convergence. In local TLS mode the
+role inspects the certificate SANs and regenerates the local CA and server
+certificate set when a required name is missing. Re-import the new
+`/srv/admin/certs/ca.pem` on clients after the CA changes. In Let's Encrypt mode,
+check the Traefik logs for DNS-01 errors and confirm that the Cloudflare token
+covers every required DNS zone. See
+[TLS Certificates]({{< relref "/docs/configuration/tls-certificates" >}}).
 
 ## External integrations
 

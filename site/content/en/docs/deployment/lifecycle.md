@@ -41,13 +41,20 @@ sudo systemctl start admin-converge.service
 
 Init mode deploys the first service state needed to bootstrap the node.
 
-Initialize OpenBao if needed:
+The preceding convergence automatically initializes OpenBao when needed. The
+following idempotent command is optional and is useful to verify or retry the
+operation explicitly:
 
 ```bash
 sudo /opt/homelab-admin-node/bin/admin-node openbao init-if-needed
 ```
 
 When OpenBao generates or updates encrypted material, update the selected environment in the encrypted config repo before moving to normal mode. This production example uses `pr`:
+
+Retrieve the generated `openbao.root_token` and store it under the same key in
+`pr/group_vars/secrets.sops.yaml`. The exact source path, extraction command,
+and field precedence are documented in
+[Secret Zero]({{< relref "/docs/deployment/secret-zero#secret-lifecycle" >}}).
 
 ```bash
 cd /etc/admin-config/homelab-node-admin-config

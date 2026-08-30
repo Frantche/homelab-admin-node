@@ -54,7 +54,9 @@ Before the first convergence, the age private key is the only local secret that 
 
 OpenBao is different: its root token is generated during initialization. Before initialization, keep `openbao.root_token` and `openbao_config.root_token` empty or absent in the selected environment's secrets file, such as `pr/group_vars/secrets.sops.yaml` for production.
 
-During initialization:
+During initialization, convergence in `init` mode automatically runs
+`openbao init-if-needed`. The final command below is optional and can be used
+to verify or retry the idempotent operation explicitly:
 
 ```bash
 sudo /opt/homelab-admin-node/bin/admin-node mode set init
@@ -65,9 +67,46 @@ sudo /opt/homelab-admin-node/bin/admin-node openbao init-if-needed
 
 After initialization, store only the encrypted result:
 
-1. Read the generated OpenBao root token from the local encrypted material.
-2. Update the selected environment's `group_vars/secrets.sops.yaml` with SOPS.
-3. Set the token values needed by the OpenBao configuration role.
-4. Commit and push the encrypted config repo.
+1. Confirm that initialization created
+   `/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml`. This local,
+   SOPS-encrypted recovery file contains the unseal keysets and the generated
+   root token.
+2. Read the `openbao.root_token` scalar with the age key:
+
+   ```bash
+   sudo env SOPS_AGE_KEY_FILE=/etc/sops/age/keys.txt \
+     sops --decrypt --extract '["openbao"]["root_token"]' \
+     /opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml
+   ```
+
+   Run this only in a private terminal: the command prints the token. The
+   generated file also contains `openbao_config.root_token` with the same value
+   for compatibility.
+3. Edit the selected environment's encrypted file, for example production:
+
+   ```bash
+   cd /etc/admin-config/homelab-node-admin-config
+   sudo env SOPS_AGE_KEY_FILE=/etc/sops/age/keys.txt \
+     sops pr/group_vars/secrets.sops.yaml
+   ```
+
+4. Store the value once in the canonical location:
+
+   ```yaml
+   openbao:
+     root_token: "paste-the-generated-value-here"
+   ```
+
+   `openbao.root_token` takes precedence. Do not duplicate it under
+   `openbao_config.root_token`, which is only a fallback for older
+   configurations.
+5. Commit and push only the encrypted config-repo file. Do not add the local
+   recovery file to this repository or the private config repo.
+
+The OpenBao configuration role can consume the local generated recovery file
+immediately after initialization, but copying the canonical token to the
+encrypted config repo makes the environment configuration reproducible. Keep a
+separate protected offline copy of the complete recovery file because the root
+token alone cannot unseal OpenBao.
 
 Never commit the age private key, decrypted SOPS files, raw OpenBao root token, unseal keys, Cloudflare credentials, Pi-hole tokens, or provider credentials.

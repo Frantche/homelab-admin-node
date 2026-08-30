@@ -52,7 +52,9 @@ The project keeps the admin node reproducible and recoverable:
    sudo /opt/homelab-admin-node/bin/admin-node secret install-age-key ./age-key.txt
    ```
 
-7. Switch to init mode, converge, then initialize OpenBao if needed:
+7. Switch to init mode and converge. This convergence automatically runs the
+   idempotent OpenBao initialization. The final command below is optional and
+   can be used to verify or retry that operation explicitly:
 
    ```bash
    sudo /opt/homelab-admin-node/bin/admin-node mode set init
@@ -61,7 +63,12 @@ The project keeps the admin node reproducible and recoverable:
    sudo /opt/homelab-admin-node/bin/admin-node openbao init-if-needed
    ```
 
-8. Commit the generated or updated encrypted secrets to the private config repo.
+8. Retrieve `openbao.root_token` from the generated
+   `/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml`, copy it to the
+   same key in the selected environment's SOPS file, and commit only that
+   encrypted config-repo file. See the
+   [secret-zero guide](site/content/en/docs/deployment/secret-zero.md#secret-lifecycle)
+   for the exact commands.
 9. Switch to normal mode and validate:
 
    ```bash
@@ -72,6 +79,8 @@ The project keeps the admin node reproducible and recoverable:
    ```
 
 The full Proxmox, config repo, secrets, deployment, and operations guides are in the documentation site.
+Certificate mode selection and the local CA/Let's Encrypt procedures are in
+the [TLS certificate guide](site/content/en/docs/configuration/tls-certificates.md).
 
 ## Documentation
 
