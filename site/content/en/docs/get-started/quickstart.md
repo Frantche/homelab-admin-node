@@ -82,7 +82,12 @@ Use this path when you already know Proxmox cloud-init, Git, SOPS, and Ansible.
     sudo /opt/homelab-admin-node/bin/admin-node openbao init-if-needed
     ```
 
-13. Update the selected environment's `group_vars/secrets.sops.yaml` with the generated OpenBao token (`pr/group_vars/secrets.sops.yaml` for production), then commit and push only the encrypted config repo.
+13. Retrieve `openbao.root_token` from the generated
+    `/opt/homelab-admin-node/secrets/openbao-unseal.sops.yaml`, copy it to the
+    same key in the selected environment's `group_vars/secrets.sops.yaml`
+    (`pr/group_vars/secrets.sops.yaml` for production), then commit and push
+    only the encrypted config-repo file. Follow the exact commands in
+    [Secret Zero]({{< relref "/docs/deployment/secret-zero#secret-lifecycle" >}}).
 14. Switch to normal mode and converge:
 
     ```bash

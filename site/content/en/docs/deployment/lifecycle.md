@@ -49,6 +49,11 @@ sudo /opt/homelab-admin-node/bin/admin-node openbao init-if-needed
 
 When OpenBao generates or updates encrypted material, update the selected environment in the encrypted config repo before moving to normal mode. This production example uses `pr`:
 
+Retrieve the generated `openbao.root_token` and store it under the same key in
+`pr/group_vars/secrets.sops.yaml`. The exact source path, extraction command,
+and field precedence are documented in
+[Secret Zero]({{< relref "/docs/deployment/secret-zero#secret-lifecycle" >}}).
+
 ```bash
 cd /etc/admin-config/homelab-node-admin-config
 sudo env SOPS_AGE_KEY_FILE=/etc/sops/age/keys.txt sops pr/group_vars/secrets.sops.yaml
