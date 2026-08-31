@@ -1,0 +1,17 @@
+[Unit]
+Description=Weekly full Arch Linux system upgrade
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+UMask=0027
+Environment=ADMIN_SYSTEM_UPDATE_AUTO_REBOOT={{ (system_updates | default({})).auto_reboot | default(true) | bool | ternary('true', 'false') }}
+ExecStart=/usr/bin/flock --verbose --wait {{ (system_updates | default({})).operation_lock_timeout_sec | default(1800) }} /run/admin-node-operation.lock /opt/homelab-admin-node/scripts/system-update.sh
+TimeoutStartSec={{ (system_updates | default({})).service_timeout_sec | default(7200) }}
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=true

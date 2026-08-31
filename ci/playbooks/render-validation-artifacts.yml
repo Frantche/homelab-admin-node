@@ -89,3 +89,7 @@
           dest: admin-gitea-process-backup.timer
         - src: "{{ playbook_dir }}/../../ansible/roles/base/templates/admin-offline-backup.timer.j2"
           dest: admin-offline-backup.timer
+        - src: "{{ playbook_dir }}/../../ansible/roles/base/templates/admin-system-update.service.j2"
+          dest: admin-system-update.service
+        - src: "{{ playbook_dir }}/../../ansible/roles/base/templates/admin-system-update.timer.j2"
+          dest: admin-system-update.timer

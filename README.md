@@ -25,6 +25,7 @@ The project keeps the admin node reproducible and recoverable:
 - Secrets are encrypted with SOPS and age.
 - The node starts in `locked` mode until the secret zero and config repo are present.
 - `admin-node converge run` applies the desired state consistently.
+- A persistent systemd timer applies a full Arch Linux upgrade every week.
 - Backup, restore, validation, and disaster recovery are part of the normal workflow.
 
 ## Quick Start

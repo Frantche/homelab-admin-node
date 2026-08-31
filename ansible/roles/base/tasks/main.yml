@@ -172,6 +172,26 @@
     mode: "0644"
   notify: systemd daemon-reload
 
+- name: Validate system update configuration
+  ansible.builtin.assert:
+    that:
+      - ((system_updates | default({})).on_calendar | default('Sat *-*-* 04:00:00') | trim | length) > 0
+      - ((system_updates | default({})).operation_lock_timeout_sec | default(1800) | int) > 0
+      - ((system_updates | default({})).service_timeout_sec | default(7200) | int) > 0
+    fail_msg: System update schedule and timeouts must be valid positive values.
+
+- name: Deploy system update units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - admin-system-update.service
+    - admin-system-update.timer
+  notify: systemd daemon-reload
+
 - name: Apply updated systemd unit definitions before activation
   ansible.builtin.meta: flush_handlers
 
@@ -235,6 +255,12 @@
     enabled: true
     state: started
   when: not (admin_ci_disable_auto_converge | default(false) | bool)
+
+- name: Configure weekly system updates
+  ansible.builtin.systemd:
+    name: admin-system-update.timer
+    enabled: "{{ (system_updates | default({})).enabled | default(true) | bool }}"
+    state: "{{ ((system_updates | default({})).enabled | default(true) | bool) | ternary('started', 'stopped') }}"
 
 - name: Enable admin-unlock.path
   ansible.builtin.systemd:

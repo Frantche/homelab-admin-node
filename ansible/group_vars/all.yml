@@ -73,6 +73,14 @@ ci_mode: false
 restore_repository: ""
 restore_id: ""
 
+system_updates:
+  enabled: true
+  on_calendar: "Sat *-*-* 04:00:00"
+  randomized_delay_sec: "30m"
+  operation_lock_timeout_sec: 1800
+  service_timeout_sec: 7200
+  auto_reboot: true
+
 hardening:
   enabled: true
   ssh:

@@ -16,6 +16,31 @@ The most important non-secret variables are:
 | `acme_email` | `admin@example.com` | Email used when Traefik can request ACME certificates. |
 | `ci_mode` | `false` | Enables CI defaults and mock behavior for services that need external credentials. |
 
+## System updates
+
+The node performs a complete Arch Linux upgrade every week by default. This
+policy remains active in every lifecycle mode, including `locked`, so host
+security updates never depend on application secrets being available.
+
+```yaml
+system_updates:
+  enabled: true
+  on_calendar: "Sat *-*-* 04:00:00"
+  randomized_delay_sec: "30m"
+  operation_lock_timeout_sec: 1800
+  service_timeout_sec: 7200
+  auto_reboot: true
+```
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `system_updates.enabled` | `true` | Enables the persistent weekly update timer. |
+| `system_updates.on_calendar` | `Sat *-*-* 04:00:00` | systemd calendar expression for the maintenance window. |
+| `system_updates.randomized_delay_sec` | `30m` | Spreads the start time within the maintenance window. |
+| `system_updates.operation_lock_timeout_sec` | `1800` | Maximum wait for convergence, backup, or restore to release the global operation lock. |
+| `system_updates.service_timeout_sec` | `7200` | Maximum duration of the update service, including its lock wait. |
+| `system_updates.auto_reboot` | `true` | Reboots after package versions change so the updated kernel and userspace are active. |
+
 ## Storage isolation
 
 `storage_isolation` can isolate stack data paths so one service cannot consume all available disk space. It is disabled by default in the role defaults, while the public admin-config example enables the Btrfs path so CI exercises quotas on every bootstrap run.
