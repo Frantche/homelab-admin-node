@@ -59,6 +59,12 @@
     - (cloudflare.enabled | default(true)) | bool
     - cloudflare_local_ingress_enabled | bool
 
+- name: Manage Cloudflare tunnel DNS records
+  ansible.builtin.include_tasks: dns.yml
+  when:
+    - (cloudflare.enabled | default(true)) | bool
+    - (((cloudflare.dns | default({})).enabled | default(false)) | bool)
+
 - name: Render cloudflared env
   ansible.builtin.copy:
     dest: "{{ admin_node_root }}/env/cloudflared.env"

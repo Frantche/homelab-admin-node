@@ -1,0 +1,82 @@
+---
+- name: Validate Cloudflare tunnel DNS configuration
+  ansible.builtin.assert:
+    that:
+      - cloudflare.dns.zone | default('', true) | length > 0
+    fail_msg: >-
+      cloudflare.dns.zone is required when Cloudflare tunnel DNS management
+      is enabled.
+
+- name: Build Cloudflare tunnel DNS hostname list
+  ansible.builtin.set_fact:
+    cloudflare_tunnel_dns_hostnames: >-
+      {{
+        (
+          [
+            service_domains.keycloak,
+            service_domains.openbao,
+            service_domains.harbor,
+            service_domains.gitea | default('git.example.com')
+          ]
+          + (
+            traefik_external_services
+            | default([])
+            | selectattr('cloudflare', 'defined')
+            | selectattr('cloudflare')
+            | map(attribute='hostname')
+            | list
+          )
+        )
+        | unique
+        | list
+      }}
+
+- name: Validate Cloudflare tunnel DNS hostnames
+  ansible.builtin.assert:
+    that:
+      - item == cloudflare.dns.zone or item.endswith('.' ~ cloudflare.dns.zone)
+    fail_msg: >-
+      Cloudflare tunnel hostname {{ item }} is outside the configured
+      cloudflare.dns.zone {{ cloudflare.dns.zone }}.
+  loop: "{{ cloudflare_tunnel_dns_hostnames }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Validate Cloudflare tunnel DNS credentials
+  ansible.builtin.assert:
+    that:
+      - cloudflare.tunnel_id | default('', true) | length > 0
+      - cloudflare.dns_api_token | default('', true) | length > 0
+    fail_msg: >-
+      cloudflare.dns.zone, cloudflare.tunnel_id and
+      cloudflare.dns_api_token are required when Cloudflare tunnel DNS
+      management is enabled.
+  when: not (ci_mode | default(false) | bool)
+
+- name: Point published hostnames to the Cloudflare tunnel
+  community.general.cloudflare_dns:
+    zone: "{{ cloudflare.dns.zone }}"
+    record: "{{ item }}"
+    type: CNAME
+    value: "{{ cloudflare.tunnel_id }}.cfargotunnel.com"
+    proxied: true
+    ttl: 1
+    state: present
+    comment: Managed by homelab-admin-node
+    api_token: "{{ cloudflare.dns_api_token }}"
+  loop: "{{ cloudflare_tunnel_dns_hostnames }}"
+  loop_control:
+    label: "{{ item }}"
+  no_log: true
+  when: not (ci_mode | default(false) | bool)
+
+- name: Remove the Traefik dashboard hostname from the Cloudflare tunnel
+  community.general.cloudflare_dns:
+    zone: "{{ cloudflare.dns.zone }}"
+    record: "{{ service_domains.traefik }}"
+    type: CNAME
+    value: "{{ cloudflare.tunnel_id }}.cfargotunnel.com"
+    state: absent
+    api_token: "{{ cloudflare.dns_api_token }}"
+  no_log: true
+  when: not (ci_mode | default(false) | bool)

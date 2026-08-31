@@ -3,6 +3,7 @@
   connection: local
   gather_facts: false
   vars:
+    ci_mode: true
     admin_node_lan_ip: "192.0.2.10"
     service_domains:
       harbor: "harbor.example.com"
@@ -47,10 +48,16 @@
           ip: "{{ admin_node_lan_ip }}"
     cloudflare:
       tunnel_id: "00000000-0000-0000-0000-000000000000"
+      dns:
+        enabled: true
+        zone: "example.com"
   tasks:
     - name: Set external service facts for template rendering
       ansible.builtin.set_fact:
         traefik_external_services: "{{ traefik.external_services }}"
+
+    - name: Exercise Cloudflare tunnel DNS hostname selection
+      ansible.builtin.include_tasks: ../../ansible/roles/cloudflare/tasks/dns.yml
 
     - name: Render Traefik dynamic config for external services
       ansible.builtin.set_fact:
@@ -115,6 +122,15 @@
         that:
           - "'hostname: \"insecure.example.com\"' in cloudflared_config"
           - "'hostname: \"ca.example.com\"' not in cloudflared_config"
+          - "'hostname: \"traefik.example.com\"' not in cloudflared_config"
+          - "cloudflare_tunnel_dns_hostnames | length == 5"
+          - "'keycloak.example.com' in cloudflare_tunnel_dns_hostnames"
+          - "'bao.example.com' in cloudflare_tunnel_dns_hostnames"
+          - "'harbor.example.com' in cloudflare_tunnel_dns_hostnames"
+          - "'git.example.com' in cloudflare_tunnel_dns_hostnames"
+          - "'traefik.example.com' not in cloudflare_tunnel_dns_hostnames"
+          - "'insecure.example.com' in cloudflare_tunnel_dns_hostnames"
+          - "'ca.example.com' not in cloudflare_tunnel_dns_hostnames"
 
     - name: Assert Pi-hole only includes opted-in external services
       ansible.builtin.assert:

@@ -24,7 +24,7 @@ Typical secret groups are:
 | `cloudflare.tunnel_id` | Cloudflare Tunnel identifier. |
 | `cloudflare.tunnel_token` | Token used by the cloudflared container. |
 | `cloudflare.account_id` | Cloudflare account identifier used by tunnel validation. |
-| `cloudflare.dns_api_token` | Cloudflare DNS token used when ACME DNS challenge is available. |
+| `cloudflare.dns_api_token` | Cloudflare DNS token used for managed tunnel CNAME records and ACME DNS challenges. |
 | `cloudflare.credentials_json` | Cloudflare tunnel credentials JSON content. |
 | `keycloak.db_password` | Keycloak database password. |
 | `keycloak.admin_user` | Keycloak administrator username. |

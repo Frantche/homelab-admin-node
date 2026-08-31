@@ -718,6 +718,44 @@ func TestTunnelDisabledSkipped(t *testing.T) {
 	}
 }
 
+func TestTunnelDoesNotValidateInternalTraefikDashboard(t *testing.T) {
+	publicRequests := 0
+	publicServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		publicRequests++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer publicServer.Close()
+
+	traefikRequests := 0
+	traefikServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		traefikRequests++
+		http.Error(w, "Traefik dashboard must remain internal", http.StatusForbidden)
+	}))
+	defer traefikServer.Close()
+
+	v := Validator{
+		Config: config.Config{
+			KeycloakDomain: publicServer.URL,
+			OpenBaoDomain:  publicServer.URL,
+			HarborDomain:   publicServer.URL,
+			GiteaDomain:    publicServer.URL,
+			TraefikDomain:  traefikServer.URL,
+		},
+		Runner: &tunnelRunner{},
+		Client: publicServer.Client(),
+	}
+	result := v.Tunnel(context.Background())
+	if result.Status != StatusOK {
+		t.Fatalf("status = %s, want %s (%s)", result.Status, StatusOK, result.Message)
+	}
+	if publicRequests != 4 {
+		t.Fatalf("public requests = %d, want 4", publicRequests)
+	}
+	if traefikRequests != 0 {
+		t.Fatalf("Traefik dashboard requests = %d, want 0", traefikRequests)
+	}
+}
+
 func TestReadEnvFileValueDecodesQuotedValues(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "service.env")
 	content := "PLAIN=value\nJSON=\"value with spaces\"\nSINGLE='another value'\nESCAPED=\"quote\\\"value\"\n"

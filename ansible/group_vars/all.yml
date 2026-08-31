@@ -59,6 +59,9 @@ pihole:
 
 cloudflare:
   enabled: true
+  dns:
+    enabled: false
+    zone: "example.com"
 
 ci:
   mock_pihole: true

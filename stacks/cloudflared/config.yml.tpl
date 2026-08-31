@@ -17,10 +17,6 @@ ingress:
     service: "https://traefik:443"
     originRequest:
       caPool: /etc/cloudflared/admin-node-ca.pem
-  - hostname: "{{ service_domains.traefik }}"
-    service: "https://traefik:443"
-    originRequest:
-      caPool: /etc/cloudflared/admin-node-ca.pem
 {% for external_service in traefik_external_services | default([]) if external_service.cloudflare | default(false) | bool %}
   - hostname: "{{ external_service.hostname }}"
     service: "https://traefik:443"
