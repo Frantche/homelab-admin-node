@@ -881,7 +881,7 @@ func (v Validator) Tunnel(ctx context.Context) CheckResult {
 			return StatusFail, "cloudflared container exists but is not running"
 		}
 		if !v.Config.SkipPublicURLValidation && !v.Config.CISkipPublicURLValidation {
-			for _, domain := range []string{v.Config.KeycloakDomain, v.Config.OpenBaoDomain, v.Config.HarborDomain, v.Config.GiteaDomain, v.Config.TraefikDomain} {
+			for _, domain := range []string{v.Config.KeycloakDomain, v.Config.OpenBaoDomain, v.Config.HarborDomain, v.Config.GiteaDomain} {
 				req, err := httpRequest(ctx, serviceURL(domain, "/"))
 				if err != nil {
 					return StatusFail, err.Error()

@@ -37,6 +37,9 @@ service_domains:
 
 cloudflare:
   enabled: true
+  dns:
+    enabled: false
+    zone: "example.com"
 
 backup:
   offline:
