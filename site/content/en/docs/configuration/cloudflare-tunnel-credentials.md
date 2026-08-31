@@ -3,12 +3,9 @@ title: Cloudflare Tunnel Credentials
 weight: 27
 ---
 
-The admin node supports two Cloudflare Tunnel modes:
+The admin node uses a locally-managed Cloudflare Tunnel. The role renders the ingress rules in `config.yml`, stores the tunnel-specific credentials in `credentials.json`, mounts both files read-only, and starts the connector with `cloudflared tunnel --config /etc/cloudflared/config.yml run <UUID>`.
 
-- Token mode uses `cloudflare.tunnel_token`. Configure the published application hostnames in the Cloudflare dashboard or API.
-- Local ingress mode uses `cloudflare.tunnel_id` and `cloudflare.credentials_json`. The admin-node role renders the ingress rules locally.
-
-Local ingress mode is selected automatically when at least one item in `traefik.external_services` has `cloudflare: true`. The tunnel credentials JSON must come from a locally-managed Cloudflare Tunnel. Do not construct this file manually.
+This mode requires `cloudflare.tunnel_id` and `cloudflare.credentials_json` whenever `cloudflare.enabled` is true. The tunnel credentials JSON must come from a locally-managed Cloudflare Tunnel. Do not construct this file manually. Remotely-managed tunnel tokens are not supported by this deployment path.
 
 Reference: [Create a locally-managed tunnel](https://developers.cloudflare.com/tunnel/advanced/local-management/create-local-tunnel/) and [Tunnel permissions](https://developers.cloudflare.com/tunnel/advanced/local-management/tunnel-permissions/).
 
@@ -83,7 +80,7 @@ cloudflare:
     {"AccountTag":"...","TunnelID":"00000000-0000-0000-0000-000000000000","TunnelSecret":"..."}
 ```
 
-The `TunnelID` inside `credentials_json` must match `cloudflare.tunnel_id`. Token mode and local ingress mode use different credentials; `cloudflare.tunnel_token` is not used after local ingress mode is selected.
+The `TunnelID` inside `credentials_json` must match `cloudflare.tunnel_id`. The role passes that UUID to `cloudflared tunnel --config /etc/cloudflared/config.yml run <UUID>` and the configuration points cloudflared to `/etc/cloudflared/credentials.json`.
 
 Commit only the SOPS-encrypted file:
 
@@ -97,7 +94,7 @@ Never commit `cert.pem`, the unencrypted `<TUNNEL-UUID>.json`, or a decrypted SO
 
 ## Select the published hostnames
 
-Enable local ingress for an external service in the non-secret environment configuration:
+Add an external service to the local ingress configuration in the non-secret environment configuration:
 
 ```yaml
 cloudflare:

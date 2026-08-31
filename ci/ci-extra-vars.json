@@ -6,7 +6,6 @@
   "cloudflare": {
     "enabled": true,
     "tunnel_id": "fake-tunnel-id",
-    "tunnel_token": "eyJhIjoiZmFrZSIsInQiOiJmYWtlIiwicyI6ImZha2UifQ==",
     "account_id": "fake-account-id",
     "dns_api_token": "fake-dns-token",
     "credentials_json": "{}"

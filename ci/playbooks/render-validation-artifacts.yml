@@ -21,7 +21,7 @@
       traefik: traefik.example.com
     cloudflare:
       dns_api_token: ""
-    cloudflare_local_ingress_enabled: false
+      tunnel_id: validation-tunnel-id
     hardening:
       apparmor:
         enabled: true
@@ -62,6 +62,19 @@
         dest: "{{ validation_output }}/{{ item }}/compose.yaml"
         mode: "0644"
       loop: "{{ compose_templates }}"
+
+    - name: Read rendered cloudflared Compose configuration
+      ansible.builtin.slurp:
+        path: "{{ validation_output }}/cloudflared/compose.yaml"
+      register: rendered_cloudflared_compose
+
+    - name: Validate locally managed cloudflared command and mounts
+      ansible.builtin.assert:
+        that:
+          - "'--config /etc/cloudflared/config.yml run validation-tunnel-id' in (rendered_cloudflared_compose.content | b64decode)"
+          - "'./config.yml:/etc/cloudflared/config.yml:ro' in (rendered_cloudflared_compose.content | b64decode)"
+          - "'./credentials.json:/etc/cloudflared/credentials.json:ro' in (rendered_cloudflared_compose.content | b64decode)"
+          - "'--token' not in (rendered_cloudflared_compose.content | b64decode)"
 
     - name: Copy static Keycloak Compose configuration
       ansible.builtin.copy:
