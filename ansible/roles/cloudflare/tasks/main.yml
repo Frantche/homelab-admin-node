@@ -1,15 +1,17 @@
 ---
-- name: Compute Cloudflare local ingress mode
+- name: Compute Cloudflare ingress inputs
   ansible.builtin.set_fact:
     traefik_external_services: "{{ (traefik | default({})).external_services | default([]) }}"
-    cloudflare_local_ingress_enabled: >-
-      {{
-        ((traefik | default({})).external_services | default([]))
-        | selectattr('cloudflare', 'defined')
-        | selectattr('cloudflare')
-        | list
-        | length > 0
-      }}
+
+- name: Validate locally managed Cloudflare tunnel credentials
+  ansible.builtin.assert:
+    that:
+      - cloudflare.tunnel_id | default('', true) | length > 0
+      - cloudflare.credentials_json | default('', true) | length > 0
+    fail_msg: >-
+      cloudflare.tunnel_id and cloudflare.credentials_json are required when
+      Cloudflare Tunnel is enabled.
+  when: (cloudflare.enabled | default(true)) | bool
 
 - name: Ensure cloudflared stack directory
   ansible.builtin.file:
@@ -41,23 +43,19 @@
     src: "{{ playbook_dir }}/../stacks/cloudflared/config.yml.tpl"
     dest: "{{ admin_node_root }}/stacks/cloudflared/config.yml"
     owner: root
-    group: root
-    mode: "0600"
-  when:
-    - (cloudflare.enabled | default(true)) | bool
-    - cloudflare_local_ingress_enabled | bool
+    group: "65532"
+    mode: "0640"
+  when: (cloudflare.enabled | default(true)) | bool
 
 - name: Render cloudflared credentials file
   ansible.builtin.copy:
     dest: "{{ admin_node_root }}/stacks/cloudflared/credentials.json"
     owner: root
-    group: root
-    mode: "0600"
-    content: "{{ cloudflare.credentials_json | mandatory('cloudflare.credentials_json is required when an external service enables cloudflare') }}"
+    group: "65532"
+    mode: "0640"
+    content: "{{ cloudflare.credentials_json }}"
   no_log: true
-  when:
-    - (cloudflare.enabled | default(true)) | bool
-    - cloudflare_local_ingress_enabled | bool
+  when: (cloudflare.enabled | default(true)) | bool
 
 - name: Manage Cloudflare tunnel DNS records
   ansible.builtin.include_tasks: dns.yml
@@ -65,15 +63,10 @@
     - (cloudflare.enabled | default(true)) | bool
     - (((cloudflare.dns | default({})).enabled | default(false)) | bool)
 
-- name: Render cloudflared env
-  ansible.builtin.copy:
-    dest: "{{ admin_node_root }}/env/cloudflared.env"
-    mode: "0600"
-    content: |
-      {% if not (cloudflare_local_ingress_enabled | bool) %}
-      CLOUDFLARE_TUNNEL_TOKEN={{ cloudflare.tunnel_token | mandatory('cloudflare.tunnel_token is required') }}
-      {% endif %}
-  no_log: true
+- name: Remove obsolete cloudflared token environment
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/env/cloudflared.env"
+    state: absent
   when: (cloudflare.enabled | default(true)) | bool
 
 - name: Recreate cloudflared mock container when AppArmor becomes active
@@ -112,7 +105,7 @@
   changed_when: mock_cloudflared.rc == 0
 
 - name: Start cloudflared stack (production)
-  ansible.builtin.command: docker compose --env-file {{ admin_node_root }}/env/cloudflared.env -f compose.yaml up --wait --wait-timeout 300
+  ansible.builtin.command: docker compose -f compose.yaml up --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/cloudflared"
   when:

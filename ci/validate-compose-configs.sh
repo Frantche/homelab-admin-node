@@ -20,7 +20,6 @@ ansible-playbook "$repo_root/ci/playbooks/render-validation-artifacts.yml" \
   -e "admin_node_root=$runtime_root" >/dev/null
 
 export \
-  CLOUDFLARE_TUNNEL_TOKEN=validation \
   GITEA_DB_PASSWORD=validation \
   GITEA_INTERNAL_TOKEN=validation \
   GITEA_JWT_SECRET=validation \

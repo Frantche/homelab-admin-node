@@ -1,7 +1,12 @@
 # Cloudflare Tunnel
-Par défaut, cloudflared utilise `cloudflare.tunnel_token`.
+Cloudflared utilise uniquement le mode de configuration locale. Le role rend et
+monte `config.yml` et `credentials.json`, puis execute
+`cloudflared tunnel --config /etc/cloudflared/config.yml run <UUID>`.
 
-Quand au moins un service dans `traefik.external_services` définit `cloudflare: true`, le rôle rend `stacks/cloudflared/config.yml.tpl` en configuration locale et publie keycloak/bao/harbor/gitea ainsi que ces services externes via cloudflared -> Traefik. Le dashboard Traefik reste interne et n'est jamais ajoute aux ingress cloudflared. Ce mode requiert `cloudflare.tunnel_id` et `cloudflare.credentials_json`.
+La configuration publie keycloak/bao/harbor/gitea ainsi que les services
+externes ayant `cloudflare: true` via cloudflared -> Traefik. Le dashboard
+Traefik reste interne et n'est jamais ajoute aux ingress cloudflared. Ce mode
+requiert toujours `cloudflare.tunnel_id` et `cloudflare.credentials_json`.
 
 Le module Cloudflare peut etre active ou desactive via la configuration non secrete :
 

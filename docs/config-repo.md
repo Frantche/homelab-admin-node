@@ -101,7 +101,6 @@ pihole:
   api_token: "votre-token-pihole"
 cloudflare:
   tunnel_id: "uuid-du-tunnel"
-  tunnel_token: "eyJ..."
   account_id: "votre-account-id"
   dns_api_token: "votre-dns-token"
   credentials_json: |
