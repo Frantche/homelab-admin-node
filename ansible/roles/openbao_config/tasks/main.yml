@@ -47,7 +47,9 @@
         | default(
             lookup(
               'ansible.builtin.file',
-              openbao_config.oidc.discovery_ca_file | default('/srv/admin/certs/ca.pem'),
+              openbao_config.oidc.discovery_ca_file | default('/srv/admin/certs/ca.pem')
+              if not (traefik_letsencrypt_enabled | default(false) | bool)
+              else '',
               errors='ignore'
             ),
             true
