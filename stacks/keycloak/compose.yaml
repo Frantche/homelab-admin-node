@@ -1,6 +1,6 @@
 services:
   keycloak-db:
-    image: pgautoupgrade/pgautoupgrade:18-trixie@sha256:2931a074ab3eaff9d4f6794740734eabfb4a0ee9121305e9a12645af3916e0c4
+    image: pgautoupgrade/pgautoupgrade:18-trixie@sha256:4e94046468dfd68a631fa2ec3bd4ca182d02a8dfa35f7b8118c4be62a8326e10
     restart: "no"
     read_only: true
     container_name: keycloak-db
@@ -44,7 +44,7 @@ services:
       - keycloak-db
 
   keycloak:
-    image: keycloak/keycloak:26.7@sha256:eb81d22bb82bc358ee10bdd4ab15dea2caae0add01416a1b146e2c7c7eb9cfab
+    image: keycloak/keycloak:26.7@sha256:c2a17fe407e892196d0b7cf9cef54e60952d6c372a9205f661a9efa0911463b0
     container_name: keycloak
     restart: "no"
     user: "1000:0"
