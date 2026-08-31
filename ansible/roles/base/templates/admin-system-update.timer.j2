@@ -1,0 +1,11 @@
+[Unit]
+Description=Run a full Arch Linux system upgrade at least once per week
+
+[Timer]
+OnCalendar={{ (system_updates | default({})).on_calendar | default('Sat *-*-* 04:00:00') }}
+Persistent=true
+RandomizedDelaySec={{ (system_updates | default({})).randomized_delay_sec | default('30m') }}
+Unit=admin-system-update.service
+
+[Install]
+WantedBy=timers.target

@@ -10,7 +10,7 @@ SHELL := /usr/bin/env bash
 	test-harbor-mirror-validation test-image-security-policy test-image-security-scanner \
 	test-make-entrypoints test-offline-images test-oidc-contracts test-openbao-internal-tls \
 	test-repo-permissions test-restic-config test-secret-rotation test-traefik-external-services \
-	test-traefik-security validate validate-apis validate-cloudflare-tunnel validate-compose \
+	test-system-update test-traefik-security validate validate-apis validate-cloudflare-tunnel validate-compose \
 	validate-dns validate-dr-promotion validate-grafana-dashboards validate-hardening \
 	validate-observability validate-systemd
 
@@ -39,6 +39,7 @@ lint: go-vet shellcheck actionlint python-lint ansible-lint ansible-syntax sops-
 
 ci-quality: check-ci-tools test-go lint govulncheck python-test \
 	test-build-admin-node-cache test-repo-permissions test-secret-rotation \
+	test-system-update \
 	test-docker-api-isolation test-gitea-process-backup test-openbao-internal-tls \
 	test-restic-config test-offline-images test-image-security-scanner \
 	test-disaster-recovery-actions test-make-entrypoints validate-compose \
@@ -50,6 +51,9 @@ ci-full: ci-continuous ci-disaster-recovery
 
 test-go:
 	@./ci/check-go-coverage.sh
+
+test-system-update:
+	@./ci/test-system-update.sh
 
 go-vet:
 	@go vet ./...

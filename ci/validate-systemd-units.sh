@@ -32,4 +32,13 @@ if rg -q '^OnActiveSec=' "$integrity_timer"; then
   exit 1
 fi
 
+system_update_timer="$validation_root/systemd/admin-system-update.timer"
+rg -F 'OnCalendar=Sat *-*-* 04:00:00' "$system_update_timer" >/dev/null
+rg -F 'Persistent=true' "$system_update_timer" >/dev/null
+rg -F 'RandomizedDelaySec=30m' "$system_update_timer" >/dev/null
+
+system_update_service="$validation_root/systemd/admin-system-update.service"
+rg -F '/run/admin-node-operation.lock' "$system_update_service" >/dev/null
+rg -F 'ADMIN_SYSTEM_UPDATE_AUTO_REBOOT=true' "$system_update_service" >/dev/null
+
 systemd-analyze verify "$validation_root"/systemd/*
