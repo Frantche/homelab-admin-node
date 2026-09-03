@@ -214,6 +214,52 @@
       }}
   no_log: true
 
+- name: Build configured OpenBao KV-v2 mount list for Keycloak
+  ansible.builtin.set_fact:
+    keycloak_openbao_kv_v2_mounts: >-
+      {{
+        openbao_config.secret_engines | default([])
+        | selectattr('type', 'equalto', 'kv-v2')
+        | map(attribute='path')
+        | map('regex_replace', '^/+|/+$', '')
+        | list
+      }}
+
+- name: Validate Keycloak clients published to OpenBao
+  ansible.builtin.assert:
+    that:
+      - item.openbao.mount | default('', true) | length > 0
+      - item.openbao.path | default('', true) | length > 0
+      - not (item.public | default(false) | bool)
+      - openbao_config.enabled | default(false) | bool
+      - (item.openbao.mount | regex_replace('^/+|/+$', '')) in keycloak_openbao_kv_v2_mounts
+    fail_msg: "Keycloak client {{ item.client_id | default('unnamed') }} requires a confidential client plus openbao.mount and openbao.path to publish its credentials."
+  loop: "{{ keycloak_config.clients | default([]) | selectattr('openbao', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.client_id | default('unnamed') }}"
+
+- name: Build Keycloak OpenBao publication declarations
+  ansible.builtin.set_fact:
+    keycloak_openbao_publication_clients: "{{ keycloak_config.clients | default([]) | selectattr('openbao', 'defined') | list }}"
+    keycloak_openbao_credentials: []
+
+- name: Validate Keycloak realm management client settings
+  ansible.builtin.assert:
+    that:
+      - keycloak_config.realm_management.client_id | default('', true) | length > 0
+      - keycloak_config.realm_management.realm_roles | default([]) | length > 0
+      - keycloak_config.realm_management.openbao.mount | default('', true) | length > 0
+      - keycloak_config.realm_management.openbao.path | default('', true) | length > 0
+      - openbao_config.enabled | default(false) | bool
+      - (keycloak_config.realm_management.openbao.mount | regex_replace('^/+|/+$', '')) in keycloak_openbao_kv_v2_mounts
+      - keycloak_config.realm_management.rotation.period_seconds | int > 0
+      - keycloak_config.realm_management.rotation.overlap_seconds | int > 0
+      - keycloak_config.realm_management.rotation.overlap_seconds | int < keycloak_config.realm_management.rotation.period_seconds | int
+      - keycloak_config.realm_management.rotation.renew_before_seconds | int > 0
+      - keycloak_config.realm_management.rotation.renew_before_seconds | int < keycloak_config.realm_management.rotation.period_seconds | int
+    fail_msg: "keycloak_config.realm_management requires a client ID, at least one master realm role, an OpenBao KV-v2 destination, and valid rotation durations."
+  when: keycloak_config.realm_management.enabled | default(false) | bool
+
 - name: Run Keycloak API tasks
   ansible.builtin.include_tasks: runtime.yml
   when: not (keycloak_config_test_mode | default(false))

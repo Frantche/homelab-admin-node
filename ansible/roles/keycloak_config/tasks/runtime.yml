@@ -128,6 +128,17 @@
     label: "{{ keycloak_client_item.client_id }}"
   no_log: true
 
+- name: Collect configured client credentials for OpenBao
+  ansible.builtin.include_tasks: published-client.yml
+  loop: "{{ keycloak_openbao_publication_clients | default([]) }}"
+  loop_control:
+    loop_var: keycloak_published_client_item
+    label: "{{ keycloak_published_client_item.client_id }}"
+
+- name: Reconcile the Keycloak realm management client
+  ansible.builtin.include_tasks: realm-management.yml
+  when: keycloak_config.realm_management.enabled | default(false) | bool
+
 - name: Ensure configured users exist and are updated
   ansible.builtin.include_tasks: user.yml
   loop: "{{ keycloak_config.users | default([]) }}"

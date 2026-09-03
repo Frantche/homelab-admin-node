@@ -117,6 +117,8 @@ keycloak_config:
 | `keycloak_config.clients[].base_url` | unset | Optional base URL. |
 | `keycloak_config.clients[].protocol_mappers` | managed clients include groups mapper | Protocol mappers passed to Keycloak. |
 | `keycloak_config.clients[].secret` | from `oidc_clients` for managed clients | Client secret. Store encrypted. |
+| `keycloak_config.clients[].openbao.mount` | unset | KV-v2 mount where the generated or configured client credentials are published. Defining `openbao` requires a confidential client. |
+| `keycloak_config.clients[].openbao.path` | unset | Secret path below the KV-v2 mount. The stored fields include `client_id`, `client_secret`, `realm`, `url`, `base_path`, `token_url`, and a ready-to-copy `credentials` JSON value. |
 | `keycloak_config.users[]` | `[]` | Users to create and optionally assign realm roles and groups. Passwords belong in encrypted secrets. |
 | `keycloak_config.users[].username` | required | Username for a managed user. |
 | `keycloak_config.users[].enabled` | `true` | Enables the user. |
@@ -129,6 +131,54 @@ keycloak_config:
 | `keycloak_config.users[].realm_roles` | `[]` | Realm roles to assign to the user. |
 | `keycloak_config.users[].groups` | `[]` | Existing group names to assign to the user. |
 | `keycloak_config_url` | `https://{{ service_domains.keycloak }}` | Role default for the Keycloak API base URL. |
+
+### Crossplane realm management client
+
+The optional realm management client is created in the Keycloak `master` realm,
+because a client in `homelab` cannot administer other realms. The example grants
+the global `admin` role to its service account. Treat the resulting credentials
+as server-administrator credentials and restrict the OpenBao path accordingly.
+
+```yaml
+keycloak_config:
+  realm_management:
+    enabled: true
+    client_id: "crossplane-keycloak"
+    realm_roles:
+      - "admin"
+    openbao:
+      mount: "secret"
+      path: "crossplane/keycloak"
+    rotation:
+      period_seconds: 604800
+      overlap_seconds: 172800
+      renew_before_seconds: 3600
+
+openbao_config:
+  secret_engines:
+    - path: "secret"
+      type: "kv-v2"
+```
+
+Keycloak client-secret rotation is enabled only when this integration is active.
+The feature is preview in Keycloak 26. A dedicated client role scopes the rotation
+policy to the Crossplane client. Convergence rotates the secret during the final
+hour of its seven-day lifetime, writes the new value to OpenBao immediately, and
+keeps the previous Keycloak secret valid for two days. External Secrets should
+refresh the target Kubernetes Secret more frequently than the two-day overlap.
+Copy the OpenBao `credentials` property to the Kubernetes Secret key referenced
+by `ProviderConfig.spec.credentials.secretRef.key`.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `keycloak_config.realm_management.enabled` | `false` | Creates the Crossplane service-account client in `master` and enables managed rotation. |
+| `keycloak_config.realm_management.client_id` | `crossplane-keycloak` | Confidential client ID used by Crossplane. |
+| `keycloak_config.realm_management.realm_roles[]` | `[admin]` | Direct master realm roles assigned to the service account. `admin` can manage every realm. |
+| `keycloak_config.realm_management.openbao.mount` | `secret` | Configured KV-v2 mount receiving the active credentials. |
+| `keycloak_config.realm_management.openbao.path` | `crossplane/keycloak` | Secret path read by External Secrets. |
+| `keycloak_config.realm_management.rotation.period_seconds` | `604800` | Main secret lifetime and approximate rotation interval (seven days). |
+| `keycloak_config.realm_management.rotation.overlap_seconds` | `172800` | Validity retained for the previous secret after rotation (two days). |
+| `keycloak_config.realm_management.rotation.renew_before_seconds` | `3600` | Rotation window before the main secret expires. |
 
 ## OIDC clients
 

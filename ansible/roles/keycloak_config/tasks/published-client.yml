@@ -1,0 +1,58 @@
+---
+- name: Find published Keycloak client
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/clients?clientId={{ keycloak_published_client_item.client_id | urlencode }}"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_published_client_lookup
+  changed_when: false
+  no_log: true
+
+- name: Require one exact published Keycloak client
+  ansible.builtin.assert:
+    that:
+      - keycloak_published_client_matches | length == 1
+    fail_msg: "Expected exactly one Keycloak client named {{ keycloak_published_client_item.client_id }} in realm {{ keycloak_realm_cfg.name }}."
+  vars:
+    keycloak_published_client_matches: "{{ keycloak_published_client_lookup.json | selectattr('clientId', 'equalto', keycloak_published_client_item.client_id) | list }}"
+
+- name: Read published Keycloak client secret
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/{{ keycloak_realm_cfg.name }}/clients/{{ (keycloak_published_client_lookup.json | selectattr('clientId', 'equalto', keycloak_published_client_item.client_id) | list | first).id }}/client-secret"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_published_client_secret
+  changed_when: false
+  no_log: true
+
+- name: Queue published Keycloak client credentials for OpenBao
+  ansible.builtin.set_fact:
+    keycloak_openbao_credentials: >-
+      {{
+        keycloak_openbao_credentials + [{
+          'mount': keycloak_published_client_item.openbao.mount | regex_replace('^/+|/+$', ''),
+          'path': keycloak_published_client_item.openbao.path | regex_replace('^/+|/+$', ''),
+          'data': {
+            'client_id': keycloak_published_client_item.client_id,
+            'client_secret': keycloak_published_client_secret.json.value,
+            'realm': keycloak_realm_cfg.name,
+            'url': keycloak_config_url,
+            'base_path': '',
+            'token_url': keycloak_config_url ~ '/realms/' ~ keycloak_realm_cfg.name ~ '/protocol/openid-connect/token',
+            'credentials': ({
+              'client_id': keycloak_published_client_item.client_id,
+              'client_secret': keycloak_published_client_secret.json.value,
+              'realm': keycloak_realm_cfg.name,
+              'url': keycloak_config_url,
+              'base_path': ''
+            } | to_json)
+          }
+        }]
+      }}
+  no_log: true
