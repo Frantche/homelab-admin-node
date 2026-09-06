@@ -1,0 +1,46 @@
+services:
+  crowdsec:
+    image: "{{ crowdsec.image | default('crowdsecurity/crowdsec:v1.8.1@sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975') }}"
+    container_name: crowdsec
+    init: true
+    restart: "no"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=32m,mode=0700
+    environment:
+      DISABLE_AGENT: "true"
+      DISABLE_ONLINE_API: "{{ (not (crowdsec.capi.enabled | default(true) | bool)) | ternary('true', 'false') }}"
+      TZ: "UTC"
+    secrets:
+      - bouncer_key_traefik
+    volumes:
+      - /srv/admin/data/crowdsec/config:/etc/crowdsec
+      - /srv/admin/data/crowdsec/data:/var/lib/crowdsec/data
+    healthcheck:
+      test: ["CMD", "cscli", "lapi", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks:
+      traefik-crowdsec:
+        aliases:
+          - crowdsec
+      crowdsec-egress: {}
+
+networks:
+  traefik-crowdsec:
+    external: true
+  crowdsec-egress:
+    external: true
+
+secrets:
+  bouncer_key_traefik:
+    file: /srv/admin/env/crowdsec-traefik-bouncer-key

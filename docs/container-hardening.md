@@ -10,6 +10,7 @@ persistantes attendues.
 | Service | Utilisateur runtime | Capacités ajoutées | Écritures et exception |
 | --- | --- | --- | --- |
 | `cloudflared` | `65532:65532` | aucune | rootfs RO, `/tmp` tmpfs |
+| `crowdsec` | entrypoint fournisseur | aucune | rootfs RO, configuration et base LAPI persistantes, réseaux privés Traefik et egress dédié, `/tmp` tmpfs |
 | `gitea-db` | entrypoint root puis postgres | `CHOWN`, `DAC_OVERRIDE`, `SETGID`, `SETUID` | rootfs RO, données PostgreSQL et tmpfs |
 | `gitea` | entrypoint root puis `1000:1000` | `CHOWN`, `DAC_OVERRIDE`, `SETGID`, `SETUID` | rootfs RW requis par l'entrypoint Gitea, `/data` persistant |
 | `keycloak-db` | entrypoint root puis postgres | `CHOWN`, `DAC_OVERRIDE`, `SETGID`, `SETUID` | rootfs RO, données PostgreSQL et tmpfs |

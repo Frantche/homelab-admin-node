@@ -80,6 +80,48 @@
     state: directory
     mode: "0755"
 
+- name: Ensure Traefik plugin storage directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/data/traefik/plugins-storage"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: crowdsec.enabled | default(false) | bool
+
+- name: Check CrowdSec Traefik bouncer key
+  ansible.builtin.stat:
+    path: "{{ admin_node_root }}/env/crowdsec-traefik-bouncer-key"
+  register: crowdsec_traefik_bouncer_key_file
+  when: crowdsec.enabled | default(false) | bool
+  no_log: true
+
+- name: Generate CrowdSec Traefik bouncer key
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - rand
+      - -hex
+      - "32"
+  register: crowdsec_traefik_bouncer_key_generated
+  when:
+    - crowdsec.enabled | default(false) | bool
+    - not crowdsec_traefik_bouncer_key_file.stat.exists
+  no_log: true
+
+- name: Install CrowdSec Traefik bouncer key
+  ansible.builtin.copy:
+    dest: "{{ admin_node_root }}/env/crowdsec-traefik-bouncer-key"
+    content: "{{ crowdsec_traefik_bouncer_key_generated.stdout }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+    force: false
+  when:
+    - crowdsec.enabled | default(false) | bool
+    - not crowdsec_traefik_bouncer_key_file.stat.exists
+  no_log: true
+
 - name: Ensure Traefik external service CA directory
   ansible.builtin.file:
     path: "{{ admin_node_root }}/certs/traefik-external-services"
@@ -332,7 +374,7 @@
   when: not (ci_mode | default(false))
 
 - name: Render traefik static config (CI - no ACME)
-  ansible.builtin.copy:
+  ansible.builtin.template:
     src: "{{ playbook_dir }}/../stacks/traefik/traefik-ci.yml"
     dest: "{{ admin_node_root }}/stacks/traefik/traefik.yml"
     owner: root

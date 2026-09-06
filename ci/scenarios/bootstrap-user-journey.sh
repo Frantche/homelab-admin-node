@@ -302,6 +302,17 @@ assert_harbor_robot_token_contract() {
   done
 }
 
+assert_crowdsec_contract() {
+  local credential_json bouncer_key status
+  credential_json="$(docker exec -e BAO_ADDR=https://127.0.0.1:8200 -e BAO_CACERT=/openbao/tls/ca.pem -e VAULT_TOKEN="$OPENBAO_TOKEN" openbao bao kv get -format=json admin/crowdsec/bouncers/traefik)"
+  bouncer_key="$(jq -er '.data.data.api_key' <<<"$credential_json")"
+  docker exec -e BAO_ADDR=https://127.0.0.1:8200 -e BAO_CACERT=/openbao/tls/ca.pem -e VAULT_TOKEN="$OPENBAO_TOKEN" openbao bao kv get admin/crowdsec/lapi/machine >/dev/null
+  status="$(curl --silent --output /dev/null --write-out '%{http_code}' --cacert /srv/admin/certs/ca.pem https://crowdsec.example.com/v1/decisions)"
+  [[ "$status" == "403" ]]
+  status="$(curl --silent --output /dev/null --write-out '%{http_code}' --cacert /srv/admin/certs/ca.pem -H "X-Api-Key: $bouncer_key" https://crowdsec.example.com/v1/decisions)"
+  [[ "$status" == "200" ]]
+}
+
 trap dump_debug ERR
 trap stop_otel_mock EXIT
 
@@ -314,6 +325,7 @@ assert_openbao_operation_token_contract backup read
 assert_openbao_operation_token_contract restore update
 exercise_openbao_operation_token_recovery
 assert_harbor_robot_token_contract
+assert_crowdsec_contract
 
 # --- Verify final mode is normal ---
 assert_contains /etc/admin-node/mode "normal"
