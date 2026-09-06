@@ -92,6 +92,14 @@ keycloak_config:
 
 harbor_config:
   enabled: true
+  pull_secret:
+    enabled: true
+    name: "ci-cluster-pull"
+    description: "CI read-only pull credential"
+    rotation_id: "ci-initial"
+    openbao:
+      mount: "secret"
+      path: "shared/harbor/pull"
   oidc:
     enabled: true
     endpoint: "https://keycloak.example.com/realms/homelab"
@@ -100,6 +108,9 @@ harbor_config:
 openbao_config:
   enabled: true
   root_token: ""
+  secret_engines:
+    - path: "secret"
+      type: "kv-v2"
   oidc:
     enabled: true
     discovery_url: "https://keycloak.example.com/realms/homelab"

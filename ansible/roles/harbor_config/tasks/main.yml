@@ -245,3 +245,9 @@
     loop_var: harbor_mirror_item
     label: "{{ harbor_mirror_item.name }}"
   when: not (harbor_config_test_mode | default(false))
+
+- name: Reconcile Harbor cluster pull secret
+  ansible.builtin.include_tasks: pull-secret.yml
+  when:
+    - harbor_config.pull_secret.enabled | default(false) | bool
+    - not (harbor_config_test_mode | default(false))

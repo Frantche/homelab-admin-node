@@ -154,6 +154,14 @@ openbao_config:
 harbor_config:
   enabled: false
   validate_certs: "{{ not (ci_mode | default(false)) }}"
+  pull_secret:
+    enabled: false
+    name: "cluster-pull"
+    description: "Read-only pull credential for homelab clusters"
+    rotation_id: "initial"
+    openbao:
+      mount: "secret"
+      path: "shared/harbor/pull"
   oidc:
     enabled: false
     endpoint: "https://{{ service_domains.keycloak }}/realms/{{ keycloak_config.realm.name }}"

@@ -229,6 +229,41 @@ exercise_openbao_operation_token_recovery() {
   assert_openbao_operation_token_contract restore update
 }
 
+assert_harbor_pull_secret_contract() {
+  local credential_json username password repository token payload encoded
+
+  credential_json="$(
+    docker exec \
+      -e BAO_ADDR=https://127.0.0.1:8200 \
+      -e BAO_CACERT=/openbao/tls/ca.pem \
+      -e VAULT_TOKEN="$OPENBAO_TOKEN" \
+      openbao bao kv get -format=json secret/shared/harbor/pull
+  )"
+  username="$(jq -er '.data.data.username' <<<"$credential_json")"
+  password="$(jq -er '.data.data.password' <<<"$credential_json")"
+  jq -e '.data.data[".dockerconfigjson"] | fromjson | .auths["harbor.example.com"].username != ""' \
+    <<<"$credential_json" >/dev/null
+
+  for repository in dockerhub/library/busybox quay/prometheus/busybox; do
+    token="$(
+      curl --fail --silent --show-error \
+        --cacert /srv/admin/certs/ca.pem \
+        --user "$username:$password" \
+        --get \
+        --data-urlencode service=harbor-registry \
+        --data-urlencode "scope=repository:${repository}:pull" \
+        https://harbor.example.com/service/token |
+        jq -er .token
+    )"
+    encoded="$(cut -d. -f2 <<<"$token")"
+    encoded="${encoded}$(printf '=%.0s' $(seq 1 $(( (4 - ${#encoded} % 4) % 4 ))))"
+    payload="$(tr '_-' '/+' <<<"$encoded" | base64 --decode)"
+    jq -e --arg repository "$repository" \
+      '.access[] | select(.name == $repository) | .actions | index("pull") != null' \
+      <<<"$payload" >/dev/null
+  done
+}
+
 trap dump_debug ERR
 trap stop_otel_mock EXIT
 
@@ -240,6 +275,7 @@ run_openbao_config_phase
 assert_openbao_operation_token_contract backup read
 assert_openbao_operation_token_contract restore update
 exercise_openbao_operation_token_recovery
+assert_harbor_pull_secret_contract
 
 # --- Verify final mode is normal ---
 assert_contains /etc/admin-node/mode "normal"

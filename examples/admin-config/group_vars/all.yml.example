@@ -135,6 +135,14 @@ harbor_config:
   enabled: true
   validate_certs: true
   validate_registry_mirrors: true
+  pull_secret:
+    enabled: true
+    name: "cluster-pull"
+    description: "Read-only pull credential for homelab clusters"
+    rotation_id: "initial"
+    openbao:
+      mount: "secret"
+      path: "shared/harbor/pull"
   oidc:
     enabled: true
     endpoint: "https://keycloak.example.com/realms/homelab"
