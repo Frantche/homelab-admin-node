@@ -129,6 +129,7 @@
           - "'harbor.example.com' in cloudflare_tunnel_dns_hostnames"
           - "'git.example.com' in cloudflare_tunnel_dns_hostnames"
           - "'traefik.example.com' not in cloudflare_tunnel_dns_hostnames"
+          - "'crowdsec.example.com' not in cloudflare_tunnel_dns_hostnames"
           - "'insecure.example.com' in cloudflare_tunnel_dns_hostnames"
           - "'ca.example.com' not in cloudflare_tunnel_dns_hostnames"
 

@@ -27,6 +27,13 @@ providers:
   file:
     directory: /etc/traefik/dynamic
     watch: true
+{% if crowdsec.enabled | default(false) | bool %}
+experimental:
+  plugins:
+    crowdsec-bouncer:
+      moduleName: github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
+      version: "{{ crowdsec.traefik_bouncer.plugin_version | default('v1.4.5') }}"
+{% endif %}
 {% if traefik_letsencrypt_enabled %}
 certificatesResolvers:
   letsencrypt:

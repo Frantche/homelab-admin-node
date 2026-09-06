@@ -11,6 +11,7 @@ service_domains:
   keycloak: "keycloak.example.com"
   gitea: "git.example.com"
   traefik: "traefik.example.com"
+  crowdsec: "crowdsec.example.com"
 
 oidc_clients:
   harbor:
@@ -100,6 +101,9 @@ harbor_config:
 openbao_config:
   enabled: true
   root_token: ""
+  secret_engines:
+    - path: "admin"
+      type: "kv-v2"
   oidc:
     enabled: true
     discovery_url: "https://keycloak.example.com/realms/homelab"
@@ -125,6 +129,21 @@ observability:
   compression: "none"
   otlp_encoding: "json"
   collection_interval: "5s"
+
+crowdsec:
+  enabled: true
+  capi:
+    enabled: false
+  lapi:
+    allowed_cidrs:
+      - "192.168.1.0/24"
+      - "172.16.0.0/12"
+  traefik_bouncer:
+    plugin_version: "v1.4.5"
+    update_interval_seconds: 1
+  openbao:
+    mount: "admin"
+    path_prefix: "crowdsec"
   service_metrics_interval: "5s"
   mock_backend_enabled: true
   mock_state_dir: "/tmp/admin-node-otel-mock"

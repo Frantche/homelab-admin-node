@@ -30,6 +30,55 @@ See [TLS Certificates]({{< relref "/docs/configuration/tls-certificates" >}})
 for the complete local CA and Let's Encrypt activation procedures, client trust,
 mode-selection rules, and verification commands.
 
+## CrowdSec
+
+CrowdSec is optional and disabled by default. This deployment runs a central
+Local API (LAPI) connected to CAPI, without a local log acquisition agent or
+AppSec. Traefik consumes LAPI decisions through the CrowdSec middleware plugin.
+The LAPI has no published container port: Traefik reaches it over a private
+network, while a separate outbound-only network is used for CAPI.
+
+```yaml
+crowdsec:
+  enabled: true
+  capi:
+    enabled: true
+  lapi:
+    allowed_cidrs:
+      - "192.168.1.0/24"
+  traefik_bouncer:
+    plugin_version: "v1.4.5"
+    update_interval_seconds: 60
+  openbao:
+    mount: "admin"
+    path_prefix: "crowdsec"
+```
+
+| Variable | Default/example | Purpose |
+| --- | --- | --- |
+| `crowdsec.enabled` | `false` | Deploys the LAPI and enables Traefik enforcement. |
+| `crowdsec.capi.enabled` | `true` | Registers the LAPI with CAPI. Disable only for offline or CI environments. |
+| `crowdsec.lapi.allowed_cidrs[]` | `192.168.1.0/24` | Source networks allowed to reach the HTTPS LAPI route. An empty list is rejected. |
+| `crowdsec.traefik_bouncer.plugin_version` | `v1.4.5` | Pinned Traefik plugin version. |
+| `crowdsec.traefik_bouncer.update_interval_seconds` | `60` | Stream-mode decision refresh interval. |
+| `crowdsec.openbao.mount` | `admin` | Existing KV-v2 mount receiving CrowdSec credentials. |
+| `crowdsec.openbao.path_prefix` | `crowdsec` | Prefix for bouncer, CAPI, and local machine credentials. |
+
+Traefik protects every managed service in stream mode. `updateMaxFailure=-1`
+keeps routes available when the LAPI cannot be reached. The LAPI route itself
+is never passed through the bouncer, avoiding a circular dependency.
+
+The bouncer key is generated on the node, stored locally with mode `0600`, and
+published to `admin/crowdsec/bouncers/traefik`. When CAPI is enabled, its credentials are published
+to `admin/crowdsec/capi`; local machine credentials, when generated, are stored
+under `admin/crowdsec/lapi/machine`. Secret-bearing Ansible operations are
+redacted.
+
+`service_domains.crowdsec` is added to the local certificate and should have a
+Pi-hole record pointing to the admin node. It is deliberately omitted from the
+Cloudflare Tunnel. Future Talos bouncers should receive individual LAPI keys;
+do not reuse the admin-node Traefik key.
+
 ## Pi-hole DNS
 
 Pi-hole integration creates or validates local DNS records.

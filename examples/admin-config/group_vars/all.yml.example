@@ -29,6 +29,9 @@ storage_isolation:
     - name: traefik
       path: "{{ admin_node_root }}/data/traefik"
       size: "512M"
+    - name: crowdsec
+      path: "{{ admin_node_root }}/data/crowdsec"
+      size: "1G"
     - name: cloudflared
       path: "{{ admin_node_root }}/data/cloudflared"
       size: "512M"
@@ -42,6 +45,7 @@ service_domains:
   keycloak: "keycloak.example.com"
   gitea: "git.example.com"
   traefik: "traefik.example.com"
+  crowdsec: "crowdsec.example.com"
 
 cloudflare:
   enabled: true
@@ -68,6 +72,20 @@ backup:
 
 traefik:
   external_services: []
+
+crowdsec:
+  enabled: true
+  capi:
+    enabled: true
+  lapi:
+    allowed_cidrs:
+      - "192.168.1.0/24"
+  traefik_bouncer:
+    plugin_version: "v1.4.5"
+    update_interval_seconds: 60
+  openbao:
+    mount: "admin"
+    path_prefix: "crowdsec"
 
 hardening:
   apparmor:

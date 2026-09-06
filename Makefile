@@ -6,6 +6,7 @@ SHELL := /usr/bin/env bash
 	dev-deps docs docs-build docs-check docs-deps docs-serve govulncheck lint \
 	python-lint python-test render scan-container-images shellcheck sops-check \
 	test-build-admin-node-cache test-container-hardening test-disaster-recovery-actions \
+	test-crowdsec-contracts \
 	test-docker-api-isolation test-gitea-process-backup test-go test-grafana-dashboard-import \
 	test-harbor-mirror-validation test-image-security-policy test-image-security-scanner \
 	test-make-entrypoints test-offline-images test-oidc-contracts test-openbao-internal-tls \
@@ -39,6 +40,7 @@ lint: go-vet shellcheck actionlint python-lint ansible-lint ansible-syntax sops-
 
 ci-quality: check-ci-tools test-go lint govulncheck python-test \
 	test-build-admin-node-cache test-repo-permissions test-secret-rotation \
+	test-crowdsec-contracts \
 	test-system-update \
 	test-docker-api-isolation test-gitea-process-backup test-openbao-internal-tls \
 	test-restic-config test-offline-images test-image-security-scanner \
@@ -118,6 +120,9 @@ test-build-admin-node-cache:
 
 test-container-hardening:
 	@python3 ./ci/test_container_hardening.py
+
+test-crowdsec-contracts:
+	@./ci/test-crowdsec-contracts.sh
 
 test-openbao-internal-tls: test-traefik-external-services
 	@./ci/test-openbao-internal-tls.sh

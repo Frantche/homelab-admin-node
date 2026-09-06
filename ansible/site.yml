@@ -65,6 +65,7 @@
         gitea_config: "{{ gitea_config | default({}) | combine(decrypted_inventory_secrets.gitea_config | default({}), recursive=True) }}"
         oidc_clients: "{{ oidc_clients | default({}) | combine(decrypted_inventory_secrets.oidc_clients | default({}), recursive=True) }}"
         observability: "{{ observability | default({}) | combine(decrypted_inventory_secrets.observability | default({}), recursive=True) }}"
+        crowdsec: "{{ crowdsec | default({}) | combine(decrypted_inventory_secrets.crowdsec | default({}), recursive=True) }}"
       vars:
         decrypted_inventory_secrets: "{{ inventory_secrets.stdout | from_json }}"
       when: inventory_secrets_file.stat.exists
@@ -132,6 +133,8 @@
       when: admin_mode == 'normal' and (keycloak_config.enabled | default(false))
     - role: openbao_config
       when: admin_mode == 'normal' and (openbao_config.enabled | default(false))
+    - role: crowdsec
+      when: admin_mode in ['init', 'normal', 'restore'] and (crowdsec.enabled | default(false))
     - role: harbor
       when: admin_mode in ['init', 'normal', 'restore']
     - role: backup

@@ -56,6 +56,23 @@ http:
       # request rate limit to this router.
       middlewares:
         - transfer-protection
+{% if crowdsec.enabled | default(false) | bool %}
+    crowdsec-lapi:
+      rule: "Host(`{{ service_domains.crowdsec }}`)"
+      entryPoints:
+        - websecure
+{% if traefik_letsencrypt_enabled | default(false) %}
+      tls:
+        certResolver: letsencrypt
+{% else %}
+      tls: true
+{% endif %}
+      service: crowdsec-lapi
+      # Never place the CrowdSec bouncer on its own decision API route.
+      middlewares:
+        - security-headers
+        - crowdsec-lapi-allowlist
+{% endif %}
 {% if traefik.dashboard_enabled | default(false) | bool %}
     dashboard:
       rule: "Host(`{{ service_domains.traefik }}`)"
@@ -85,7 +102,11 @@ http:
 {% endif %}
       service: {{ external_service.name }}
       middlewares:
+{% if crowdsec.enabled | default(false) | bool %}
+        - external-protection
+{% else %}
         - security-headers
+{% endif %}
 {% endfor %}
   services:
     openbao:
@@ -105,6 +126,12 @@ http:
       loadBalancer:
         servers:
           - url: "http://harbor-nginx:8080"
+{% if crowdsec.enabled | default(false) | bool %}
+    crowdsec-lapi:
+      loadBalancer:
+        servers:
+          - url: "http://crowdsec:8080"
+{% endif %}
 {% for external_service in traefik_external_services | default([]) %}
     {{ external_service.name }}:
       loadBalancer:
@@ -166,13 +193,49 @@ http:
       chain:
         middlewares:
           - security-headers
+{% if crowdsec.enabled | default(false) | bool %}
+          - crowdsec-bouncer
+{% endif %}
           - interactive-rate-limit
           - interactive-concurrency
     transfer-protection:
       chain:
         middlewares:
           - security-headers
+{% if crowdsec.enabled | default(false) | bool %}
+          - crowdsec-bouncer
+{% endif %}
           - transfer-concurrency
+    external-protection:
+      chain:
+        middlewares:
+          - security-headers
+{% if crowdsec.enabled | default(false) | bool %}
+          - crowdsec-bouncer
+    crowdsec-bouncer:
+      plugin:
+        crowdsec-bouncer:
+          enabled: true
+          crowdsecMode: stream
+          crowdsecLapiScheme: http
+          crowdsecLapiHost: crowdsec:8080
+          crowdsecLapiKey: /run/secrets/crowdsec-traefik-bouncer-key
+          updateIntervalSeconds: {{ crowdsec.traefik_bouncer.update_interval_seconds | default(60) }}
+          updateMaxFailure: -1
+          crowdsecAppsecEnabled: false
+{% if (traefik.forwarded_headers_trusted_ips | default([])) | length > 0 %}
+          forwardedHeadersTrustedIPs:
+{% for cidr in traefik.forwarded_headers_trusted_ips %}
+            - "{{ cidr }}"
+{% endfor %}
+{% endif %}
+    crowdsec-lapi-allowlist:
+      ipAllowList:
+        sourceRange:
+{% for cidr in crowdsec.lapi.allowed_cidrs | default([]) %}
+          - "{{ cidr }}"
+{% endfor %}
+{% endif %}
 {% if traefik.dashboard_enabled | default(false) | bool %}
     dashboard-auth:
       basicAuth:

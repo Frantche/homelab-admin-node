@@ -229,6 +229,60 @@ exercise_openbao_operation_token_recovery() {
   assert_openbao_operation_token_contract restore update
 }
 
+assert_crowdsec_contract() {
+  local credential_json bouncer_key probe_path client_ip status
+
+  credential_json="$(
+    docker exec \
+      -e BAO_ADDR=https://127.0.0.1:8200 \
+      -e BAO_CACERT=/openbao/tls/ca.pem \
+      -e VAULT_TOKEN="$OPENBAO_TOKEN" \
+      openbao bao kv get -format=json admin/crowdsec/bouncers/traefik
+  )"
+  bouncer_key="$(jq -er '.data.data.api_key' <<<"$credential_json")"
+  docker exec \
+    -e BAO_ADDR=https://127.0.0.1:8200 \
+    -e BAO_CACERT=/openbao/tls/ca.pem \
+    -e VAULT_TOKEN="$OPENBAO_TOKEN" \
+    openbao bao kv get admin/crowdsec/lapi/machine >/dev/null
+
+  status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --cacert /srv/admin/certs/ca.pem \
+    https://crowdsec.example.com/v1/decisions)"
+  [[ "$status" == "403" ]]
+  status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --cacert /srv/admin/certs/ca.pem \
+    -H "X-Api-Key: $bouncer_key" \
+    https://crowdsec.example.com/v1/decisions)"
+  [[ "$status" == "200" ]]
+
+  probe_path="crowdsec-probe-$RANDOM"
+  curl --silent --output /dev/null --cacert /srv/admin/certs/ca.pem \
+    "https://keycloak.example.com/$probe_path"
+  client_ip="$(docker logs traefik --since 10s 2>&1 | awk -v probe="$probe_path" '$0 ~ probe {print $1}' | tail -n1)"
+  [[ -n "$client_ip" ]]
+  docker exec crowdsec cscli decisions add --ip "$client_ip" --duration 2m --type ban >/dev/null
+
+  for _ in $(seq 1 20); do
+    status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+      --cacert /srv/admin/certs/ca.pem \
+      "https://keycloak.example.com/$probe_path")"
+    [[ "$status" == "403" ]] && break
+    sleep 1
+  done
+  [[ "$status" == "403" ]]
+
+  docker exec crowdsec cscli decisions delete --ip "$client_ip" >/dev/null
+  for _ in $(seq 1 20); do
+    status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+      --cacert /srv/admin/certs/ca.pem \
+      "https://keycloak.example.com/$probe_path")"
+    [[ "$status" != "403" ]] && break
+    sleep 1
+  done
+  [[ "$status" != "403" ]]
+}
+
 trap dump_debug ERR
 trap stop_otel_mock EXIT
 
@@ -240,13 +294,14 @@ run_openbao_config_phase
 assert_openbao_operation_token_contract backup read
 assert_openbao_operation_token_contract restore update
 exercise_openbao_operation_token_recovery
+assert_crowdsec_contract
 
 # --- Verify final mode is normal ---
 assert_contains /etc/admin-node/mode "normal"
 
 # --- Verify Docker Compose services ---
 echo "=== Verifying Docker Compose services ==="
-for svc in traefik keycloak openbao harbor-core gitea; do
+for svc in traefik crowdsec keycloak openbao harbor-core gitea; do
   if ! docker ps --filter "name=^${svc}$" --filter "status=running" --format '{{.Names}}' | grep -q "^${svc}$"; then
     echo "ERROR: Service ${svc} is not running" >&2
     docker ps -a
@@ -266,6 +321,14 @@ docker exec \
   -e BAO_ADDR=https://127.0.0.1:8200 \
   -e BAO_CACERT=/openbao/tls/ca.pem \
   openbao bao status -format=json >/dev/null
+
+crowdsec_networks="$(docker inspect -f '{{json .NetworkSettings.Networks}}' crowdsec)"
+if [[ "$(jq -r 'keys | sort | join(",")' <<<"$crowdsec_networks")" != "crowdsec-egress,traefik-crowdsec" ]]; then
+  echo "ERROR: CrowdSec is not isolated on its dedicated Traefik network" >&2
+  jq . <<<"$crowdsec_networks" >&2
+  exit 1
+fi
+sudo test "$(sudo stat -c '%a:%U:%G' /srv/admin/env/crowdsec-traefik-bouncer-key)" = "600:root:root"
 
 # --- Verify Harbor private token material permissions ---
 if [[ "$(stat -c '%a:%U:%g' /srv/admin/data/harbor/core)" != "750:root:10000" ]]; then
