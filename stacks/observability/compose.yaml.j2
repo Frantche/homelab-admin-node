@@ -1,7 +1,7 @@
 services:
 {% if observability.mock_backend_enabled | default(false) | bool %}
   otel-mock-backend:
-    image: python:3.14-alpine@sha256:0ad7f98a97b1b8fcc226f5cbe49f0b95cd6f624582cdc6fbf7e41312075cb401
+    image: python:3.14-alpine@sha256:5e0ede45886712ce95b0e66232f743cc3d69ff6c2f62cc0d63778e1e894f8bd4
     container_name: otel-mock-backend
     restart: "no"
     read_only: true
@@ -42,7 +42,7 @@ services:
 
 {% endif %}
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.159.0@sha256:4f4276c07cee9055f2ab630a86330243f85e208c388ee697bea2a44dab896c3f
+    image: otel/opentelemetry-collector-contrib:0.160.0@sha256:5b66b0dc6921f2a439cf50b942ccb9e2a4375f136239a9fdf709ef33e4bfc668
     container_name: otel-collector
     restart: "no"
     user: "10001:10001"

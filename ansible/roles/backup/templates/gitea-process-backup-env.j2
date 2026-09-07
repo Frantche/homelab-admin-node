@@ -1,7 +1,7 @@
 # Managed by Ansible.
 BACKUP_ENABLE=true
 BACKUP_METHODE={{ backup.gitea_process.method }}
-GITEA_PROCESS_BACKUP_IMAGE={{ backup.gitea_process.image | default('ghcr.io/frantche/gitea-backup-restore-process:0.3.46@sha256:83c1d3422a644e446031dd27174f8584710f004d5eaed40af2544fb4c1bca1a6') }}
+GITEA_PROCESS_BACKUP_IMAGE={{ backup.gitea_process.image | default('ghcr.io/frantche/gitea-backup-restore-process:0.3.51@sha256:9fe0b392d8952d2fe0223858b4b55a7370099ac815eb2ac45edbcb7377aab76c') }}
 GITEA_PROCESS_BACKUP_NETWORK={{ backup.gitea_process.network | default('gitea-db') }}
 GITEA_PROCESS_BACKUP_EGRESS_NETWORK={{ backup.gitea_process.egress_network | default('admin-edge') }}
 APP_INI_PATH={{ backup.gitea_process.app_ini_path | default('/data/gitea/conf/app.ini') }}
