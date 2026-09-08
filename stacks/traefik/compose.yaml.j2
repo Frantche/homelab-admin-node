@@ -23,6 +23,8 @@ services:
 {% endif %}
     ports:
       - "443:443"
+    expose:
+      - "8443"
     volumes:
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
       - ./dynamic:/etc/traefik/dynamic:ro
@@ -50,6 +52,7 @@ services:
         aliases:
           # OpenBao reaches Keycloak through Traefik without joining admin-edge.
           - "{{ service_domains.keycloak }}"
+      traefik-cloudflared: {}
 {% if crowdsec.enabled | default(false) | bool %}
       traefik-crowdsec: {}
 {% endif %}
@@ -58,6 +61,8 @@ networks:
   admin-edge:
     external: true
   traefik-openbao:
+    external: true
+  traefik-cloudflared:
     external: true
 {% if crowdsec.enabled | default(false) | bool %}
   traefik-crowdsec:

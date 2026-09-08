@@ -75,6 +75,11 @@ pihole:
 
 cloudflare:
   enabled: true
+  # Private origin link between cloudflared and Traefik. The fixed connector
+  # address lets Traefik trust forwarded headers from that proxy alone.
+  origin_network:
+    subnet: "172.31.255.0/29"
+    cloudflared_ip: "172.31.255.2"
   dns:
     enabled: false
     zone: "example.com"

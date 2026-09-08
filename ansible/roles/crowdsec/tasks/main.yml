@@ -144,12 +144,7 @@
       ansible.builtin.set_fact:
         crowdsec_openbao_mount: "{{ crowdsec.openbao.mount | regex_replace('^/+|/+$', '') }}"
         crowdsec_openbao_path_prefix: "{{ crowdsec.openbao.path_prefix | regex_replace('^/+|/+$', '') }}"
-        crowdsec_openbao_token: >-
-          {{
-            openbao.root_token | default('', true)
-            if (openbao.root_token | default('', true) | length > 0)
-            else (openbao_config.root_token | default('', true))
-          }}
+        crowdsec_openbao_token: "{{ openbao_config_token | default('') }}"
         crowdsec_openbao_validate_certs: "{{ openbao_config.validate_certs | default(not (ci_mode | default(false))) }}"
         crowdsec_openbao_kv_v2_mounts: >-
           {{

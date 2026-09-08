@@ -329,6 +329,12 @@ if [[ "$(jq -r 'keys | sort | join(",")' <<<"$crowdsec_networks")" != "crowdsec-
   exit 1
 fi
 sudo test "$(sudo stat -c '%a:%U:%G' /srv/admin/env/crowdsec-traefik-bouncer-key)" = "600:root:root"
+cloudflared_networks="$(docker inspect -f '{{json .NetworkSettings.Networks}}' cloudflared)"
+if [[ "$(jq -r 'keys | sort | join(",")' <<<"$cloudflared_networks")" != "cloudflare-egress,traefik-cloudflared" ]]; then
+  echo "ERROR: cloudflared is not isolated on its origin and egress networks" >&2
+  jq . <<<"$cloudflared_networks" >&2
+  exit 1
+fi
 
 # --- Verify Harbor private token material permissions ---
 if [[ "$(stat -c '%a:%U:%g' /srv/admin/data/harbor/core)" != "750:root:10000" ]]; then

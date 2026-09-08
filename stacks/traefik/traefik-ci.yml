@@ -3,6 +3,21 @@ entryPoints:
     address: ":8082"
   websecure:
     address: ":443"
+{% if crowdsec.enabled | default(false) | bool %}
+    http:
+      middlewares:
+        - crowdsec-bouncer@file
+{% endif %}
+  cloudflarewebsecure:
+    address: ":8443"
+    forwardedHeaders:
+      trustedIPs:
+        - "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.2')) }}/32"
+{% if crowdsec.enabled | default(false) | bool %}
+    http:
+      middlewares:
+        - crowdsec-bouncer@file
+{% endif %}
 api:
   dashboard: true
 metrics:

@@ -31,6 +31,7 @@
     internal: "{{ item.internal }}"
     driver_options:
       com.docker.network.bridge.name: "{{ item.bridge }}"
+    ipam_config: "{{ item.ipam_config | default(omit) }}"
     state: present
   loop:
     - { name: admin-edge, bridge: br-admin-edge, internal: false }
@@ -39,6 +40,12 @@
     - { name: traefik-openbao, bridge: br-traefik-bao, internal: true }
     - { name: traefik-crowdsec, bridge: br-traefik-cs, internal: true }
     - { name: crowdsec-egress, bridge: br-cs-egress, internal: false }
+    - name: traefik-cloudflared
+      bridge: br-traefik-cf
+      internal: true
+      ipam_config:
+        - subnet: "{{ ((cloudflare.origin_network | default({})).subnet | default('172.31.255.0/29')) }}"
+    - { name: cloudflare-egress, bridge: br-cf-egress, internal: false }
     - { name: openbao-metrics, bridge: br-bao-metrics, internal: true }
     - { name: harbor-internal, bridge: br-harbor, internal: true }
     - { name: harbor-egress, bridge: br-hbr-egress, internal: false }

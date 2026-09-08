@@ -11,10 +11,32 @@ entryPoints:
         - "{{ cidr }}"
 {% endfor %}
 {% endif %}
-{% if traefik_letsencrypt_enabled %}
+{% if traefik_letsencrypt_enabled or (crowdsec.enabled | default(false) | bool) %}
     http:
+{% if traefik_letsencrypt_enabled %}
       tls:
         certResolver: letsencrypt
+{% endif %}
+{% if crowdsec.enabled | default(false) | bool %}
+      middlewares:
+        - crowdsec-bouncer@file
+{% endif %}
+{% endif %}
+  cloudflarewebsecure:
+    address: ":8443"
+    forwardedHeaders:
+      trustedIPs:
+        - "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.2')) }}/32"
+{% if traefik_letsencrypt_enabled or (crowdsec.enabled | default(false) | bool) %}
+    http:
+{% if traefik_letsencrypt_enabled %}
+      tls:
+        certResolver: letsencrypt
+{% endif %}
+{% if crowdsec.enabled | default(false) | bool %}
+      middlewares:
+        - crowdsec-bouncer@file
+{% endif %}
 {% endif %}
 api:
   dashboard: {{ traefik.dashboard_enabled | default(false) | bool | lower }}
