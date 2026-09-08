@@ -4,6 +4,7 @@ http:
       rule: "Host(`{{ service_domains.openbao }}`)"
       entryPoints:
         - websecure
+        - cloudflarewebsecure
 {% if traefik_letsencrypt_enabled | default(false) %}
       tls:
         certResolver: letsencrypt
@@ -17,6 +18,7 @@ http:
       rule: "Host(`{{ service_domains.keycloak }}`)"
       entryPoints:
         - websecure
+        - cloudflarewebsecure
 {% if traefik_letsencrypt_enabled | default(false) %}
       tls:
         certResolver: letsencrypt
@@ -30,6 +32,7 @@ http:
       rule: "Host(`{{ service_domains.gitea | default('git.example.com') }}`)"
       entryPoints:
         - websecure
+        - cloudflarewebsecure
 {% if traefik_letsencrypt_enabled | default(false) %}
       tls:
         certResolver: letsencrypt
@@ -45,6 +48,7 @@ http:
       rule: "Host(`{{ service_domains.harbor }}`)"
       entryPoints:
         - websecure
+        - cloudflarewebsecure
 {% if traefik_letsencrypt_enabled | default(false) %}
       tls:
         certResolver: letsencrypt
@@ -68,7 +72,8 @@ http:
       tls: true
 {% endif %}
       service: crowdsec-lapi
-      # Never place the CrowdSec bouncer on its own decision API route.
+      # The entrypoint middleware protects this route too. The plugin reaches
+      # crowdsec:8080 directly over the private network, so it cannot recurse.
       middlewares:
         - security-headers
         - crowdsec-lapi-allowlist
@@ -94,6 +99,9 @@ http:
       rule: "Host(`{{ external_service.hostname }}`)"
       entryPoints:
         - websecure
+{% if external_service.cloudflare | default(false) | bool %}
+        - cloudflarewebsecure
+{% endif %}
 {% if traefik_letsencrypt_enabled | default(false) %}
       tls:
         certResolver: letsencrypt
@@ -193,25 +201,18 @@ http:
       chain:
         middlewares:
           - security-headers
-{% if crowdsec.enabled | default(false) | bool %}
-          - crowdsec-bouncer
-{% endif %}
           - interactive-rate-limit
           - interactive-concurrency
     transfer-protection:
       chain:
         middlewares:
           - security-headers
-{% if crowdsec.enabled | default(false) | bool %}
-          - crowdsec-bouncer
-{% endif %}
           - transfer-concurrency
     external-protection:
       chain:
         middlewares:
           - security-headers
 {% if crowdsec.enabled | default(false) | bool %}
-          - crowdsec-bouncer
     crowdsec-bouncer:
       plugin:
         crowdsec-bouncer:
@@ -228,6 +229,10 @@ http:
 {% for cidr in traefik.forwarded_headers_trusted_ips %}
             - "{{ cidr }}"
 {% endfor %}
+            - "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.2')) }}/32"
+{% else %}
+          forwardedHeadersTrustedIPs:
+            - "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.2')) }}/32"
 {% endif %}
     crowdsec-lapi-allowlist:
       ipAllowList:

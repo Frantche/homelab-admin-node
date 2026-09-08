@@ -49,6 +49,9 @@ service_domains:
 
 cloudflare:
   enabled: true
+  origin_network:
+    subnet: "172.31.255.0/29"
+    cloudflared_ip: "172.31.255.2"
   dns:
     enabled: false
     zone: "example.com"

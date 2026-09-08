@@ -43,11 +43,13 @@ table inet admin_filter {
     iifname "br-keycloak-db" oifname "br-keycloak-db" accept
     iifname "br-traefik-bao" oifname "br-traefik-bao" accept
     iifname "br-traefik-cs" oifname "br-traefik-cs" accept
+    iifname "br-traefik-cf" oifname "br-traefik-cf" accept
     iifname "br-bao-metrics" oifname "br-bao-metrics" accept
     iifname "br-harbor" oifname "br-harbor" accept
     ip saddr 127.0.0.1 oifname "br-hbr-host" tcp dport 10514 accept
     iifname "br-hbr-egress" oifname != "br-hbr-egress" accept
     iifname "br-cs-egress" oifname != "br-cs-egress" accept
+    iifname "br-cf-egress" oifname != "br-cf-egress" accept
     iifname "br-admin-edge" oifname != "br-admin-edge" accept
     iifname != "br-admin-edge" oifname "br-admin-edge" tcp dport 443 accept
 

@@ -88,6 +88,9 @@
           - "'--config /etc/cloudflared/config.yml run validation-tunnel-id' in (rendered_cloudflared_compose.content | b64decode)"
           - "'./config.yml:/etc/cloudflared/config.yml:ro' in (rendered_cloudflared_compose.content | b64decode)"
           - "'./credentials.json:/etc/cloudflared/credentials.json:ro' in (rendered_cloudflared_compose.content | b64decode)"
+          - "'traefik-cloudflared:' in (rendered_cloudflared_compose.content | b64decode)"
+          - "'cloudflare-egress: {}' in (rendered_cloudflared_compose.content | b64decode)"
+          - "'admin-edge' not in (rendered_cloudflared_compose.content | b64decode)"
           - "'--token' not in (rendered_cloudflared_compose.content | b64decode)"
 
     - name: Render Keycloak Compose configuration
