@@ -230,7 +230,7 @@ exercise_openbao_operation_token_recovery() {
 }
 
 assert_harbor_pull_secret_contract() {
-  local credential_json username password repository token payload encoded
+  local credential_json username password repository token payload
 
   credential_json="$(
     docker exec \
@@ -255,9 +255,11 @@ assert_harbor_pull_secret_contract() {
         https://harbor.example.com/service/token |
         jq -er .token
     )"
-    encoded="$(cut -d. -f2 <<<"$token")"
-    encoded="${encoded}$(printf '=%.0s' $(seq 1 $(( (4 - ${#encoded} % 4) % 4 ))))"
-    payload="$(tr '_-' '/+' <<<"$encoded" | base64 --decode)"
+    payload="$(
+      jq -Rr \
+        'split(".")[1] | gsub("-"; "+") | gsub("_"; "/") | @base64d' \
+        <<<"$token"
+    )"
     jq -e --arg repository "$repository" \
       '.access[] | select(.name == $repository) | .actions | index("pull") != null' \
       <<<"$payload" >/dev/null
