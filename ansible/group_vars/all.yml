@@ -154,6 +154,7 @@ openbao_config:
 harbor_config:
   enabled: false
   validate_certs: "{{ not (ci_mode | default(false)) }}"
+  robot_tokens: []
   oidc:
     enabled: false
     endpoint: "https://{{ service_domains.keycloak }}/realms/{{ keycloak_config.realm.name }}"

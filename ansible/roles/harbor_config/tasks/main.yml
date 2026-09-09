@@ -245,3 +245,68 @@
     loop_var: harbor_mirror_item
     label: "{{ harbor_mirror_item.name }}"
   when: not (harbor_config_test_mode | default(false))
+
+- name: Build Harbor robot token declarations
+  ansible.builtin.set_fact:
+    harbor_robot_tokens: "{{ harbor_config.robot_tokens | default([]) }}"
+  when: not (harbor_config_test_mode | default(false))
+
+- name: Validate Harbor robot token identity declarations
+  ansible.builtin.assert:
+    that:
+      - harbor_robot_token_item is mapping
+      - harbor_robot_token_item.name is defined
+      - harbor_robot_token_item.openbao | default({}) is mapping
+      - harbor_robot_token_item.openbao.mount is defined
+      - harbor_robot_token_item.openbao.path is defined
+    fail_msg: "Each harbor_config.robot_tokens item requires a name and an OpenBao mount/path."
+  loop: "{{ harbor_robot_tokens }}"
+  loop_control:
+    loop_var: harbor_robot_token_item
+    label: "{{ harbor_robot_token_item.name | default('unnamed') }}"
+  when: not (harbor_config_test_mode | default(false))
+  no_log: true
+
+- name: Reset Harbor robot token destination list
+  ansible.builtin.set_fact:
+    harbor_robot_token_destinations: []
+  when: not (harbor_config_test_mode | default(false))
+
+- name: Build Harbor robot token destination list
+  ansible.builtin.set_fact:
+    harbor_robot_token_destinations: >-
+      {{
+        harbor_robot_token_destinations
+        + [
+          (harbor_robot_token_item.openbao.mount | default('') | regex_replace('^/+|/+$', ''))
+          ~ '/'
+          ~ (harbor_robot_token_item.openbao.path | regex_replace('^/+|/+$', ''))
+        ]
+      }}
+  loop: "{{ harbor_robot_tokens }}"
+  loop_control:
+    loop_var: harbor_robot_token_item
+    label: "{{ harbor_robot_token_item.name }}"
+  when: not (harbor_config_test_mode | default(false))
+  no_log: true
+
+- name: Validate Harbor robot token uniqueness
+  ansible.builtin.assert:
+    that:
+      - harbor_robot_tokens | map(attribute='name') | unique | length == harbor_robot_tokens | length
+      - harbor_robot_token_destinations | unique | length == harbor_robot_tokens | length
+    fail_msg: "harbor_config.robot_tokens requires unique robot names and normalized OpenBao destinations."
+  when:
+    - not (harbor_config_test_mode | default(false))
+    - harbor_robot_tokens | length > 0
+  no_log: true
+
+- name: Reconcile Harbor robot tokens
+  ansible.builtin.include_tasks: robot-token.yml
+  loop: "{{ harbor_robot_tokens }}"
+  loop_control:
+    loop_var: harbor_robot_token_item
+    label: "{{ harbor_robot_token_item.name | default('unnamed') }}"
+  when:
+    - not (harbor_config_test_mode | default(false))
+    - harbor_robot_token_item.enabled | default(true) | bool

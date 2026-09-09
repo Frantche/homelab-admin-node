@@ -35,7 +35,9 @@ selected_go_version="$(
     GOTOOLCHAIN=go1.26.7+auto \
     go -C "$TEST_REPO" version
 )"
-grep -Fq "go version go1.27.0 " <<<"$selected_go_version"
+expected_go_version="$(awk '$1 == "go" { print $2; exit }' "$TEST_REPO/go.mod")"
+[[ -n "$expected_go_version" ]]
+grep -Fq "go version go${expected_go_version} " <<<"$selected_go_version"
 
 first_output="$(
   sudo env -i \
