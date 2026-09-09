@@ -27,6 +27,7 @@
       - harbor_pull_secret_cfg.mode | default('', true) in ['pull', 'pull_push']
       - harbor_pull_secret_cfg.projects | default([]) is sequence
       - harbor_pull_secret_cfg.projects | default([]) | length > 0
+      - harbor_pull_secret_cfg.projects | unique | length == harbor_pull_secret_cfg.projects | length
       - harbor_pull_secret_cfg.projects | reject('match', '^(\*|[a-z0-9][a-z0-9._-]*)$') | list | length == 0
       - "('*' not in harbor_pull_secret_cfg.projects) or (harbor_pull_secret_cfg.projects | length == 1)"
       - harbor_pull_secret_cfg.openbao.mount | default('', true) | length > 0
