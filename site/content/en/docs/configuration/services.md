@@ -292,13 +292,18 @@ harbor_config:
   registry_mirrors: []
 ```
 
+Each declaration owns one Harbor robot and one OpenBao value. Removing an item
+or setting `enabled: false` stops its reconciliation but does not revoke an
+already-created credential; disable or delete the robot in Harbor and remove
+its OpenBao value when decommissioning a consumer.
+
 | Variable | Default/example | Purpose |
 | --- | --- | --- |
 | `harbor_config.enabled` | `false` | Enables Harbor API configuration. |
 | `harbor_config.validate_certs` | `{{ not ci_mode }}` | TLS validation for Harbor API calls. |
 | `harbor_config.validate_registry_mirrors` | `false` | Default validation toggle for mirror pull checks. |
 | `harbor_config.robot_tokens[]` | `[]` | System robot tokens to reconcile. Each enabled item needs a unique name and OpenBao path. |
-| `harbor_config.robot_tokens[].enabled` | `true` | Allows one declared token to be disabled without removing its configuration. |
+| `harbor_config.robot_tokens[].enabled` | `true` | Skips reconciliation for this item when false; it does not revoke an existing robot. |
 | `harbor_config.robot_tokens[].name` | required | Robot name before Harbor applies its configured robot prefix. |
 | `harbor_config.robot_tokens[].projects` | required | Project names granted to the robot. Use `["*"]` alone for every project. |
 | `harbor_config.robot_tokens[].mode` | `pull` or `pull_push` | Grants repository pull only, or both pull and push, for every selected project. |
