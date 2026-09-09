@@ -48,7 +48,8 @@ cloudflare:
   enabled: true
   origin_network:
     subnet: "172.31.255.0/29"
-    cloudflared_ip: "172.31.255.2"
+    traefik_ip: "172.31.255.2"
+    cloudflared_ip: "172.31.255.3"
 
 crowdsec:
   enabled: true
@@ -67,9 +68,9 @@ crowdsec:
 
 Choose an unused private subnet for `cloudflare.origin_network.subnet` if the
 default overlaps another Docker, LAN, VPN, or container network. Keep
-`cloudflared_ip` inside that subnet and do not assign it to another container.
-Changing either value causes Docker network reconciliation and may briefly
-interrupt tunnel traffic during convergence.
+`traefik_ip` and `cloudflared_ip` distinct and inside that subnet. Changing
+either address recreates the affected container and may briefly interrupt
+tunnel traffic during convergence.
 
 `crowdsec.lapi.allowed_cidrs` controls who may call the HTTPS LAPI hostname. It
 must not be confused with `traefik.forwarded_headers_trusted_ips`, which lists
