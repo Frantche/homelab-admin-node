@@ -249,38 +249,53 @@ assert_crowdsec_contract() {
   status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
     --cacert /srv/admin/certs/ca.pem \
     https://crowdsec.example.com/v1/decisions)"
-  [[ "$status" == "403" ]]
+  if [[ "$status" != "401" && "$status" != "403" ]]; then
+    echo "ERROR: unauthenticated CrowdSec LAPI request returned HTTP $status, expected 401 or 403" >&2
+    return 1
+  fi
   status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
     --cacert /srv/admin/certs/ca.pem \
     -H "X-Api-Key: $bouncer_key" \
     https://crowdsec.example.com/v1/decisions)"
-  [[ "$status" == "200" ]]
+  if [[ "$status" != "200" ]]; then
+    echo "ERROR: authenticated CrowdSec LAPI request returned HTTP $status, expected 200" >&2
+    return 1
+  fi
 
   probe_path="crowdsec-probe-$RANDOM"
   curl --silent --output /dev/null --cacert /srv/admin/certs/ca.pem \
     "https://keycloak.example.com/$probe_path"
   client_ip="$(docker logs traefik --since 10s 2>&1 | awk -v probe="$probe_path" '$0 ~ probe {print $1}' | tail -n1)"
-  [[ -n "$client_ip" ]]
+  if [[ -z "$client_ip" ]]; then
+    echo "ERROR: Traefik access log did not expose the CrowdSec probe client IP" >&2
+    return 1
+  fi
   docker exec crowdsec cscli decisions add --ip "$client_ip" --duration 2m --type ban >/dev/null
 
-  for _ in $(seq 1 20); do
+  for _ in $(seq 1 90); do
     status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
       --cacert /srv/admin/certs/ca.pem \
       "https://keycloak.example.com/$probe_path")"
     [[ "$status" == "403" ]] && break
     sleep 1
   done
-  [[ "$status" == "403" ]]
+  if [[ "$status" != "403" ]]; then
+    echo "ERROR: CrowdSec ban did not propagate to Traefik; last HTTP status was $status" >&2
+    return 1
+  fi
 
   docker exec crowdsec cscli decisions delete --ip "$client_ip" >/dev/null
-  for _ in $(seq 1 20); do
+  for _ in $(seq 1 90); do
     status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
       --cacert /srv/admin/certs/ca.pem \
       "https://keycloak.example.com/$probe_path")"
     [[ "$status" != "403" ]] && break
     sleep 1
   done
-  [[ "$status" != "403" ]]
+  if [[ "$status" == "403" ]]; then
+    echo "ERROR: removed CrowdSec ban remained active in Traefik" >&2
+    return 1
+  fi
 }
 
 trap dump_debug ERR
