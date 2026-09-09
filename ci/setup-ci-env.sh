@@ -23,7 +23,7 @@ fi
 
 mapfile -t service_domains < <("$REPO_ROOT/ci/service-domains.py" list)
 if [[ ${#service_domains[@]} -eq 0 ]]; then
-  service_domains=(keycloak.example.com bao.example.com harbor.example.com traefik.example.com)
+  service_domains=(keycloak.example.com bao.example.com harbor.example.com traefik.example.com crowdsec.example.com)
 fi
 
 # --- Add /etc/hosts entries for service domains ---
