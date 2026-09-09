@@ -11,10 +11,32 @@ entryPoints:
         - "{{ cidr }}"
 {% endfor %}
 {% endif %}
-{% if traefik_letsencrypt_enabled %}
+{% if traefik_letsencrypt_enabled or (crowdsec.enabled | default(false) | bool) %}
     http:
+{% if traefik_letsencrypt_enabled %}
       tls:
         certResolver: letsencrypt
+{% endif %}
+{% if crowdsec.enabled | default(false) | bool %}
+      middlewares:
+        - crowdsec-bouncer@file
+{% endif %}
+{% endif %}
+  cloudflarewebsecure:
+    address: ":8443"
+    forwardedHeaders:
+      trustedIPs:
+        - "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3')) }}/32"
+{% if traefik_letsencrypt_enabled or (crowdsec.enabled | default(false) | bool) %}
+    http:
+{% if traefik_letsencrypt_enabled %}
+      tls:
+        certResolver: letsencrypt
+{% endif %}
+{% if crowdsec.enabled | default(false) | bool %}
+      middlewares:
+        - crowdsec-bouncer@file
+{% endif %}
 {% endif %}
 api:
   dashboard: {{ traefik.dashboard_enabled | default(false) | bool | lower }}
@@ -27,6 +49,13 @@ providers:
   file:
     directory: /etc/traefik/dynamic
     watch: true
+{% if crowdsec.enabled | default(false) | bool %}
+experimental:
+  plugins:
+    crowdsec-bouncer:
+      moduleName: github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
+      version: "{{ crowdsec.traefik_bouncer.plugin_version | default('v1.4.5') }}"
+{% endif %}
 {% if traefik_letsencrypt_enabled %}
 certificatesResolvers:
   letsencrypt:

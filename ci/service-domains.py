@@ -9,6 +9,7 @@ DEFAULT_DOMAINS = {
     "harbor": "harbor.example.com",
     "gitea": "git.example.com",
     "traefik": "traefik.example.com",
+    "crowdsec": "crowdsec.example.com",
 }
 CONFIG_PATH = Path(
     "/etc/admin-config/homelab-node-admin-config/hosts/group_vars/all.yml"
@@ -51,7 +52,7 @@ def main() -> int:
     domains = load_domains()
 
     if args.command == "list":
-        for key in ("keycloak", "openbao", "harbor", "gitea", "traefik"):
+        for key in ("keycloak", "openbao", "harbor", "gitea", "traefik", "crowdsec"):
             value = domains.get(key)
             if value:
                 print(value)

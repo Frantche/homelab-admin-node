@@ -11,6 +11,7 @@ service_domains:
   keycloak: "keycloak.example.com"
   gitea: "git.example.com"
   traefik: "traefik.example.com"
+  crowdsec: "crowdsec.example.com"
 
 oidc_clients:
   harbor:
@@ -148,6 +149,21 @@ observability:
   service_metrics_interval: "5s"
   mock_backend_enabled: true
   mock_state_dir: "/tmp/admin-node-otel-mock"
+
+crowdsec:
+  enabled: true
+  capi:
+    enabled: false
+  lapi:
+    allowed_cidrs:
+      - "192.168.1.0/24"
+      - "172.16.0.0/12"
+  traefik_bouncer:
+    plugin_version: "v1.4.5"
+    update_interval_seconds: 1
+  openbao:
+    mount: "secret"
+    path_prefix: "crowdsec"
 
 backup:
   restic_init_repositories: true

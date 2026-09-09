@@ -4,6 +4,7 @@ http:
       rule: "Host(`{{ service_domains.openbao }}`)"
       entryPoints:
         - websecure
+        - cloudflarewebsecure
 {% if traefik_letsencrypt_enabled | default(false) %}
       tls:
         certResolver: letsencrypt
@@ -17,6 +18,7 @@ http:
       rule: "Host(`{{ service_domains.keycloak }}`)"
       entryPoints:
         - websecure
+        - cloudflarewebsecure
 {% if traefik_letsencrypt_enabled | default(false) %}
       tls:
         certResolver: letsencrypt
@@ -30,6 +32,7 @@ http:
       rule: "Host(`{{ service_domains.gitea | default('git.example.com') }}`)"
       entryPoints:
         - websecure
+        - cloudflarewebsecure
 {% if traefik_letsencrypt_enabled | default(false) %}
       tls:
         certResolver: letsencrypt
@@ -45,6 +48,7 @@ http:
       rule: "Host(`{{ service_domains.harbor }}`)"
       entryPoints:
         - websecure
+        - cloudflarewebsecure
 {% if traefik_letsencrypt_enabled | default(false) %}
       tls:
         certResolver: letsencrypt
@@ -56,6 +60,24 @@ http:
       # request rate limit to this router.
       middlewares:
         - transfer-protection
+{% if crowdsec.enabled | default(false) | bool %}
+    crowdsec-lapi:
+      rule: "Host(`{{ service_domains.crowdsec }}`)"
+      entryPoints:
+        - websecure
+{% if traefik_letsencrypt_enabled | default(false) %}
+      tls:
+        certResolver: letsencrypt
+{% else %}
+      tls: true
+{% endif %}
+      service: crowdsec-lapi
+      # The entrypoint middleware protects this route too. The plugin reaches
+      # crowdsec:8080 directly over the private network, so it cannot recurse.
+      middlewares:
+        - security-headers
+        - crowdsec-lapi-allowlist
+{% endif %}
 {% if traefik.dashboard_enabled | default(false) | bool %}
     dashboard:
       rule: "Host(`{{ service_domains.traefik }}`)"
@@ -77,6 +99,9 @@ http:
       rule: "Host(`{{ external_service.hostname }}`)"
       entryPoints:
         - websecure
+{% if external_service.cloudflare | default(false) | bool %}
+        - cloudflarewebsecure
+{% endif %}
 {% if traefik_letsencrypt_enabled | default(false) %}
       tls:
         certResolver: letsencrypt
@@ -85,7 +110,11 @@ http:
 {% endif %}
       service: {{ external_service.name }}
       middlewares:
+{% if crowdsec.enabled | default(false) | bool %}
+        - external-protection
+{% else %}
         - security-headers
+{% endif %}
 {% endfor %}
   services:
     openbao:
@@ -105,6 +134,12 @@ http:
       loadBalancer:
         servers:
           - url: "http://harbor-nginx:8080"
+{% if crowdsec.enabled | default(false) | bool %}
+    crowdsec-lapi:
+      loadBalancer:
+        servers:
+          - url: "http://crowdsec:8080"
+{% endif %}
 {% for external_service in traefik_external_services | default([]) %}
     {{ external_service.name }}:
       loadBalancer:
@@ -173,6 +208,39 @@ http:
         middlewares:
           - security-headers
           - transfer-concurrency
+    external-protection:
+      chain:
+        middlewares:
+          - security-headers
+{% if crowdsec.enabled | default(false) | bool %}
+    crowdsec-bouncer:
+      plugin:
+        crowdsec-bouncer:
+          enabled: true
+          crowdsecMode: stream
+          crowdsecLapiScheme: http
+          crowdsecLapiHost: crowdsec:8080
+          crowdsecLapiKeyFile: /run/secrets/crowdsec-traefik-bouncer-key
+          updateIntervalSeconds: {{ crowdsec.traefik_bouncer.update_interval_seconds | default(60) }}
+          updateMaxFailure: -1
+          crowdsecAppsecEnabled: false
+{% if (traefik.forwarded_headers_trusted_ips | default([])) | length > 0 %}
+          forwardedHeadersTrustedIPs:
+{% for cidr in traefik.forwarded_headers_trusted_ips %}
+            - "{{ cidr }}"
+{% endfor %}
+            - "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3')) }}/32"
+{% else %}
+          forwardedHeadersTrustedIPs:
+            - "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3')) }}/32"
+{% endif %}
+    crowdsec-lapi-allowlist:
+      ipAllowList:
+        sourceRange:
+{% for cidr in crowdsec.lapi.allowed_cidrs | default([]) %}
+          - "{{ cidr }}"
+{% endfor %}
+{% endif %}
 {% if traefik.dashboard_enabled | default(false) | bool %}
     dashboard-auth:
       basicAuth:

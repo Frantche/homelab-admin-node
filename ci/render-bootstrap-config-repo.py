@@ -34,6 +34,21 @@ def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
             "local_tls_enabled": True,
             "external_services": [],
         },
+        "crowdsec": {
+            "enabled": True,
+            "capi": {"enabled": False},
+            "lapi": {
+                "allowed_cidrs": ["127.0.0.1/32", "172.16.0.0/12"],
+            },
+            "traefik_bouncer": {
+                "plugin_version": "v1.4.5",
+                "update_interval_seconds": 1,
+            },
+            "openbao": {
+                "mount": "secret",
+                "path_prefix": "crowdsec",
+            },
+        },
         "pihole": {
             "enabled": True,
             "api_version": "auto",

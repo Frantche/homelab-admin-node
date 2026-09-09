@@ -38,6 +38,14 @@ func TestResolveRejectsPathTraversal(t *testing.T) {
 	}
 }
 
+func TestOrderedActiveStacksStartsCrowdSecAfterTraefik(t *testing.T) {
+	got := orderedActiveStacks([]string{"crowdsec", "harbor", "openbao", "traefik"})
+	want := []string{"openbao", "traefik", "crowdsec", "harbor"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("ordered stacks = %v, want %v", got, want)
+	}
+}
+
 func TestSuspendSystemdTimersRestartsOnlyPreviouslyActiveTimers(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")

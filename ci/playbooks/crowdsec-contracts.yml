@@ -1,0 +1,124 @@
+---
+- name: Validate CrowdSec and Traefik rendering contracts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    admin_node_root: "/srv/admin"
+    ci_mode: true
+    traefik_letsencrypt_enabled: false
+    TRAEFIK_DASHBOARD_BASIC_AUTH: "admin:test"
+    service_domains:
+      openbao: "bao.example.com"
+      keycloak: "keycloak.example.com"
+      gitea: "git.example.com"
+      harbor: "harbor.example.com"
+      traefik: "traefik.example.com"
+      crowdsec: "crowdsec.example.com"
+    traefik:
+      dashboard_enabled: true
+      forwarded_headers_trusted_ips:
+        - "172.16.0.0/12"
+      security:
+        interactive_rate_limit:
+          average: 100
+          burst: 200
+        interactive_max_in_flight: 100
+        transfer_max_in_flight: 200
+    traefik_external_services:
+      - name: "nas"
+        hostname: "nas.example.com"
+        url: "http://192.168.1.50"
+    cloudflare:
+      enabled: true
+      tunnel_id: "00000000-0000-0000-0000-000000000000"
+      origin_network:
+        subnet: "172.31.255.0/29"
+        traefik_ip: "172.31.255.2"
+        cloudflared_ip: "172.31.255.3"
+    hardening:
+      apparmor:
+        enabled: false
+        profiles:
+          cloudflared: false
+    crowdsec:
+      enabled: true
+      image: "crowdsecurity/crowdsec:v1.8.1@sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975"
+      capi:
+        enabled: true
+      lapi:
+        allowed_cidrs:
+          - "192.168.1.0/24"
+      traefik_bouncer:
+        plugin_version: "v1.4.5"
+        update_interval_seconds: 60
+  tasks:
+    - name: Render CrowdSec stack and Traefik configuration
+      ansible.builtin.set_fact:
+        crowdsec_compose: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/crowdsec/compose.yaml.j2') }}"
+        crowdsec_traefik_compose: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/compose.yaml.j2') }}"
+        crowdsec_traefik_static: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/traefik.yml.j2') }}"
+        crowdsec_traefik_dynamic: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/dynamic/config.yml.j2') }}"
+        crowdsec_cloudflared_compose: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/cloudflared/compose.yaml.j2') }}"
+        crowdsec_cloudflared_config: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/cloudflared/config.yml.tpl') }}"
+
+    - name: Assert CrowdSec LAPI-only stack contracts
+      ansible.builtin.assert:
+        that:
+          - "'DISABLE_AGENT: \"true\"' in crowdsec_compose"
+          - "'DISABLE_ONLINE_API: \"false\"' in crowdsec_compose"
+          - "'/etc/crowdsec' in crowdsec_compose"
+          - "'/var/lib/crowdsec/data' in crowdsec_compose"
+          - "'bouncer_key_traefik' in crowdsec_compose"
+          - "'ports:' not in crowdsec_compose"
+          - "'acquis' not in crowdsec_compose"
+          - "'traefik-crowdsec' in crowdsec_compose"
+          - "'crowdsec-egress' in crowdsec_compose"
+
+    - name: Assert Traefik CrowdSec plugin contracts
+      ansible.builtin.assert:
+        that:
+          - "'moduleName: github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin' in crowdsec_traefik_static"
+          - "'version: \"v1.4.5\"' in crowdsec_traefik_static"
+          - "'/plugins-storage' in crowdsec_traefik_compose"
+          - "'/run/secrets/crowdsec-traefik-bouncer-key' in crowdsec_traefik_compose"
+          - "'crowdsecMode: stream' in crowdsec_traefik_dynamic"
+          - "'updateMaxFailure: -1' in crowdsec_traefik_dynamic"
+          - "'crowdsecAppsecEnabled: false' in crowdsec_traefik_dynamic"
+          - "'crowdsecLapiKeyFile: /run/secrets/crowdsec-traefik-bouncer-key' in crowdsec_traefik_dynamic"
+          - "'forwardedHeadersTrustedIPs:' in crowdsec_traefik_dynamic"
+          - "crowdsec_traefik_static.count('- crowdsec-bouncer@file') == 2"
+          - "'cloudflarewebsecure:' in crowdsec_traefik_static"
+          - "'172.31.255.3/32' in crowdsec_traefik_static"
+
+    - name: Assert LAN-only LAPI and route coverage contracts
+      ansible.builtin.assert:
+        that:
+          - "'rule: \"Host(`crowdsec.example.com`)\"' in crowdsec_traefik_dynamic"
+          - "'crowdsec-lapi-allowlist' in crowdsec_traefik_dynamic"
+          - "'192.168.1.0/24' in crowdsec_traefik_dynamic"
+          - "crowdsec_traefik_dynamic.count('- crowdsec-bouncer') == 0"
+          - "crowdsec_traefik_dynamic.count('- cloudflarewebsecure') == 4"
+          - "'service: crowdsec-lapi' in crowdsec_traefik_dynamic"
+          - "'crowdsec-lapi-allowlist' in crowdsec_traefik_dynamic"
+
+    - name: Assert dedicated Cloudflare origin contracts
+      ansible.builtin.assert:
+        that:
+          - "crowdsec_cloudflared_config.count('service: \"https://traefik:8443\"') == 4"
+          - "'traefik-cloudflared:' in crowdsec_cloudflared_compose"
+          - "'ipv4_address: \"172.31.255.2\"' in crowdsec_traefik_compose"
+          - "'ipv4_address: \"172.31.255.3\"' in crowdsec_cloudflared_compose"
+          - "'cloudflare-egress: {}' in crowdsec_cloudflared_compose"
+          - "'admin-edge' not in crowdsec_cloudflared_compose"
+
+    - name: Read CrowdSec reconciliation role
+      ansible.builtin.set_fact:
+        crowdsec_role_tasks: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../ansible/roles/crowdsec/tasks/main.yml') }}"
+
+    - name: Assert CrowdSec bouncer registration contracts
+      ansible.builtin.assert:
+        that:
+          - "'cscli bouncers add' in crowdsec_role_tasks"
+          - "'admin-node-traefik-' in crowdsec_role_tasks"
+          - "'/run/secrets/bouncer_key_traefik' in crowdsec_role_tasks"

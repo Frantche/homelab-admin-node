@@ -1,6 +1,7 @@
 # Runtime stack images. This file is the scan inventory and is checked against
 # every stacks/*/compose.yaml or stacks/*/compose.yaml.j2 image declaration.
 cloudflare/cloudflared:2026.8.3@sha256:9be48e4b4e996da851bf78f7782bfab150dd4d8889e469d004802e7d7afb63b1
+crowdsecurity/crowdsec:v1.8.1@sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975
 docker.gitea.com/gitea:1.27.3@sha256:d584940b7143982682ac4541509dd628506c2b568221e6af41e5a2ead1de4fe7
 goharbor/harbor-core:v2.15.2@sha256:d7b780d23721a000f0fb8e181add6675eafa336de5d033b77fd7da0c171ff7f7
 goharbor/harbor-exporter:v2.15.2@sha256:e1b0a248f61aad5084c5d1612d5f1da89f99c23ce743eaf8cba913d6d00c0547

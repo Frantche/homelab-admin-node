@@ -1,0 +1,243 @@
+---
+- name: Validate CrowdSec configuration
+  ansible.builtin.assert:
+    that:
+      - crowdsec.lapi.allowed_cidrs | default([]) | length > 0
+      - crowdsec.traefik_bouncer.plugin_version | default('', true) is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
+      - crowdsec.openbao.mount | default('', true) | length > 0
+      - crowdsec.openbao.path_prefix | default('', true) | length > 0
+      - "'..' not in crowdsec.openbao.path_prefix.split('/')"
+    fail_msg: "CrowdSec requires LAN CIDRs, a pinned Traefik plugin version, and a safe OpenBao destination."
+
+- name: Ensure CrowdSec runtime directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ admin_node_root }}/stacks/crowdsec", mode: "0755" }
+    - { path: "{{ admin_node_root }}/data/crowdsec/config", mode: "0750" }
+    - { path: "{{ admin_node_root }}/data/crowdsec/data", mode: "0750" }
+
+- name: Require the CrowdSec Traefik bouncer key
+  ansible.builtin.stat:
+    path: "{{ admin_node_root }}/env/crowdsec-traefik-bouncer-key"
+  register: crowdsec_traefik_bouncer_key_file
+  failed_when: not crowdsec_traefik_bouncer_key_file.stat.exists
+  no_log: true
+
+- name: Render CrowdSec compose
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../stacks/crowdsec/compose.yaml.j2"
+    dest: "{{ admin_node_root }}/stacks/crowdsec/compose.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Start CrowdSec stack
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - -f
+      - compose.yaml
+      - up
+      - --remove-orphans
+      - --wait
+      - --wait-timeout
+      - "300"
+  args:
+    chdir: "{{ admin_node_root }}/stacks/crowdsec"
+  register: crowdsec_stack_start
+  changed_when: >-
+    'Created' in crowdsec_stack_start.stderr or
+    'Recreated' in crowdsec_stack_start.stderr or
+    'Started' in crowdsec_stack_start.stderr
+  when: admin_mode != 'restore'
+
+- name: Enable CrowdSec stack at boot
+  ansible.builtin.systemd:
+    name: admin-stack@crowdsec.service
+    enabled: true
+  when: admin_mode != 'restore'
+
+- name: Read CrowdSec Traefik bouncer key
+  ansible.builtin.slurp:
+    path: "{{ admin_node_root }}/env/crowdsec-traefik-bouncer-key"
+  register: crowdsec_traefik_bouncer_key
+  when: admin_mode != 'restore'
+  no_log: true
+
+- name: Build CrowdSec Traefik bouncer identity
+  ansible.builtin.set_fact:
+    crowdsec_traefik_bouncer_name: >-
+      admin-node-traefik-{{ (crowdsec_traefik_bouncer_key.content | b64decode | trim | hash('sha256'))[:12] }}
+  when: admin_mode != 'restore'
+  no_log: true
+
+- name: List registered CrowdSec bouncers
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - crowdsec
+      - cscli
+      - bouncers
+      - list
+      - --output
+      - json
+  register: crowdsec_registered_bouncers_command
+  changed_when: false
+  when: admin_mode != 'restore'
+  no_log: true
+
+- name: Build registered CrowdSec bouncer facts
+  ansible.builtin.set_fact:
+    crowdsec_registered_bouncers: "{{ crowdsec_registered_bouncers_command.stdout | from_json }}"
+    crowdsec_stale_traefik_bouncers: >-
+      {{
+        crowdsec_registered_bouncers_command.stdout | from_json
+        | selectattr('name', 'match', '^admin-node-traefik-')
+        | rejectattr('name', 'equalto', crowdsec_traefik_bouncer_name)
+        | map(attribute='name')
+        | list
+      }}
+  when: admin_mode != 'restore'
+  no_log: true
+
+- name: Remove stale CrowdSec Traefik bouncers
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - crowdsec
+      - cscli
+      - bouncers
+      - delete
+      - "{{ item }}"
+  loop: "{{ crowdsec_stale_traefik_bouncers | default([]) }}"
+  when: admin_mode != 'restore'
+  no_log: true
+
+- name: Register CrowdSec Traefik bouncer
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - crowdsec
+      - sh
+      - -ec
+      - 'cscli bouncers add "$1" --key "$(cat /run/secrets/bouncer_key_traefik)"'
+      - sh
+      - "{{ crowdsec_traefik_bouncer_name }}"
+  when:
+    - admin_mode != 'restore'
+    - crowdsec_traefik_bouncer_name not in (crowdsec_registered_bouncers | map(attribute='name') | list)
+  no_log: true
+
+- name: Publish CrowdSec credentials in normal mode
+  when: admin_mode == 'normal'
+  block:
+    - name: Build CrowdSec OpenBao facts
+      ansible.builtin.set_fact:
+        crowdsec_openbao_mount: "{{ crowdsec.openbao.mount | regex_replace('^/+|/+$', '') }}"
+        crowdsec_openbao_path_prefix: "{{ crowdsec.openbao.path_prefix | regex_replace('^/+|/+$', '') }}"
+        crowdsec_openbao_token: "{{ openbao_config_token | default('') }}"
+        crowdsec_openbao_validate_certs: "{{ openbao_config.validate_certs | default(not (ci_mode | default(false))) }}"
+        crowdsec_openbao_kv_v2_mounts: >-
+          {{
+            openbao_config.secret_engines | default([])
+            | selectattr('type', 'equalto', 'kv-v2')
+            | map(attribute='path')
+            | map('regex_replace', '^/+|/+$', '')
+            | list
+          }}
+      no_log: true
+
+    - name: Validate CrowdSec OpenBao publication prerequisites
+      ansible.builtin.assert:
+        that:
+          - openbao_config.enabled | default(false) | bool
+          - crowdsec_openbao_token | length > 0
+          - crowdsec_openbao_mount in crowdsec_openbao_kv_v2_mounts
+        fail_msg: >-
+          CrowdSec credential publication requires openbao_config.enabled, an
+          OpenBao token, and the configured KV-v2 mount.
+      no_log: true
+
+    - name: Wait for CrowdSec CAPI credentials
+      ansible.builtin.stat:
+        path: "{{ admin_node_root }}/data/crowdsec/config/online_api_credentials.yaml"
+      register: crowdsec_capi_credentials_file
+      until: crowdsec_capi_credentials_file.stat.exists
+      retries: 30
+      delay: 2
+      when: crowdsec.capi.enabled | default(true) | bool
+      no_log: true
+
+    - name: Read CrowdSec CAPI credentials
+      ansible.builtin.slurp:
+        path: "{{ admin_node_root }}/data/crowdsec/config/online_api_credentials.yaml"
+      register: crowdsec_capi_credentials
+      when: crowdsec.capi.enabled | default(true) | bool
+      no_log: true
+
+    - name: Check CrowdSec local machine credentials
+      ansible.builtin.stat:
+        path: "{{ admin_node_root }}/data/crowdsec/config/local_api_credentials.yaml"
+      register: crowdsec_lapi_credentials_file
+      no_log: true
+
+    - name: Read CrowdSec local machine credentials
+      ansible.builtin.slurp:
+        path: "{{ admin_node_root }}/data/crowdsec/config/local_api_credentials.yaml"
+      register: crowdsec_lapi_credentials
+      when: crowdsec_lapi_credentials_file.stat.exists
+      no_log: true
+
+    - name: Build CrowdSec OpenBao credential publications
+      ansible.builtin.set_fact:
+        crowdsec_openbao_credentials: >-
+          {{
+            [
+              {
+                'path': crowdsec_openbao_path_prefix ~ '/bouncers/traefik',
+                'data': {
+                  'name': crowdsec_traefik_bouncer_name,
+                  'api_key': crowdsec_traefik_bouncer_key.content | b64decode | trim,
+                  'lapi_url': 'https://' ~ service_domains.crowdsec
+                }
+              }
+            ]
+            + (
+              [
+                {
+                  'path': crowdsec_openbao_path_prefix ~ '/capi',
+                  'data': crowdsec_capi_credentials.content | b64decode | from_yaml
+                }
+              ]
+              if crowdsec.capi.enabled | default(true) | bool
+              else []
+            )
+            + (
+              [
+                {
+                  'path': crowdsec_openbao_path_prefix ~ '/lapi/machine',
+                  'data': crowdsec_lapi_credentials.content | b64decode | from_yaml
+                }
+              ]
+              if crowdsec_lapi_credentials_file.stat.exists
+              else []
+            )
+          }}
+      no_log: true
+
+    - name: Publish CrowdSec credentials to OpenBao
+      ansible.builtin.include_tasks: publish-secret.yml
+      loop: "{{ crowdsec_openbao_credentials }}"
+      loop_control:
+        loop_var: crowdsec_openbao_credential
+        label: "{{ crowdsec_openbao_credential.path }}"
+      no_log: true

@@ -607,7 +607,7 @@ func stackCommandFor(adminRoot, name string) stackCommand {
 }
 
 func orderedActiveStacks(activeStacks []string) []string {
-	priority := []string{"openbao", "traefik", "keycloak", "harbor", "gitea", "observability", "cloudflared"}
+	priority := []string{"openbao", "traefik", "crowdsec", "keycloak", "harbor", "gitea", "observability", "cloudflared"}
 	known := make(map[string]bool, len(priority))
 	ordered := make([]string, 0, len(activeStacks))
 	for _, name := range priority {

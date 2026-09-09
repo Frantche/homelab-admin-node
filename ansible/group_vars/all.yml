@@ -33,12 +33,28 @@ traefik:
     transfer_max_in_flight: 200
   external_services: []
 
+crowdsec:
+  enabled: false
+  image: "crowdsecurity/crowdsec:v1.8.1@sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975"
+  capi:
+    enabled: true
+  lapi:
+    allowed_cidrs:
+      - "192.168.1.0/24"
+  traefik_bouncer:
+    plugin_version: "v1.4.5"
+    update_interval_seconds: 60
+  openbao:
+    mount: "secret"
+    path_prefix: "crowdsec"
+
 service_domains:
   harbor: "harbor.example.com"
   openbao: "bao.example.com"
   keycloak: "keycloak.example.com"
   gitea: "git.example.com"
   traefik: "traefik.example.com"
+  crowdsec: "crowdsec.example.com"
 
 pihole:
   enabled: true
@@ -59,6 +75,12 @@ pihole:
 
 cloudflare:
   enabled: true
+  # Private origin link between cloudflared and Traefik. The fixed connector
+  # address lets Traefik trust forwarded headers from that proxy alone.
+  origin_network:
+    subnet: "172.31.255.0/29"
+    traefik_ip: "172.31.255.2"
+    cloudflared_ip: "172.31.255.3"
   dns:
     enabled: false
     zone: "example.com"
