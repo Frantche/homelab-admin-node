@@ -237,14 +237,14 @@ assert_crowdsec_contract() {
       -e BAO_ADDR=https://127.0.0.1:8200 \
       -e BAO_CACERT=/openbao/tls/ca.pem \
       -e VAULT_TOKEN="$OPENBAO_TOKEN" \
-      openbao bao kv get -format=json admin/crowdsec/bouncers/traefik
+      openbao bao kv get -format=json secret/crowdsec/bouncers/traefik
   )"
   bouncer_key="$(jq -er '.data.data.api_key' <<<"$credential_json")"
   docker exec \
     -e BAO_ADDR=https://127.0.0.1:8200 \
     -e BAO_CACERT=/openbao/tls/ca.pem \
     -e VAULT_TOKEN="$OPENBAO_TOKEN" \
-    openbao bao kv get admin/crowdsec/lapi/machine >/dev/null
+    openbao bao kv get secret/crowdsec/lapi/machine >/dev/null
 
   status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
     --cacert /srv/admin/certs/ca.pem \
