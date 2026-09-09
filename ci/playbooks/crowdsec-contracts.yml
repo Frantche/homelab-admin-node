@@ -84,7 +84,7 @@
           - "'crowdsecMode: stream' in crowdsec_traefik_dynamic"
           - "'updateMaxFailure: -1' in crowdsec_traefik_dynamic"
           - "'crowdsecAppsecEnabled: false' in crowdsec_traefik_dynamic"
-          - "'crowdsecLapiKey: /run/secrets/crowdsec-traefik-bouncer-key' in crowdsec_traefik_dynamic"
+          - "'crowdsecLapiKeyFile: /run/secrets/crowdsec-traefik-bouncer-key' in crowdsec_traefik_dynamic"
           - "'forwardedHeadersTrustedIPs:' in crowdsec_traefik_dynamic"
           - "crowdsec_traefik_static.count('- crowdsec-bouncer@file') == 2"
           - "'cloudflarewebsecure:' in crowdsec_traefik_static"

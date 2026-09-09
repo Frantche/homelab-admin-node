@@ -220,7 +220,7 @@ http:
           crowdsecMode: stream
           crowdsecLapiScheme: http
           crowdsecLapiHost: crowdsec:8080
-          crowdsecLapiKey: /run/secrets/crowdsec-traefik-bouncer-key
+          crowdsecLapiKeyFile: /run/secrets/crowdsec-traefik-bouncer-key
           updateIntervalSeconds: {{ crowdsec.traefik_bouncer.update_interval_seconds | default(60) }}
           updateMaxFailure: -1
           crowdsecAppsecEnabled: false

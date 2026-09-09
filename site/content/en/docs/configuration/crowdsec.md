@@ -83,6 +83,10 @@ Traefik key at `/srv/admin/env/crowdsec-traefik-bouncer-key` with mode `0600`,
 registers it in the LAPI, and publishes the following values to the configured
 OpenBao KV-v2 mount:
 
+Traefik mounts that file read-only and references it with
+`crowdsecLapiKeyFile`; the key is never rendered inline in dynamic
+configuration.
+
 | Path below `<mount>/<path_prefix>` | Content |
 | --- | --- |
 | `bouncers/traefik` | Bouncer name, API key, and HTTPS LAPI URL. |
