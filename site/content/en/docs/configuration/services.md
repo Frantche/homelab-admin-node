@@ -50,7 +50,7 @@ crowdsec:
     plugin_version: "v1.4.5"
     update_interval_seconds: 60
   openbao:
-    mount: "admin"
+    mount: "secret"
     path_prefix: "crowdsec"
 ```
 
@@ -61,7 +61,7 @@ crowdsec:
 | `crowdsec.lapi.allowed_cidrs[]` | `192.168.1.0/24` | Source networks allowed to reach the HTTPS LAPI route. An empty list is rejected. |
 | `crowdsec.traefik_bouncer.plugin_version` | `v1.4.5` | Pinned Traefik plugin version. |
 | `crowdsec.traefik_bouncer.update_interval_seconds` | `60` | Stream-mode decision refresh interval. |
-| `crowdsec.openbao.mount` | `admin` | Existing KV-v2 mount receiving CrowdSec credentials. |
+| `crowdsec.openbao.mount` | `secret` | Existing KV-v2 mount receiving CrowdSec credentials. |
 | `crowdsec.openbao.path_prefix` | `crowdsec` | Prefix for bouncer, CAPI, and local machine credentials. |
 
 Traefik protects every managed service in stream mode. `updateMaxFailure=-1`
@@ -71,9 +71,9 @@ router, including routes added later. The LAPI route is safe to protect because
 the plugin reaches `crowdsec:8080` directly over its private Docker network.
 
 The bouncer key is generated on the node, stored locally with mode `0600`, and
-published to `admin/crowdsec/bouncers/traefik`. When CAPI is enabled, its credentials are published
-to `admin/crowdsec/capi`; local machine credentials, when generated, are stored
-under `admin/crowdsec/lapi/machine`. Secret-bearing Ansible operations are
+published to `secret/crowdsec/bouncers/traefik`. When CAPI is enabled, its credentials are published
+to `secret/crowdsec/capi`; local machine credentials, when generated, are stored
+under `secret/crowdsec/lapi/machine`. Secret-bearing Ansible operations are
 redacted.
 
 `service_domains.crowdsec` is added to the local certificate and should have a
