@@ -25,6 +25,16 @@
 - name: Flush handlers to restart docker before starting containers
   ansible.builtin.meta: flush_handlers
 
+- name: Validate dedicated Cloudflare origin network addresses
+  ansible.builtin.assert:
+    that:
+      - ((cloudflare.origin_network | default({})).traefik_ip | default('172.31.255.2')) is match('^[0-9.]+$')
+      - ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3')) is match('^[0-9.]+$')
+      - ((cloudflare.origin_network | default({})).traefik_ip | default('172.31.255.2')) != ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3'))
+    fail_msg: >-
+      cloudflare.origin_network requires distinct valid IPv4 addresses for
+      Traefik and cloudflared.
+
 - name: Ensure isolated admin Docker networks exist
   community.docker.docker_network:
     name: "{{ item.name }}"

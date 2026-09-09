@@ -229,10 +229,10 @@ http:
 {% for cidr in traefik.forwarded_headers_trusted_ips %}
             - "{{ cidr }}"
 {% endfor %}
-            - "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.2')) }}/32"
+            - "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3')) }}/32"
 {% else %}
           forwardedHeadersTrustedIPs:
-            - "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.2')) }}/32"
+            - "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3')) }}/32"
 {% endif %}
     crowdsec-lapi-allowlist:
       ipAllowList:

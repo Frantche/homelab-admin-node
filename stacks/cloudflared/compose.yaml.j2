@@ -32,7 +32,7 @@ services:
       start_period: 20s
     networks:
       traefik-cloudflared:
-        ipv4_address: "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.2')) }}"
+        ipv4_address: "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3')) }}"
       cloudflare-egress: {}
 
 networks:

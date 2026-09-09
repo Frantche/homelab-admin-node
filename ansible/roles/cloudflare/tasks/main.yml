@@ -9,10 +9,12 @@
       - cloudflare.tunnel_id | default('', true) | length > 0
       - cloudflare.credentials_json | default('', true) | length > 0
       - ((cloudflare.origin_network | default({})).subnet | default('172.31.255.0/29')) is match('^[0-9.]+/[0-9]+$')
-      - ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.2')) is match('^[0-9.]+$')
+      - ((cloudflare.origin_network | default({})).traefik_ip | default('172.31.255.2')) is match('^[0-9.]+$')
+      - ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3')) is match('^[0-9.]+$')
+      - ((cloudflare.origin_network | default({})).traefik_ip | default('172.31.255.2')) != ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3'))
     fail_msg: >-
-      Cloudflare Tunnel requires its tunnel credentials and valid IPv4 values
-      for the dedicated cloudflared-to-Traefik origin network.
+      Cloudflare Tunnel requires its tunnel credentials and distinct valid IPv4
+      addresses for Traefik and cloudflared on the dedicated origin network.
   when: (cloudflare.enabled | default(true)) | bool
 
 - name: Ensure cloudflared stack directory
@@ -86,7 +88,7 @@
 - name: Start cloudflared mock container (CI mode)
   ansible.builtin.command: >-
     docker run -d --name cloudflared --network traefik-cloudflared
-    --ip {{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.2')) }}
+    --ip {{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3')) }}
     --restart no
     --user 65532:65532
     --read-only

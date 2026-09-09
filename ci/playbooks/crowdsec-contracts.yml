@@ -34,7 +34,8 @@
       tunnel_id: "00000000-0000-0000-0000-000000000000"
       origin_network:
         subnet: "172.31.255.0/29"
-        cloudflared_ip: "172.31.255.2"
+        traefik_ip: "172.31.255.2"
+        cloudflared_ip: "172.31.255.3"
     hardening:
       apparmor:
         enabled: false
@@ -88,7 +89,7 @@
           - "'forwardedHeadersTrustedIPs:' in crowdsec_traefik_dynamic"
           - "crowdsec_traefik_static.count('- crowdsec-bouncer@file') == 2"
           - "'cloudflarewebsecure:' in crowdsec_traefik_static"
-          - "'172.31.255.2/32' in crowdsec_traefik_static"
+          - "'172.31.255.3/32' in crowdsec_traefik_static"
 
     - name: Assert LAN-only LAPI and route coverage contracts
       ansible.builtin.assert:
@@ -106,7 +107,8 @@
         that:
           - "crowdsec_cloudflared_config.count('service: \"https://traefik:8443\"') == 4"
           - "'traefik-cloudflared:' in crowdsec_cloudflared_compose"
-          - "'ipv4_address: \"172.31.255.2\"' in crowdsec_cloudflared_compose"
+          - "'ipv4_address: \"172.31.255.2\"' in crowdsec_traefik_compose"
+          - "'ipv4_address: \"172.31.255.3\"' in crowdsec_cloudflared_compose"
           - "'cloudflare-egress: {}' in crowdsec_cloudflared_compose"
           - "'admin-edge' not in crowdsec_cloudflared_compose"
 

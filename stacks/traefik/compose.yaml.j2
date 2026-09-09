@@ -52,7 +52,8 @@ services:
         aliases:
           # OpenBao reaches Keycloak through Traefik without joining admin-edge.
           - "{{ service_domains.keycloak }}"
-      traefik-cloudflared: {}
+      traefik-cloudflared:
+        ipv4_address: "{{ ((cloudflare.origin_network | default({})).traefik_ip | default('172.31.255.2')) }}"
 {% if crowdsec.enabled | default(false) | bool %}
       traefik-crowdsec: {}
 {% endif %}

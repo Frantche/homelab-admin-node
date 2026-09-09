@@ -12,7 +12,7 @@ entryPoints:
     address: ":8443"
     forwardedHeaders:
       trustedIPs:
-        - "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.2')) }}/32"
+        - "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3')) }}/32"
 {% if crowdsec.enabled | default(false) | bool %}
     http:
       middlewares:
