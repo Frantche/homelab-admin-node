@@ -83,6 +83,20 @@ def validate_backup_secrets_are_not_shadowed(ci_vars) -> None:
         )
 
 
+def validate_crowdsec_ci_access(ci_vars) -> None:
+    crowdsec = ci_vars.get("crowdsec", {})
+    allowed_cidrs = crowdsec.get("lapi", {}).get("allowed_cidrs", [])
+    if not crowdsec.get("enabled"):
+        raise SystemExit("ci-bootstrap-vars.yml must enable CrowdSec")
+    if crowdsec.get("capi", {}).get("enabled", True):
+        raise SystemExit("ci-bootstrap-vars.yml must disable CrowdSec CAPI access")
+    if "172.16.0.0/12" not in allowed_cidrs:
+        raise SystemExit(
+            "ci-bootstrap-vars.yml must allow the Docker bridge source range "
+            "to validate the HTTPS CrowdSec LAPI route"
+        )
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit("usage: validate-bootstrap-config-repo.py <yaml>... [--secrets-example <example>]")
@@ -108,6 +122,7 @@ def main() -> None:
         validate_generated_secrets(example, rendered)
     if len(loaded) >= 3:
         validate_backup_secrets_are_not_shadowed(loaded[2])
+        validate_crowdsec_ci_access(loaded[2])
         validate_harbor_scan_matches_mirror(loaded[1], loaded[2])
 
 

@@ -318,13 +318,29 @@ token is revoked only after the replacement has been validated and persisted.
 
 ## Harbor
 
-Harbor supports OIDC and registry mirror proxy-cache projects.
+Harbor supports OIDC, registry mirror proxy-cache projects, and independently
+managed system robot tokens for cluster pulls and build-host pushes.
 
 Reference: [Harbor documentation](https://goharbor.io/docs/).
 
 ```yaml
 harbor_config:
   enabled: true
+  robot_tokens:
+    - name: "cluster-pull"
+      projects: ["*"]
+      mode: "pull"
+      rotation_id: "initial"
+      openbao:
+        mount: "secret"
+        path: "shared/harbor/cluster-pull"
+    - name: "build-host"
+      projects: ["dockerhub", "quay"]
+      mode: "pull_push"
+      rotation_id: "initial"
+      openbao:
+        mount: "secret"
+        path: "shared/harbor/build-host"
   oidc:
     enabled: true
     endpoint: "https://keycloak.example.com/realms/homelab"
@@ -333,11 +349,24 @@ harbor_config:
   registry_mirrors: []
 ```
 
+Each declaration owns one Harbor robot and one OpenBao value. Removing an item
+or setting `enabled: false` stops its reconciliation but does not revoke an
+already-created credential; disable or delete the robot in Harbor and remove
+its OpenBao value when decommissioning a consumer.
+
 | Variable | Default/example | Purpose |
 | --- | --- | --- |
 | `harbor_config.enabled` | `false` | Enables Harbor API configuration. |
 | `harbor_config.validate_certs` | `{{ not ci_mode }}` | TLS validation for Harbor API calls. |
 | `harbor_config.validate_registry_mirrors` | `false` | Default validation toggle for mirror pull checks. |
+| `harbor_config.robot_tokens[]` | `[]` | System robot tokens to reconcile. Each enabled item needs a unique name and OpenBao path. |
+| `harbor_config.robot_tokens[].enabled` | `true` | Skips reconciliation for this item when false; it does not revoke an existing robot. |
+| `harbor_config.robot_tokens[].name` | required | Robot name before Harbor applies its configured robot prefix. |
+| `harbor_config.robot_tokens[].projects` | required | Project names granted to the robot. Use `["*"]` alone for every project. |
+| `harbor_config.robot_tokens[].mode` | `pull` or `pull_push` | Grants repository pull only, or both pull and push, for every selected project. |
+| `harbor_config.robot_tokens[].rotation_id` | required | Operator-controlled generation identifier. Change it to refresh only this robot password and republish its OpenBao value. |
+| `harbor_config.robot_tokens[].openbao.mount` | example: `secret` | Existing KV-v2 mount receiving the credential. |
+| `harbor_config.robot_tokens[].openbao.path` | required | Unique KV-v2 path receiving registry fields, scope metadata, and a Kubernetes `.dockerconfigjson` document. |
 | `harbor_config.oidc.enabled` | `false` | Enables Harbor OIDC configuration. |
 | `harbor_config.oidc.endpoint` | Keycloak realm URL | OIDC issuer endpoint. |
 | `harbor_config.oidc.verify_cert` | `{{ not ci_mode }}` | Tells Harbor whether to verify the OIDC provider certificate. |
@@ -358,6 +387,14 @@ harbor_config:
 | `harbor_config.registry_mirrors[].validation.image` | required when validation is enabled | Dedicated image path used for mirror validation. Its exact local Docker reference is refreshed before each validation pull so Harbor cannot be bypassed by the local image cache. |
 | `harbor_config.registry_mirrors[].validation.username` | unset | Harbor username used by validation pull when needed. |
 | `harbor_config.registry_mirrors[].validation.password` | unset | Harbor password/token used by validation pull when needed. |
+
+The published value contains `registry`, `username`, `password`, `auth`,
+`rotation_id`, and `.dockerconfigjson`. External Secrets can map the last field
+directly into a Kubernetes Secret of type `kubernetes.io/dockerconfigjson`.
+Harbor never exposes a robot password after creation, so convergence preserves
+the Vault copy. If that copy is removed, convergence refreshes the robot secret
+and publishes the replacement. Keep the `shared/harbor/pull` path readable only
+by the cluster AppRoles that need registry access.
 
 ## Gitea
 

@@ -156,6 +156,23 @@ harbor_config:
   enabled: true
   validate_certs: true
   validate_registry_mirrors: true
+  robot_tokens:
+    - name: "cluster-pull"
+      description: "Read-only credential for every project"
+      projects: ["*"]
+      mode: "pull"
+      rotation_id: "initial"
+      openbao:
+        mount: "secret"
+        path: "shared/harbor/cluster-pull"
+    - name: "build-host"
+      description: "Push credential for selected projects"
+      projects: ["dockerhub", "quay"]
+      mode: "pull_push"
+      rotation_id: "initial"
+      openbao:
+        mount: "secret"
+        path: "shared/harbor/build-host"
   oidc:
     enabled: true
     endpoint: "https://keycloak.example.com/realms/homelab"

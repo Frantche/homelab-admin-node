@@ -8,7 +8,7 @@ SHELL := /usr/bin/env bash
 	test-build-admin-node-cache test-container-hardening test-disaster-recovery-actions \
 	test-crowdsec-contracts \
 	test-docker-api-isolation test-gitea-process-backup test-go test-grafana-dashboard-import \
-	test-harbor-mirror-validation test-image-security-policy test-image-security-scanner \
+	test-harbor-mirror-validation test-harbor-robot-tokens test-image-security-policy test-image-security-scanner \
 	test-make-entrypoints test-offline-images test-oidc-contracts test-openbao-internal-tls \
 	test-repo-permissions test-restic-config test-secret-rotation test-traefik-external-services \
 	test-system-update test-traefik-security validate validate-apis validate-cloudflare-tunnel validate-compose \
@@ -43,6 +43,7 @@ ci-quality: check-ci-tools test-go lint govulncheck python-test \
 	test-crowdsec-contracts \
 	test-system-update \
 	test-docker-api-isolation test-gitea-process-backup test-openbao-internal-tls \
+	test-harbor-robot-tokens \
 	test-restic-config test-offline-images test-image-security-scanner \
 	test-disaster-recovery-actions test-make-entrypoints validate-compose \
 	validate-systemd validate-grafana-dashboards
@@ -114,6 +115,9 @@ test-gitea-process-backup:
 
 test-harbor-mirror-validation:
 	@python3 ./ci/test_harbor_mirror_validation.py
+
+test-harbor-robot-tokens:
+	@go test ./ci -run TestHarborRobotTokens -count=1
 
 test-build-admin-node-cache:
 	@./ci/test-build-admin-node-cache.sh

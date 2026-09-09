@@ -10,7 +10,7 @@ It targets an `admin-01` node, usually deployed on Proxmox from an Arch Linux cl
 - Optional CrowdSec LAPI enforcement for every Traefik route.
 - Keycloak for identity and OIDC.
 - OpenBao for secret management.
-- Harbor for registry and proxy-cache mirrors.
+- Harbor for registry, proxy-cache mirrors, and scoped robot tokens published to OpenBao.
 - Gitea for Git hosting and validation workflows.
 - Cloudflare Tunnel for public ingress when enabled.
 - Pi-hole DNS integration for local records.
