@@ -197,6 +197,8 @@
       {{
         harbor_pull_secret_was_created
         or harbor_pull_secret_openbao_current.status == 404
+        or (harbor_pull_secret_openbao_data.username | default('') != harbor_pull_secret_robot.name)
+        or (harbor_pull_secret_openbao_data.password | default('', true) | length == 0)
         or (harbor_pull_secret_openbao_data.rotation_id | default('') != harbor_pull_secret_cfg.rotation_id)
       }}
   no_log: true
