@@ -261,21 +261,29 @@ token is revoked only after the replacement has been validated and persisted.
 
 ## Harbor
 
-Harbor supports OIDC, registry mirror proxy-cache projects, and a system-level
-read-only robot account for cluster image pulls.
+Harbor supports OIDC, registry mirror proxy-cache projects, and independently
+managed system robot tokens for cluster pulls and build-host pushes.
 
 Reference: [Harbor documentation](https://goharbor.io/docs/).
 
 ```yaml
 harbor_config:
   enabled: true
-  pull_secret:
-    enabled: true
-    name: "cluster-pull"
-    rotation_id: "initial"
-    openbao:
-      mount: "secret"
-      path: "shared/harbor/pull"
+  robot_tokens:
+    - name: "cluster-pull"
+      projects: ["*"]
+      mode: "pull"
+      rotation_id: "initial"
+      openbao:
+        mount: "secret"
+        path: "shared/harbor/cluster-pull"
+    - name: "build-host"
+      projects: ["dockerhub", "quay"]
+      mode: "pull_push"
+      rotation_id: "initial"
+      openbao:
+        mount: "secret"
+        path: "shared/harbor/build-host"
   oidc:
     enabled: true
     endpoint: "https://keycloak.example.com/realms/homelab"
@@ -289,11 +297,14 @@ harbor_config:
 | `harbor_config.enabled` | `false` | Enables Harbor API configuration. |
 | `harbor_config.validate_certs` | `{{ not ci_mode }}` | TLS validation for Harbor API calls. |
 | `harbor_config.validate_registry_mirrors` | `false` | Default validation toggle for mirror pull checks. |
-| `harbor_config.pull_secret.enabled` | `false` | Reconciles a non-expiring system robot with repository pull access across every Harbor project. |
-| `harbor_config.pull_secret.name` | `cluster-pull` | Robot name before Harbor applies its configured robot prefix. |
-| `harbor_config.pull_secret.rotation_id` | `initial` | Operator-controlled generation identifier. Change it to refresh the robot password and republish the Vault value. |
-| `harbor_config.pull_secret.openbao.mount` | `secret` | Existing KV-v2 mount receiving the credential. |
-| `harbor_config.pull_secret.openbao.path` | `shared/harbor/pull` | KV-v2 path receiving the registry fields and Kubernetes `.dockerconfigjson` document. |
+| `harbor_config.robot_tokens[]` | `[]` | System robot tokens to reconcile. Each enabled item needs a unique name and OpenBao path. |
+| `harbor_config.robot_tokens[].enabled` | `true` | Allows one declared token to be disabled without removing its configuration. |
+| `harbor_config.robot_tokens[].name` | required | Robot name before Harbor applies its configured robot prefix. |
+| `harbor_config.robot_tokens[].projects` | required | Project names granted to the robot. Use `["*"]` alone for every project. |
+| `harbor_config.robot_tokens[].mode` | `pull` or `pull_push` | Grants repository pull only, or both pull and push, for every selected project. |
+| `harbor_config.robot_tokens[].rotation_id` | required | Operator-controlled generation identifier. Change it to refresh only this robot password and republish its OpenBao value. |
+| `harbor_config.robot_tokens[].openbao.mount` | example: `secret` | Existing KV-v2 mount receiving the credential. |
+| `harbor_config.robot_tokens[].openbao.path` | required | Unique KV-v2 path receiving registry fields, scope metadata, and a Kubernetes `.dockerconfigjson` document. |
 | `harbor_config.oidc.enabled` | `false` | Enables Harbor OIDC configuration. |
 | `harbor_config.oidc.endpoint` | Keycloak realm URL | OIDC issuer endpoint. |
 | `harbor_config.oidc.verify_cert` | `{{ not ci_mode }}` | Tells Harbor whether to verify the OIDC provider certificate. |

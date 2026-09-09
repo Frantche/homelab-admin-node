@@ -92,14 +92,23 @@ keycloak_config:
 
 harbor_config:
   enabled: true
-  pull_secret:
-    enabled: true
-    name: "ci-cluster-pull"
-    description: "CI read-only pull credential"
-    rotation_id: "ci-initial"
-    openbao:
-      mount: "secret"
-      path: "shared/harbor/pull"
+  robot_tokens:
+    - name: "ci-cluster-pull"
+      description: "CI read-only pull credential"
+      projects: ["*"]
+      mode: "pull"
+      rotation_id: "ci-initial"
+      openbao:
+        mount: "secret"
+        path: "shared/harbor/cluster-pull"
+    - name: "ci-builder"
+      description: "CI push credential for selected projects"
+      projects: ["dockerhub", "quay"]
+      mode: "pull_push"
+      rotation_id: "ci-initial"
+      openbao:
+        mount: "secret"
+        path: "shared/harbor/builder"
   oidc:
     enabled: true
     endpoint: "https://keycloak.example.com/realms/homelab"

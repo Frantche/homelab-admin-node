@@ -1,0 +1,68 @@
+---
+- name: Exercise Harbor robot token reconciliation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ci_mode: true
+    harbor_config_url: "{{ mock_base_url }}"
+    openbao_config_url: "{{ mock_base_url }}"
+    service_domains:
+      harbor: "harbor.example.com"
+      openbao: "bao.example.com"
+    harbor:
+      admin_password: "test-admin-password"
+    harbor_runtime:
+      admin_password: "test-admin-password"
+    harbor_api_validate_certs: false
+    harbor_current_configuration:
+      json:
+        robot_name_prefix:
+          value: "robot$"
+    openbao:
+      root_token: "test-openbao-token"
+    openbao_config:
+      validate_certs: false
+      secret_engines:
+        - path: "secret"
+          type: "kv-v2"
+    harbor_robot_token_contracts:
+      - name: "ci-cluster-pull"
+        description: "CI pull credential for every project"
+        projects: ["*"]
+        mode: "pull"
+        rotation_id: "ci-initial"
+        openbao:
+          mount: "secret"
+          path: "shared/harbor/cluster-pull"
+      - name: "ci-builder"
+        description: "CI push credential for selected projects"
+        projects: ["dockerhub", "quay"]
+        mode: "pull_push"
+        rotation_id: "ci-initial"
+        openbao:
+          mount: "secret"
+          path: "shared/harbor/builder"
+  tasks:
+    - name: Reconcile missing robot tokens
+      ansible.builtin.include_tasks: ../../ansible/roles/harbor_config/tasks/robot-token.yml
+      loop: "{{ harbor_robot_token_contracts }}"
+      loop_control:
+        loop_var: harbor_robot_token_item
+
+    - name: Reconcile the same desired state again
+      ansible.builtin.include_tasks: ../../ansible/roles/harbor_config/tasks/robot-token.yml
+      loop: "{{ harbor_robot_token_contracts }}"
+      loop_control:
+        loop_var: harbor_robot_token_item
+
+    - name: Request an explicit builder token rotation
+      ansible.builtin.set_fact:
+        harbor_robot_token_item: >-
+          {{
+            harbor_robot_token_contracts[1]
+            | combine({'rotation_id': 'ci-second'}, recursive=True)
+          }}
+
+    - name: Reconcile the rotated builder token
+      ansible.builtin.include_tasks: ../../ansible/roles/harbor_config/tasks/robot-token.yml

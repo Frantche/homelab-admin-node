@@ -1,7 +1,7 @@
 ---
-- name: Build Harbor pull secret facts
+- name: Build Harbor robot token facts
   ansible.builtin.set_fact:
-    harbor_pull_secret_cfg: "{{ harbor_config.pull_secret }}"
+    harbor_pull_secret_cfg: "{{ harbor_robot_token_item }}"
     harbor_pull_secret_openbao_token: >-
       {{
         openbao.root_token | default('', true)
@@ -19,32 +19,38 @@
       }}
   no_log: true
 
-- name: Validate Harbor pull secret declaration
+- name: Validate Harbor robot token declaration
   ansible.builtin.assert:
     that:
       - harbor_pull_secret_cfg.name | default('', true) is match('^[A-Za-z0-9][A-Za-z0-9_.-]*$')
       - harbor_pull_secret_cfg.rotation_id | default('', true) | length > 0
+      - harbor_pull_secret_cfg.mode | default('', true) in ['pull', 'pull_push']
+      - harbor_pull_secret_cfg.projects | default([]) is sequence
+      - harbor_pull_secret_cfg.projects | default([]) | length > 0
+      - harbor_pull_secret_cfg.projects | reject('match', '^(\*|[a-z0-9][a-z0-9._-]*)$') | list | length == 0
+      - "('*' not in harbor_pull_secret_cfg.projects) or (harbor_pull_secret_cfg.projects | length == 1)"
       - harbor_pull_secret_cfg.openbao.mount | default('', true) | length > 0
       - harbor_pull_secret_cfg.openbao.path | default('', true) | length > 0
       - "'..' not in harbor_pull_secret_cfg.openbao.path.split('/')"
       - (harbor_pull_secret_cfg.openbao.mount | regex_replace('^/+|/+$', '')) in harbor_pull_secret_kv_v2_mounts
       - harbor_pull_secret_openbao_token | length > 0
     fail_msg: >-
-      harbor_config.pull_secret requires a safe name, rotation_id, an OpenBao
-      KV-v2 destination declared in openbao_config.secret_engines, and an
-      OpenBao root/config token.
+      Each harbor_config.robot_tokens item requires a safe name, a unique list
+      of project names (or only "*"), mode pull or pull_push, rotation_id, an
+      OpenBao KV-v2 destination, and an OpenBao root/config token.
   no_log: true
 
-- name: Normalize Harbor pull secret declaration
+- name: Normalize Harbor robot token declaration
   ansible.builtin.set_fact:
     harbor_pull_secret_mount: "{{ harbor_pull_secret_cfg.openbao.mount | regex_replace('^/+|/+$', '') }}"
     harbor_pull_secret_path: "{{ harbor_pull_secret_cfg.openbao.path | regex_replace('^/+|/+$', '') }}"
-    harbor_pull_secret_permissions:
-      - kind: "project"
-        namespace: "*"
-        access:
-          - resource: "repository"
-            action: "pull"
+    harbor_pull_secret_projects: "{{ harbor_pull_secret_cfg.projects | unique | list }}"
+    harbor_pull_secret_access: >-
+      {{
+        [{'resource': 'repository', 'action': 'pull'}]
+        + ([{'resource': 'repository', 'action': 'push'}]
+           if harbor_pull_secret_cfg.mode == 'pull_push' else [])
+      }}
     harbor_pull_secret_robot_prefix: >-
       {{
         harbor_current_configuration.json.robot_name_prefix.value
@@ -53,7 +59,26 @@
       }}
   no_log: true
 
-- name: Read Harbor pull secret from OpenBao
+- name: Reset Harbor robot token permissions
+  ansible.builtin.set_fact:
+    harbor_pull_secret_permissions: []
+  no_log: true
+
+- name: Build Harbor robot token permissions
+  ansible.builtin.set_fact:
+    harbor_pull_secret_permissions: >-
+      {{
+        harbor_pull_secret_permissions
+        + [{
+          'kind': 'project',
+          'namespace': item,
+          'access': harbor_pull_secret_access
+        }]
+      }}
+  loop: "{{ harbor_pull_secret_projects }}"
+  no_log: true
+
+- name: Read Harbor robot token from OpenBao
   ansible.builtin.uri:
     url: "{{ openbao_config_url | default('https://' ~ service_domains.openbao) }}/v1/{{ harbor_pull_secret_mount }}/data/{{ harbor_pull_secret_path }}"
     method: GET
@@ -65,7 +90,7 @@
   changed_when: false
   no_log: true
 
-- name: Normalize current Harbor pull secret data
+- name: Normalize current Harbor robot token data
   ansible.builtin.set_fact:
     harbor_pull_secret_openbao_data: "{{ harbor_pull_secret_openbao_current.json.data.data | default({}) }}"
   no_log: true
@@ -83,7 +108,7 @@
   changed_when: false
   no_log: true
 
-- name: Select the configured Harbor pull robot
+- name: Select the configured Harbor robot
   ansible.builtin.set_fact:
     harbor_pull_secret_full_name: "{{ harbor_pull_secret_robot_prefix ~ harbor_pull_secret_cfg.name }}"
     harbor_pull_secret_matching_robots: >-
@@ -94,18 +119,18 @@
       }}
   no_log: true
 
-- name: Refuse ambiguous Harbor pull robots
+- name: Refuse ambiguous Harbor robots
   ansible.builtin.assert:
     that:
       - harbor_pull_secret_matching_robots | length <= 1
     fail_msg: "Multiple Harbor system robots match {{ harbor_pull_secret_full_name }}; reconcile them manually."
   no_log: true
 
-- name: Record whether the Harbor pull robot must be created
+- name: Record whether the Harbor robot must be created
   ansible.builtin.set_fact:
     harbor_pull_secret_was_created: "{{ harbor_pull_secret_matching_robots | length == 0 }}"
 
-- name: Create the Harbor pull robot
+- name: Create the Harbor robot
   ansible.builtin.uri:
     url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/robots"
     method: POST
@@ -116,7 +141,7 @@
     body_format: json
     body:
       name: "{{ harbor_pull_secret_cfg.name }}"
-      description: "{{ harbor_pull_secret_cfg.description | default('Read-only pull credential for homelab clusters') }}"
+      description: "{{ harbor_pull_secret_cfg.description | default('Managed Harbor robot credential') }}"
       level: "system"
       disable: false
       duration: -1
@@ -126,7 +151,7 @@
   when: harbor_pull_secret_was_created | bool
   no_log: true
 
-- name: Select the effective Harbor pull robot
+- name: Select the effective Harbor robot
   ansible.builtin.set_fact:
     harbor_pull_secret_robot: >-
       {{
@@ -136,7 +161,7 @@
       }}
   no_log: true
 
-- name: Update drifted Harbor pull robot metadata and permissions
+- name: Update drifted Harbor robot metadata and permissions
   ansible.builtin.uri:
     url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/robots/{{ harbor_pull_secret_robot.id }}"
     method: PUT
@@ -149,7 +174,7 @@
       {{
         harbor_pull_secret_robot
         | combine({
-            'description': harbor_pull_secret_cfg.description | default('Read-only pull credential for homelab clusters'),
+            'description': harbor_pull_secret_cfg.description | default('Managed Harbor robot credential'),
             'disable': false,
             'duration': -1,
             'permissions': harbor_pull_secret_permissions
@@ -159,13 +184,13 @@
   when:
     - not harbor_pull_secret_was_created | bool
     - >-
-      harbor_pull_secret_robot.description | default('') != harbor_pull_secret_cfg.description | default('Read-only pull credential for homelab clusters')
+      harbor_pull_secret_robot.description | default('') != harbor_pull_secret_cfg.description | default('Managed Harbor robot credential')
       or harbor_pull_secret_robot.disable | default(false) | bool
       or harbor_pull_secret_robot.expires_at | default(-1) | int != -1
       or harbor_pull_secret_robot.permissions | default([]) != harbor_pull_secret_permissions
   no_log: true
 
-- name: Determine whether the Harbor pull secret must rotate
+- name: Determine whether the Harbor robot token must rotate
   ansible.builtin.set_fact:
     harbor_pull_secret_rotation_required: >-
       {{
@@ -175,7 +200,7 @@
       }}
   no_log: true
 
-- name: Refresh an existing Harbor pull robot secret
+- name: Refresh an existing Harbor robot token
   ansible.builtin.uri:
     url: "{{ harbor_config_url | default('https://' ~ service_domains.harbor) }}/api/v2.0/robots/{{ harbor_pull_secret_robot.id }}"
     method: PATCH
@@ -192,7 +217,7 @@
     - not harbor_pull_secret_was_created | bool
   no_log: true
 
-- name: Build Harbor pull credential facts
+- name: Build Harbor robot credential facts
   ansible.builtin.set_fact:
     harbor_pull_secret_username: "{{ harbor_pull_secret_robot.name }}"
     harbor_pull_secret_password: >-
@@ -207,7 +232,7 @@
       }}
   no_log: true
 
-- name: Build Harbor pull secret payload
+- name: Build Harbor robot token payload
   ansible.builtin.set_fact:
     harbor_pull_secret_payload:
       registry: "{{ service_domains.harbor }}"
@@ -215,6 +240,8 @@
       password: "{{ harbor_pull_secret_password }}"
       auth: "{{ (harbor_pull_secret_username ~ ':' ~ harbor_pull_secret_password) | b64encode }}"
       rotation_id: "{{ harbor_pull_secret_cfg.rotation_id }}"
+      mode: "{{ harbor_pull_secret_cfg.mode }}"
+      projects: "{{ harbor_pull_secret_projects }}"
       .dockerconfigjson: >-
         {{
           {
@@ -229,7 +256,7 @@
         }}
   no_log: true
 
-- name: Publish Harbor pull secret to OpenBao
+- name: Publish Harbor robot token to OpenBao
   ansible.builtin.uri:
     url: "{{ openbao_config_url | default('https://' ~ service_domains.openbao) }}/v1/{{ harbor_pull_secret_mount }}/data/{{ harbor_pull_secret_path }}"
     method: POST
