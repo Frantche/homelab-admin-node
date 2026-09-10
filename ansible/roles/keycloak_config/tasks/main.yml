@@ -237,11 +237,13 @@
   loop: "{{ keycloak_config.clients | default([]) | selectattr('openbao', 'defined') | list }}"
   loop_control:
     label: "{{ item.client_id | default('unnamed') }}"
+  no_log: true
 
 - name: Build Keycloak OpenBao publication declarations
   ansible.builtin.set_fact:
     keycloak_openbao_publication_clients: "{{ keycloak_config.clients | default([]) | selectattr('openbao', 'defined') | list }}"
     keycloak_openbao_credentials: []
+  no_log: true
 
 - name: Validate Keycloak realm management client settings
   ansible.builtin.assert:
