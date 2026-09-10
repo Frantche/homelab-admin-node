@@ -134,6 +134,7 @@
   loop_control:
     loop_var: keycloak_published_client_item
     label: "{{ keycloak_published_client_item.client_id }}"
+  no_log: true
 
 - name: Reconcile the Keycloak realm management client
   ansible.builtin.include_tasks: realm-management.yml

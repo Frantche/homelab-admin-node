@@ -258,6 +258,7 @@
   loop: "{{ keycloak_openbao_credentials | default([]) }}"
   loop_control:
     label: "{{ item.mount }}/{{ item.path }}"
+  no_log: true
 
 - name: Publish Keycloak credentials to OpenBao
   ansible.builtin.include_tasks: keycloak-credential.yml
@@ -265,6 +266,7 @@
   loop_control:
     loop_var: openbao_keycloak_credential
     label: "{{ openbao_keycloak_credential.mount }}/{{ openbao_keycloak_credential.path }}"
+  no_log: true
 
 - name: Validate OpenBao explicit OIDC role secret engines
   ansible.builtin.assert:

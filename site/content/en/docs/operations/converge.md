@@ -101,3 +101,33 @@ When the code repository is already on the intended commit, or root cannot fetch
 sudo env INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/pr/inventory.ini \
   /opt/homelab-admin-node/bin/admin-node converge run --skip-git-pull
 ```
+
+## Respond to exposed Keycloak client credentials
+
+Releases before the credential-output redaction fix could write complete
+Keycloak credential objects to interactive convergence output and the
+`admin-converge.service` journal. If an affected release converged with
+`keycloak_config.clients[].openbao` or `keycloak_config.realm_management`
+enabled, treat every corresponding client secret as compromised.
+
+Deploy the fixed release before running another convergence. Rotate each
+affected secret in Keycloak, update the encrypted config-repo value when the
+client secret is managed through SOPS, and run convergence again so the active
+credentials are republished to OpenBao. Update and verify every consumer of
+those OpenBao paths, then revoke the previous Keycloak secrets, including any
+temporarily retained by the realm-management rotation overlap.
+
+Check both execution paths without printing secret values:
+
+```bash
+sudo env INVENTORY_PATH=/etc/admin-config/homelab-node-admin-config/pr/inventory.ini \
+  /opt/homelab-admin-node/bin/admin-node converge run --skip-git-pull
+sudo systemctl start admin-converge.service
+sudo journalctl -u admin-converge.service --since today --no-pager
+```
+
+The Keycloak credential validation and publication tasks must appear as
+censored Ansible results. Do not use verbose debugging, print the OpenBao
+payloads, or copy historical journal output into an issue or chat. Retain
+historical logs as sensitive data until the exposed credentials have been
+revoked and the applicable log-retention policy has removed them.
