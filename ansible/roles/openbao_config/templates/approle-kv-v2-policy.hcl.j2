@@ -1,0 +1,11 @@
+{% for engine in openbao_approle_item.secret_engines | unique | sort %}
+path "{{ engine }}/data/*" {
+  capabilities = ["read"]
+}
+path "{{ engine }}/metadata" {
+  capabilities = ["list"]
+}
+path "{{ engine }}/metadata/*" {
+  capabilities = ["read", "list"]
+}
+{% endfor %}
