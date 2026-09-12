@@ -138,6 +138,7 @@ openbao_config:
   enabled: false
   root_token: ""
   secret_engines: []
+  approles: []
   oidc:
     enabled: false
     discovery_url: "https://{{ service_domains.keycloak }}/realms/{{ keycloak_config.realm.name }}"

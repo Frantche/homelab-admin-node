@@ -188,6 +188,17 @@ harbor_config:
 
 openbao_config:
   enabled: true
+  # Optional machine authentication; credentials are generated in OpenBao.
+  approles: []
+  # approles:
+  #   - name: talos-homelab
+  #     secret_engines: [secret]
+  #     rotation_id: "v1"
+  #     token_ttl: 3600
+  #     token_max_ttl: 14400
+  #     openbao:
+  #       mount: secret
+  #       path: approles/talos-homelab
   secret_engines:
     - path: "secret"
       type: "kv-v2"

@@ -8,7 +8,7 @@ SHELL := /usr/bin/env bash
 	test-build-admin-node-cache test-container-hardening test-disaster-recovery-actions \
 	test-docker-api-isolation test-gitea-process-backup test-go test-grafana-dashboard-import \
 	test-harbor-mirror-validation test-harbor-robot-tokens test-image-security-policy test-image-security-scanner \
-	test-make-entrypoints test-offline-images test-oidc-contracts test-openbao-internal-tls \
+	test-make-entrypoints test-offline-images test-oidc-contracts test-openbao-approles test-openbao-internal-tls \
 	test-repo-permissions test-restic-config test-secret-rotation test-traefik-external-services \
 	test-system-update test-traefik-security validate validate-apis validate-cloudflare-tunnel validate-compose \
 	validate-dns validate-dr-promotion validate-grafana-dashboards validate-hardening \
@@ -41,7 +41,7 @@ ci-quality: check-ci-tools test-go lint govulncheck python-test \
 	test-build-admin-node-cache test-repo-permissions test-secret-rotation \
 	test-system-update \
 	test-docker-api-isolation test-gitea-process-backup test-openbao-internal-tls \
-	test-harbor-robot-tokens \
+	test-harbor-robot-tokens test-openbao-approles \
 	test-restic-config test-offline-images test-image-security-scanner \
 	test-disaster-recovery-actions test-make-entrypoints validate-compose \
 	validate-systemd validate-grafana-dashboards
@@ -113,6 +113,9 @@ test-gitea-process-backup:
 
 test-harbor-mirror-validation:
 	@python3 ./ci/test_harbor_mirror_validation.py
+
+test-openbao-approles:
+	@go test ./ci -run TestOpenBaoAppRoles -count=1 -timeout=10m
 
 test-harbor-robot-tokens:
 	@go test ./ci -run TestHarborRobotTokens -count=1
