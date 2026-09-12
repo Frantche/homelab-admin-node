@@ -292,12 +292,16 @@
   retries: 30
   delay: 2
   no_log: true
-  when: openbao_config.oidc.enabled | default(false)
+  when: (openbao_config.oidc.enabled | default(false)) or (openbao_config.approles | default([]) | length > 0)
 
 - name: Set OpenBao auth method map fact
   ansible.builtin.set_fact:
     openbao_auth_method_map: "{{ openbao_auth_methods_response.json.data | default(openbao_auth_methods_response.json) }}"
-  when: openbao_config.oidc.enabled | default(false)
+  when: (openbao_config.oidc.enabled | default(false)) or (openbao_config.approles | default([]) | length > 0)
+
+- name: Configure OpenBao AppRoles
+  ansible.builtin.include_tasks: approles.yml
+  when: openbao_config.approles | default([]) | length > 0
 
 - name: Enable OpenBao OIDC auth method
   ansible.builtin.uri:

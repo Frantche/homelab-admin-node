@@ -259,6 +259,96 @@ token is revoked only after the replacement has been validated and persisted.
 | `openbao_config_url` | `https://{{ service_domains.openbao }}` | Role default for the OpenBao API base URL. |
 | `openbao_config_validate_certs` | `false` | TLS certificate validation setting for OpenBao configuration API calls. |
 
+### AppRole machine authentication
+
+Set `openbao_config.approles` to provision native OpenBao AppRoles. The default
+is `[]`, so existing environments do not enable this backend. Each entry grants
+read access to data and read/list access to metadata in the named KV-v2 engines;
+it does not grant write or administrative access. Engines must already be
+declared in `openbao_config.secret_engines`. Auth is mounted at `approle` and the
+managed policy is named `approle-<name>`.
+
+```yaml
+openbao_config:
+  enabled: true
+  secret_engines:
+    - path: secret
+      type: kv-v2
+    - path: homelab
+      type: kv-v2
+  approles:
+    - name: talos-homelab
+      secret_engines: [secret, homelab]
+      rotation_id: "v1"
+      token_ttl: 3600
+      token_max_ttl: 14400
+      openbao:
+        mount: secret
+        path: approles/talos-homelab
+```
+
+`name`, `secret_engines`, `rotation_id`, and `openbao.mount/path` are required.
+Names and mount names use letters, digits, underscores and hyphens. Credential
+paths use these characters with slash-separated segments. Names and destinations
+must be unique. `token_ttl` defaults to 3600 seconds and `token_max_ttl` to 14400
+seconds; the latter is also the explicit token lifetime limit.
+
+RoleID and SecretID are both required for login. SecretIDs have no expiration or
+usage limit. Session tokens have unlimited uses within their TTL. Convergence
+keeps valid credentials, updates drifted role settings and policies, and rotates
+credentials when `rotation_id` changes or the saved SecretID is missing, revoked,
+or incompatible with the unlimited SecretID lifetime/usage settings.
+
+The credential destination contains `role_id`, `secret_id`, `secret_id_accessor`,
+`rotation_id`, and `previous_secret_id_accessors`. This is generated runtime data;
+no new SOPS input is required. Do not place generated credentials in Git or logs.
+A role that can read the destination engine can also read its own credentials.
+Removing an entry from configuration does not delete its role, policy, or tokens.
+
+#### External Secrets bootstrap
+
+Use the Vault provider with your OpenBao HTTPS URL, `version: v2`, and
+`auth.appRole.path: approle`. Set `auth.appRole.roleId` from the stored `role_id`;
+`auth.appRole.secretRef` must reference a separately bootstrapped Kubernetes
+Secret containing the `secret_id`. Use one SecretStore or ClusterSecretStore per
+KV mount (`spec.provider.vault.path: secret` or `homelab`). A ClusterSecretStore's
+SecretID reference also needs a namespace. Keep TLS certificate verification
+enabled and use your existing trusted CA configuration.
+
+Retrieve fields through an authorized local OpenBao session and redirect them to
+private files rather than the terminal or captured output. For example, with an
+already authenticated `bao` CLI, create files in a private temporary directory:
+
+```bash
+umask 077
+credential_dir=$(mktemp -d)
+bao kv get -mount=secret -field=role_id approles/talos-homelab > "$credential_dir/role_id"
+bao kv get -mount=secret -field=secret_id approles/talos-homelab > "$credential_dir/secret_id"
+```
+
+Transfer these values through the cluster's approved bootstrap workflow and
+remove the temporary files afterwards. This repository does not deploy Kubernetes
+Secrets, SecretStores or ExternalSecrets. Bootstrap cannot depend on the store
+that needs these same credentials to authenticate.
+
+#### Explicit credential rotation
+
+1. Change the entry's `rotation_id` and converge. OpenBao receives a new SecretID;
+   previously valid accessors are retained in `previous_secret_id_accessors`.
+2. Retrieve the newly published credentials and update the consumer's bootstrap
+   Secret. The previous SecretID remains usable during this transition.
+3. After the consumer switches, revoke each superseded SecretID via
+   `auth/approle/role/<name>/secret-id-accessor/destroy`, passing its accessor from
+   `previous_secret_id_accessors` using an authorized local workflow. Never revoke
+   the current `secret_id_accessor`. The saved list is an audit record and may
+   include accessors already revoked.
+
+Revoking a SecretID prevents future logins but does not revoke session tokens
+already issued from it; these remain bounded by their explicit maximum TTL.
+If publication fails after generation, rerun convergence to recover; the failed
+attempt may leave an unpublished SecretID, which an operator can revoke by
+comparing the role's accessors with the published current and previous accessors.
+
 ## Harbor
 
 Harbor supports OIDC, registry mirror proxy-cache projects, and independently

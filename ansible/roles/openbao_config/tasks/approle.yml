@@ -1,0 +1,136 @@
+---
+- name: Manage OpenBao AppRole and confidential credentials
+  no_log: true
+  module_defaults:
+    ansible.builtin.uri:
+      headers:
+        X-Vault-Token: "{{ openbao_config_token }}"
+      validate_certs: "{{ openbao_config_validate_certs }}"
+      body_format: json
+  block:
+    - name: Build desired AppRole settings
+      ansible.builtin.set_fact:
+        openbao_approle_policy_name: "approle-{{ openbao_approle_item.name }}"
+        openbao_approle_policy: "{{ lookup('ansible.builtin.template', 'approle-kv-v2-policy.hcl.j2') }}"
+        openbao_approle_role_url: "{{ openbao_config_url }}/v1/auth/approle/role/{{ openbao_approle_item.name }}"
+        openbao_approle_credential_url: "{{ openbao_config_url }}/v1/{{ openbao_approle_item.openbao.mount }}/data/{{ openbao_approle_item.openbao.path }}"
+        openbao_approle_settings:
+          bind_secret_id: true
+          secret_id_ttl: 0
+          secret_id_num_uses: 0
+          token_type: service
+          token_ttl: "{{ openbao_approle_item.token_ttl | default(3600) | int }}"
+          token_max_ttl: "{{ openbao_approle_item.token_max_ttl | default(14400) | int }}"
+          token_num_uses: 0
+          token_period: 0
+          token_explicit_max_ttl: "{{ openbao_approle_item.token_max_ttl | default(14400) | int }}"
+          token_policies: ["approle-{{ openbao_approle_item.name }}"]
+
+    - name: Read AppRole policy
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url }}/v1/sys/policies/acl/{{ openbao_approle_policy_name }}"
+        status_code: [200, 404]
+      register: openbao_approle_current_policy
+      changed_when: false
+
+    - name: Create or update AppRole read policy
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url }}/v1/sys/policies/acl/{{ openbao_approle_policy_name }}"
+        method: PUT
+        body:
+          policy: "{{ openbao_approle_policy }}"
+        status_code: [200, 204]
+      when: >-
+        openbao_approle_current_policy.status == 404
+        or openbao_approle_current_policy.json.data.policy | default('') | trim != openbao_approle_policy | trim
+      changed_when: true
+
+    - name: Read AppRole settings
+      ansible.builtin.uri:
+        url: "{{ openbao_approle_role_url }}"
+        status_code: [200, 404]
+      register: openbao_approle_current_role
+      changed_when: false
+
+    - name: Create or update AppRole settings
+      ansible.builtin.uri:
+        url: "{{ openbao_approle_role_url }}"
+        method: POST
+        body: "{{ openbao_approle_settings }}"
+        status_code: [200, 204]
+      when: >-
+        openbao_approle_current_role.status == 404
+        or (openbao_approle_current_role.json.data | default({}) | dict2items
+            | selectattr('key', 'in', openbao_approle_settings.keys() | list) | items2dict) != openbao_approle_settings
+      changed_when: true
+
+    - name: Read AppRole RoleID
+      ansible.builtin.uri:
+        url: "{{ openbao_approle_role_url }}/role-id"
+        status_code: 200
+      register: openbao_approle_role_id
+      changed_when: false
+
+    - name: Read published AppRole credentials
+      ansible.builtin.uri:
+        url: "{{ openbao_approle_credential_url }}"
+        status_code: [200, 404]
+      register: openbao_approle_credentials
+      changed_when: false
+
+    - name: Normalize published AppRole credentials
+      ansible.builtin.set_fact:
+        openbao_approle_stored: "{{ openbao_approle_credentials.json.data.data | default({}) }}"
+
+    - name: Look up the published SecretID
+      ansible.builtin.uri:
+        url: "{{ openbao_approle_role_url }}/secret-id/lookup"
+        method: POST
+        body:
+          secret_id: "{{ openbao_approle_stored.secret_id }}"
+        status_code: [200, 400, 404]
+      when: openbao_approle_stored.secret_id | default('', true) | length > 0
+      register: openbao_approle_secret_lookup
+      changed_when: false
+
+    - name: Determine whether AppRole credentials need rotation
+      ansible.builtin.set_fact:
+        openbao_approle_rotate: >-
+          {{ openbao_approle_secret_lookup.status | default(404) != 200
+             or openbao_approle_secret_lookup.json.data.secret_id_ttl | default(0) | int != 0
+             or openbao_approle_secret_lookup.json.data.secret_id_num_uses | default(0) | int != 0
+             or openbao_approle_stored.rotation_id | default('') != openbao_approle_item.rotation_id | string
+             or openbao_approle_stored.role_id | default('') != openbao_approle_role_id.json.data.role_id }}
+
+    - name: Generate AppRole SecretID
+      ansible.builtin.uri:
+        url: "{{ openbao_approle_role_url }}/secret-id"
+        method: POST
+        body: {}
+        status_code: 200
+      when: openbao_approle_rotate | bool
+      register: openbao_approle_generated
+      changed_when: true
+
+    - name: Build AppRole credential payload
+      ansible.builtin.set_fact:
+        openbao_approle_payload:
+          role_id: "{{ openbao_approle_role_id.json.data.role_id }}"
+          secret_id: "{{ openbao_approle_generated.json.data.secret_id if openbao_approle_rotate else openbao_approle_stored.secret_id }}"
+          secret_id_accessor: "{{ openbao_approle_generated.json.data.secret_id_accessor if openbao_approle_rotate else openbao_approle_secret_lookup.json.data.secret_id_accessor }}"
+          rotation_id: "{{ openbao_approle_item.rotation_id | string }}"
+          previous_secret_id_accessors: >-
+            {{ (openbao_approle_stored.previous_secret_id_accessors | default([])
+                + ([openbao_approle_secret_lookup.json.data.secret_id_accessor]
+                   if openbao_approle_rotate and openbao_approle_secret_lookup.status | default(404) == 200
+                   else [])) | unique | list }}
+
+    - name: Publish AppRole credentials
+      ansible.builtin.uri:
+        url: "{{ openbao_approle_credential_url }}"
+        method: POST
+        body:
+          data: "{{ openbao_approle_payload }}"
+        status_code: [200, 204]
+      when: openbao_approle_stored != openbao_approle_payload
+      changed_when: true

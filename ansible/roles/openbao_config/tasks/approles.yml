@@ -1,0 +1,53 @@
+---
+- name: Validate unique OpenBao AppRole names and credential destinations
+  ansible.builtin.assert:
+    that:
+      - openbao_config.approles | map(attribute='name') | unique | length == openbao_config.approles | length
+      - openbao_config.approles | map(attribute='openbao') | map('to_json', sort_keys=True) | unique | length == openbao_config.approles | length
+    fail_msg: "OpenBao AppRole names and credential destinations must be unique."
+  no_log: true
+
+- name: Validate OpenBao AppRole declarations
+  ansible.builtin.assert:
+    that:
+      - item.name | default('') is match('^[a-zA-Z0-9][a-zA-Z0-9_-]*$')
+      - item.rotation_id | default('', true) | string | length > 0
+      - item.secret_engines | default([]) | length > 0
+      - item.secret_engines | reject('match', '^[a-zA-Z0-9][a-zA-Z0-9_-]*$') | list | length == 0
+      - (item.secret_engines | map('regex_replace', '$', '/') | list | difference(openbao_configured_kv_v2_secret_engines)) | length == 0
+      - item.openbao.mount is match('^[a-zA-Z0-9][a-zA-Z0-9_-]*$')
+      - (item.openbao.mount ~ '/') in openbao_configured_kv_v2_secret_engines
+      - item.openbao.path is match('^[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)*$')
+      - item.token_ttl | default(3600) | int > 0
+      - item.token_max_ttl | default(14400) | int >= item.token_ttl | default(3600) | int
+    fail_msg: "AppRoles require a safe name, declared KV-v2 engines, a credential destination, rotation_id and positive token TTLs."
+  loop: "{{ openbao_config.approles }}"
+  no_log: true
+
+- name: Refuse an incompatible OpenBao AppRole backend
+  ansible.builtin.assert:
+    that:
+      - "'approle/' not in openbao_auth_method_map or openbao_auth_method_map['approle/'].type == 'approle'"
+    fail_msg: "The OpenBao auth/approle path is already used by another auth method."
+
+- name: Enable OpenBao AppRole auth method
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/auth/approle"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_config_token }}"
+    validate_certs: "{{ openbao_config_validate_certs }}"
+    body_format: json
+    body:
+      type: approle
+    status_code: [200, 204]
+  when: "'approle/' not in openbao_auth_method_map"
+  changed_when: true
+  no_log: true
+
+- name: Reconcile OpenBao AppRole
+  ansible.builtin.include_tasks: approle.yml
+  loop: "{{ openbao_config.approles }}"
+  loop_control:
+    loop_var: openbao_approle_item
+    label: "{{ openbao_approle_item.name }}"

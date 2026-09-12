@@ -1,0 +1,30 @@
+---
+- name: Exercise declarative AppRoles against an isolated OpenBao API
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    openbao_config_url: "{{ mock_base_url }}"
+    openbao_config_token: "ci-approle-admin-token"
+    openbao_config_validate_certs: "{{ contract_validate_certs | default(false) }}"
+    openbao_configured_kv_v2_secret_engines: ["secret/", "homelab/"]
+  tasks:
+    - name: Read existing authentication backends
+      ansible.builtin.uri:
+        url: "{{ mock_base_url }}/v1/sys/auth"
+        headers:
+          X-Vault-Token: "{{ openbao_config_token }}"
+        # Discovery is fixture setup; TLS cases exercise the role itself.
+        validate_certs: false
+      register: contract_auth
+      no_log: true
+      changed_when: false
+
+    - name: Use the existing authentication backends
+      ansible.builtin.set_fact:
+        openbao_auth_method_map: "{{ contract_auth.json.data }}"
+
+    - name: Run actual AppRole reconciliation tasks
+      ansible.builtin.include_role:
+        name: openbao_config
+        tasks_from: approles.yml
