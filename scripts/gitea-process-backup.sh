@@ -18,7 +18,7 @@ require_healthy() {
 require_healthy gitea-db
 require_healthy gitea
 
-image="${GITEA_PROCESS_BACKUP_IMAGE:-ghcr.io/frantche/gitea-backup-restore-process:0.3.51@sha256:9fe0b392d8952d2fe0223858b4b55a7370099ac815eb2ac45edbcb7377aab76c}"
+image="${GITEA_PROCESS_BACKUP_IMAGE:-ghcr.io/frantche/gitea-backup-restore-process:0.3.53@sha256:9382a85bf58516cd29b3547abff2f1cac6fdc3afd28a7403560eb5a5b62544df}"
 database_network="${GITEA_PROCESS_BACKUP_NETWORK:-gitea-db}"
 egress_network="${GITEA_PROCESS_BACKUP_EGRESS_NETWORK:-admin-edge}"
 backup_tmp="${BACKUP_TMP_FOLDER:-/tmp/backup}"
