@@ -1,6 +1,6 @@
 # Runtime stack images. This file is the scan inventory and is checked against
 # every stacks/*/compose.yaml or stacks/*/compose.yaml.j2 image declaration.
-cloudflare/cloudflared:2026.8.3@sha256:9be48e4b4e996da851bf78f7782bfab150dd4d8889e469d004802e7d7afb63b1
+cloudflare/cloudflared:2026.9.1@sha256:d68fa057087c359c79a255570e891215877ce48aa48ba6f28aac90d8077acbc3
 docker.gitea.com/gitea:1.27.3@sha256:d584940b7143982682ac4541509dd628506c2b568221e6af41e5a2ead1de4fe7
 goharbor/harbor-core:v2.15.2@sha256:d7b780d23721a000f0fb8e181add6675eafa336de5d033b77fd7da0c171ff7f7
 goharbor/harbor-exporter:v2.15.2@sha256:e1b0a248f61aad5084c5d1612d5f1da89f99c23ce743eaf8cba913d6d00c0547
@@ -15,11 +15,11 @@ goharbor/trivy-adapter-photon:v2.15.2@sha256:215c07b71c37fc7fc16e02d9185d936dcb8
 keycloak/keycloak:26.7@sha256:88943b6ad06d6293a239f0dfca5acec64218c9b3ab327bf9c936acf408a6ae3b
 openbao/openbao:2.6.2@sha256:e29524ba7c3f20d01f562c481e3eccbad6c91df45a2f2531433da4951e408cff
 otel/opentelemetry-collector-contrib:0.160.0@sha256:5b66b0dc6921f2a439cf50b942ccb9e2a4375f136239a9fdf709ef33e4bfc668
-pgautoupgrade/pgautoupgrade:18-trixie@sha256:62e595cd47fa16524fa859d66fb2e3a76eca480fe38d7db1f56c083ae018bb2e
+pgautoupgrade/pgautoupgrade:18-trixie@sha256:7d9b7ad2c33b43071c16463bfb8977a082e1eb4dfdc6e8000af13b04a8ddbe70
 python:3.14-alpine@sha256:5e0ede45886712ce95b0e66232f743cc3d69ff6c2f62cc0d63778e1e894f8bd4
 traefik:v3.7@sha256:96780238b1bbda5a9bb997f4307ce69e798ad1cf6eb7f2dcc0a440823467d199
 
 # Production utility images invoked outside Compose.
 alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
-ghcr.io/frantche/gitea-backup-restore-process:0.3.51@sha256:9fe0b392d8952d2fe0223858b4b55a7370099ac815eb2ac45edbcb7377aab76c
+ghcr.io/frantche/gitea-backup-restore-process:0.3.53@sha256:9382a85bf58516cd29b3547abff2f1cac6fdc3afd28a7403560eb5a5b62544df
 goharbor/prepare:v2.15.2@sha256:5b9428fb649b3a0e0fe497189a880d7c9f1281538b85de9ad377cb524e427bd5
