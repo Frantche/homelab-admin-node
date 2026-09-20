@@ -321,7 +321,18 @@
   register: harbor_mirror_repository_lookup
   until:
     - harbor_mirror_repository_lookup.json | default([]) | selectattr('name', 'equalto', harbor_mirror_validation_repository) | list | length > 0
-    - harbor_mirror_repository_lookup.json | default([]) | selectattr('name', 'equalto', harbor_mirror_validation_repository) | map(attribute='artifact_count') | map('int') | select('greaterthan', 0) | list | length > 0
+    - >-
+      harbor_mirror_repository_lookup.json | default([])
+      | selectattr('name', 'equalto', harbor_mirror_validation_repository)
+      | selectattr('artifact_count', 'defined')
+      | map(attribute='artifact_count') | map('int')
+      | select('greaterthan', 0) | list | length > 0
+      or
+      harbor_mirror_repository_lookup.json | default([])
+      | selectattr('name', 'equalto', harbor_mirror_validation_repository)
+      | selectattr('pull_count', 'defined')
+      | map(attribute='pull_count') | map('int')
+      | select('greaterthan', 0) | list | length > 0
   retries: 36
   delay: 5
   when:
