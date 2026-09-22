@@ -19,7 +19,9 @@ services:
       CONFIG_AUTH_OIDC_CLIENT_ID: "{{ crowdsec_web_ui.oidc.client_id }}"
       CONFIG_AUTH_OIDC_CLIENT_SECRET_FILE: /run/secrets/crowdsec-web-ui-oidc-client-secret
       CONFIG_AUTH_OIDC_GROUPS_CLAIM: groups
-      CONFIG_AUTH_OIDC_ADMIN_GROUPS: "{{ crowdsec_web_ui.oidc.admin_groups | join(',') }}"
+{% for group in crowdsec_web_ui.oidc.admin_groups | default([]) %}
+      CONFIG_AUTH_OIDC_ADMIN_GROUPS_{{ loop.index0 }}: "{{ group }}"
+{% endfor %}
     volumes:
       - "{{ admin_node_root }}/data/crowdsec-web-ui:/app/data"
     secrets:
