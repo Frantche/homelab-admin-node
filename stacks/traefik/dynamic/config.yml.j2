@@ -78,6 +78,21 @@ http:
         - security-headers
         - crowdsec-lapi-allowlist
 {% endif %}
+{% if crowdsec_web_ui.enabled | default(false) | bool %}
+    crowdsec-web-ui:
+      rule: "Host(`{{ crowdsec_web_ui.hostname }}`)"
+      entryPoints:
+        - websecure
+{% if traefik_letsencrypt_enabled | default(false) %}
+      tls:
+        certResolver: letsencrypt
+{% else %}
+      tls: true
+{% endif %}
+      service: crowdsec-web-ui
+      middlewares:
+        - security-headers
+{% endif %}
 {% if traefik.dashboard_enabled | default(false) | bool %}
     dashboard:
       rule: "Host(`{{ service_domains.traefik }}`)"
@@ -139,6 +154,12 @@ http:
       loadBalancer:
         servers:
           - url: "http://crowdsec:8080"
+{% if crowdsec_web_ui.enabled | default(false) | bool %}
+    crowdsec-web-ui:
+      loadBalancer:
+        servers:
+          - url: "http://crowdsec-web-ui:3000"
+{% endif %}
 {% endif %}
 {% for external_service in traefik_external_services | default([]) %}
     {{ external_service.name }}:

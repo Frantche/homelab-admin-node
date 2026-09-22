@@ -135,6 +135,8 @@
       when: admin_mode == 'normal' and (openbao_config.enabled | default(false))
     - role: crowdsec
       when: admin_mode in ['init', 'normal', 'restore'] and (crowdsec.enabled | default(false))
+    - role: crowdsec_web_ui
+      when: admin_mode in ['init', 'normal'] and (crowdsec_web_ui.enabled | default(false))
     - role: harbor
       when: admin_mode in ['init', 'normal', 'restore']
     - role: backup

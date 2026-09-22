@@ -8,6 +8,7 @@
     - { name: cloudflared, enabled: "{{ cloudflare.enabled | default(true) | bool }}" }
     - { name: observability, enabled: "{{ observability.enabled | default(false) | bool }}" }
     - { name: crowdsec, enabled: "{{ crowdsec.enabled | default(false) | bool }}" }
+    - { name: crowdsec-web-ui, enabled: "{{ crowdsec_web_ui.enabled | default(false) | bool }}" }
   when: not (item.enabled | bool)
 
 - name: Inspect disabled optional stack definitions
@@ -17,6 +18,7 @@
     - { name: cloudflared, enabled: "{{ cloudflare.enabled | default(true) | bool }}" }
     - { name: observability, enabled: "{{ observability.enabled | default(false) | bool }}" }
     - { name: crowdsec, enabled: "{{ crowdsec.enabled | default(false) | bool }}" }
+    - { name: crowdsec-web-ui, enabled: "{{ crowdsec_web_ui.enabled | default(false) | bool }}" }
   when: not (item.enabled | bool)
   register: optional_stack_definitions
 

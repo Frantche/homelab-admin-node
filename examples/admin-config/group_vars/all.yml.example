@@ -91,6 +91,19 @@ crowdsec:
     mount: "secret"
     path_prefix: "crowdsec"
 
+crowdsec_web_ui:
+  enabled: true
+  hostname: "crowdsec-ui.example.com"
+  lapi:
+    username: "crowdsec-web-ui"
+    password: "{{ vault_crowdsec_web_ui_lapi_password }}"
+  oidc:
+    enabled: true
+    client_id: "crowdsec-web-ui"
+    client_secret: "{{ vault_oidc_crowdsec_web_ui_client_secret }}"
+    issuer_url: "https://keycloak.example.com/realms/homelab"
+    admin_groups: ["admin"]
+
 hardening:
   apparmor:
     enabled: true
@@ -111,6 +124,9 @@ oidc_clients:
   gitea:
     client_id: "gitea"
     client_secret: "{{ vault_oidc_gitea_client_secret }}"
+  crowdsec_web_ui:
+    client_id: "crowdsec-web-ui"
+    client_secret: "{{ vault_oidc_crowdsec_web_ui_client_secret }}"
 
 keycloak_config:
   enabled: true
@@ -120,6 +136,11 @@ keycloak_config:
   realm_roles:
     - "admin"
   clients:
+    - client_id: "crowdsec-web-ui"
+      redirect_uris:
+        - "https://crowdsec-ui.example.com/auth/oidc/callback"
+      web_origins:
+        - "https://crowdsec-ui.example.com"
     - client_id: "harbor"
       redirect_uris:
         - "https://harbor.example.com/c/oidc/callback"

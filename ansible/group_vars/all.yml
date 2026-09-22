@@ -48,6 +48,20 @@ crowdsec:
     mount: "secret"
     path_prefix: "crowdsec"
 
+crowdsec_web_ui:
+  enabled: false
+  image: "ghcr.io/theduffman85/crowdsec-web-ui:2026.2.1@sha256:c69dc9accfa26a07814c9c101463dabcb6f0f14cd8a9fdb4d92c5580932b47c6"
+  hostname: "crowdsec-ui.example.com"
+  lapi:
+    username: "crowdsec-web-ui"
+    password: ""
+  oidc:
+    enabled: true
+    client_id: "crowdsec-web-ui"
+    client_secret: ""
+    issuer_url: "https://keycloak.example.com/realms/homelab"
+    admin_groups: ["admin"]
+
 service_domains:
   harbor: "harbor.example.com"
   openbao: "bao.example.com"
