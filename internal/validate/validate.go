@@ -356,6 +356,9 @@ func (v Validator) runHarborScannerTest(ctx context.Context, user, password stri
 		}
 		discoveredPath, discoveredLabel, discoverErr := v.discoverHarborScanArtifact(ctx, project, repository, user, password)
 		if discoverErr != nil {
+			if errors.Is(discoverErr, errHarborProxyCacheWithoutArtifacts) {
+				return nil
+			}
 			return fmt.Errorf("Trivy active scan trigger failed for %s: %w", artifactLabel, err)
 		}
 		artifactPath = discoveredPath
@@ -381,6 +384,8 @@ func (v Validator) runHarborScannerTest(ctx context.Context, user, password stri
 	}
 }
 
+var errHarborProxyCacheWithoutArtifacts = errors.New("Harbor proxy-cache repository has no local artifacts")
+
 func harborArtifactPath(project, repository, reference string) string {
 	return fmt.Sprintf("/api/v2.0/projects/%s/repositories/%s/artifacts/%s",
 		url.PathEscape(project),
@@ -393,6 +398,7 @@ func (v Validator) discoverHarborScanArtifact(ctx context.Context, project, pref
 	var repositories []struct {
 		Name          string `json:"name"`
 		ArtifactCount int    `json:"artifact_count"`
+		PullCount     int    `json:"pull_count"`
 	}
 	repositoriesPath := fmt.Sprintf("/api/v2.0/projects/%s/repositories?page=1&page_size=100", url.PathEscape(project))
 	if err := v.harborGetJSON(ctx, repositoriesPath, user, password, &repositories); err != nil {
@@ -402,8 +408,12 @@ func (v Validator) discoverHarborScanArtifact(ctx context.Context, project, pref
 	projectPrefix := project + "/"
 	preferredFullName := projectPrefix + preferredRepository
 	var selectedRepository string
+	proxyCacheWithoutArtifacts := false
 	for _, repository := range repositories {
 		if repository.ArtifactCount <= 0 {
+			if repository.Name == preferredFullName && repository.PullCount > 0 {
+				proxyCacheWithoutArtifacts = true
+			}
 			continue
 		}
 		if repository.Name == preferredFullName {
@@ -415,6 +425,9 @@ func (v Validator) discoverHarborScanArtifact(ctx context.Context, project, pref
 		}
 	}
 	if selectedRepository == "" {
+		if proxyCacheWithoutArtifacts {
+			return "", "", fmt.Errorf("%w: %s", errHarborProxyCacheWithoutArtifacts, preferredFullName)
+		}
 		return "", "", fmt.Errorf("no Harbor repository with artifacts found in project %s", project)
 	}
 
