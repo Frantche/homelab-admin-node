@@ -2,7 +2,7 @@
 set -euo pipefail
 
 services=(
-  cloudflared gitea-db gitea keycloak-db keycloak
+  cloudflared crowdsec-web-ui gitea-db gitea keycloak-db keycloak
   harbor-log harbor-db harbor-redis harbor-registry harbor-registryctl
   harbor-core harbor-portal harbor-jobservice harbor-trivy harbor-exporter
   harbor-nginx otel-mock-backend otel-collector openbao traefik
@@ -12,7 +12,7 @@ user_exceptions=(
   gitea-db gitea keycloak-db openbao traefik otel-mock-backend
   harbor-log harbor-db harbor-redis harbor-registry harbor-registryctl
   harbor-core harbor-portal harbor-jobservice harbor-trivy harbor-exporter
-  harbor-nginx
+  harbor-nginx crowdsec-web-ui
 )
 write_exceptions=(
   gitea keycloak harbor-log harbor-db harbor-redis harbor-registry harbor-registryctl
