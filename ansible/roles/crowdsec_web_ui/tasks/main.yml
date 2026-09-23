@@ -3,7 +3,6 @@
   ansible.builtin.assert:
     that:
       - crowdsec.enabled | default(false) | bool
-      - crowdsec_web_ui.image | default('', true) | length > 0
       - crowdsec_web_ui.hostname | default('', true) | length > 0
       - crowdsec_web_ui.lapi.username | default('', true) | length > 0
       - crowdsec_web_ui.lapi.password | default('', true) | length > 0
