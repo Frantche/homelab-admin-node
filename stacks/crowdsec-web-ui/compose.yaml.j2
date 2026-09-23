@@ -10,7 +10,8 @@ services:
     pids_limit: 256
     mem_limit: 512m
     cpus: 1.0
-    tmpfs: [/tmp:size=32m,mode=0700]
+    tmpfs:
+      - "/tmp:size=32m,mode=0700"
     environment:
       CONFIG_INSTANCE_LAPI_URL: http://crowdsec:8080
       CONFIG_INSTANCE_LAPI_AUTH_USERNAME: "{{ crowdsec_web_ui.lapi.username }}"
