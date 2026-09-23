@@ -7,7 +7,7 @@ services=(
   harbor-core harbor-portal harbor-jobservice harbor-trivy harbor-exporter
   harbor-nginx otel-mock-backend otel-collector openbao traefik
 )
-optional_services=(cloudflared otel-mock-backend otel-collector)
+optional_services=(cloudflared crowdsec-web-ui otel-mock-backend otel-collector)
 user_exceptions=(
   gitea-db gitea keycloak-db openbao traefik otel-mock-backend
   harbor-log harbor-db harbor-redis harbor-registry harbor-registryctl
