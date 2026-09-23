@@ -43,7 +43,7 @@
   changed_when: crowdsec_web_ui_machine.rc == 0
   failed_when: >-
     crowdsec_web_ui_machine.rc != 0 and
-    ('already exists' not in (crowdsec_web_ui_machine.stderr | lower))
+    ('already exist' not in (crowdsec_web_ui_machine.stderr | lower))
   no_log: true
 
 - name: Write CrowdSec Web UI secrets
