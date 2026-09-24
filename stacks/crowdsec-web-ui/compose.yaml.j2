@@ -1,6 +1,6 @@
 services:
   crowdsec-web-ui:
-    image: "{{ crowdsec_web_ui.image | default('ghcr.io/theduffman85/crowdsec-web-ui:2026.2.1@sha256:c69dc9accfa26a07814c9c101463dabcb6f0f14cd8a9fdb4d92c5580932b47c6') }}"
+    image: "{{ crowdsec_web_ui.image | default('ghcr.io/theduffman85/crowdsec-web-ui:2026.8.1@sha256:6acdda14b96f3ccad25132e64f1218854238e0a86d1407ed27eb74b11dbd4dca') }}"
     container_name: crowdsec-web-ui
     restart: "no"
     read_only: true
@@ -18,12 +18,14 @@ services:
       - "/tmp:size=32m,mode=0700"
     environment:
       CONFIG_INSTANCE_LAPI_URL: http://crowdsec:8080
+      CONFIG_INSTANCE_LAPI_AUTH_TYPE: password
       CONFIG_INSTANCE_LAPI_AUTH_USERNAME: "{{ crowdsec_web_ui.lapi.username }}"
       CONFIG_INSTANCE_LAPI_AUTH_PASSWORD_FILE: /run/secrets/crowdsec-web-ui-lapi-password
       CONFIG_AUTH_ENABLED: "true"
       CONFIG_AUTH_OIDC_ISSUER_URL: "{{ crowdsec_web_ui.oidc.issuer_url }}"
       CONFIG_AUTH_OIDC_CLIENT_ID: "{{ crowdsec_web_ui.oidc.client_id }}"
       CONFIG_AUTH_OIDC_CLIENT_SECRET_FILE: /run/secrets/crowdsec-web-ui-oidc-client-secret
+      CONFIG_AUTH_OIDC_SCOPE: "openid profile email"
       CONFIG_AUTH_OIDC_GROUPS_CLAIM: groups
 {% for group in crowdsec_web_ui.oidc.admin_groups | default([]) %}
       CONFIG_AUTH_OIDC_ADMIN_GROUPS_{{ loop.index0 }}: "{{ group }}"
