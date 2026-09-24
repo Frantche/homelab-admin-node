@@ -52,6 +52,7 @@
     - { path: "{{ admin_node_root }}/data/gitea-stack/postgres" }
     - { path: "{{ admin_node_root }}/data/traefik" }
     - { path: "{{ admin_node_root }}/data/cloudflared" }
+    - { path: "{{ admin_node_root }}/data/crowdsec", mode: "0750" }
 
 - name: Ensure openbao data directory is writable before restore can start
   ansible.builtin.file:

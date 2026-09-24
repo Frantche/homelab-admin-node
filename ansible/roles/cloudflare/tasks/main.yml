@@ -8,9 +8,13 @@
     that:
       - cloudflare.tunnel_id | default('', true) | length > 0
       - cloudflare.credentials_json | default('', true) | length > 0
+      - ((cloudflare.origin_network | default({})).subnet | default('172.31.255.0/29')) is match('^[0-9.]+/[0-9]+$')
+      - ((cloudflare.origin_network | default({})).traefik_ip | default('172.31.255.2')) is match('^[0-9.]+$')
+      - ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3')) is match('^[0-9.]+$')
+      - ((cloudflare.origin_network | default({})).traefik_ip | default('172.31.255.2')) != ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3'))
     fail_msg: >-
-      cloudflare.tunnel_id and cloudflare.credentials_json are required when
-      Cloudflare Tunnel is enabled.
+      Cloudflare Tunnel requires its tunnel credentials and distinct valid IPv4
+      addresses for Traefik and cloudflared on the dedicated origin network.
   when: (cloudflare.enabled | default(true)) | bool
 
 - name: Ensure cloudflared stack directory
@@ -83,7 +87,9 @@
 
 - name: Start cloudflared mock container (CI mode)
   ansible.builtin.command: >-
-    docker run -d --name cloudflared --network admin-edge --restart no
+    docker run -d --name cloudflared --network traefik-cloudflared
+    --ip {{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3')) }}
+    --restart no
     --user 65532:65532
     --read-only
     --tmpfs /tmp:size=32m,mode=0700
@@ -103,6 +109,23 @@
   register: mock_cloudflared
   failed_when: false
   changed_when: mock_cloudflared.rc == 0
+
+- name: Attach cloudflared mock container to its egress network
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - connect
+      - cloudflare-egress
+      - cloudflared
+  when:
+    - (cloudflare.enabled | default(true)) | bool
+    - ci_mode | default(false) | bool
+  register: mock_cloudflared_egress
+  failed_when:
+    - mock_cloudflared_egress.rc != 0
+    - "'already exists' not in mock_cloudflared_egress.stderr"
+  changed_when: mock_cloudflared_egress.rc == 0
 
 - name: Start cloudflared stack (production)
   ansible.builtin.command: docker compose -f compose.yaml up --wait --wait-timeout 300

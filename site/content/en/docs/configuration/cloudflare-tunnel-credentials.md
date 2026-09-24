@@ -114,7 +114,15 @@ traefik:
           -----END CERTIFICATE-----
 ```
 
-When any external service sets `cloudflare: true`, the generated local ingress configuration includes the built-in service domains for Keycloak, OpenBao, Harbor, and Gitea, plus each opted-in external service. The Traefik dashboard hostname is deliberately excluded and remains reachable only through internal ingress. All Cloudflare ingress entries forward to Traefik as a reverse proxy, which then selects the application backend from the request hostname.
+When any external service sets `cloudflare: true`, the generated local ingress configuration includes the built-in service domains for Keycloak, OpenBao, Harbor, and Gitea, plus each opted-in external service. The Traefik dashboard hostname is deliberately excluded and remains reachable only through internal ingress.
+
+All Cloudflare ingress entries forward to Traefik's dedicated internal TLS
+entrypoint on port `8443`, which then selects the application backend from the
+request hostname. Direct clients continue to use host port `443`; port `8443`
+is not published on the host. The isolated origin path lets Traefik trust the
+client headers supplied by cloudflared without extending that trust to direct
+HTTPS requests. See [CrowdSec and Traefik]({{< relref "/docs/configuration/crowdsec" >}})
+for the network and middleware flow.
 
 ## Manage the public DNS routes
 

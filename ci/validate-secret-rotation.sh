@@ -71,6 +71,7 @@ for path in \
   vault_oidc_harbor_client_secret \
   vault_oidc_openbao_client_secret \
   vault_oidc_gitea_client_secret \
+  vault_oidc_crowdsec_web_ui_client_secret \
   keycloak.db_password \
   keycloak.admin_password \
   harbor.db_password \

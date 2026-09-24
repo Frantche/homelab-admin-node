@@ -26,6 +26,8 @@ USER_EXCEPTIONS = {
     "otel-mock-backend",
     "openbao",
     "traefik",
+    "crowdsec",
+    "crowdsec-web-ui",
 }
 
 WRITE_EXCEPTIONS = {
