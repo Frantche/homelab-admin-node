@@ -98,6 +98,26 @@ Give every additional bouncer its own API key. Do not copy the Traefik key to
 Talos, Kubernetes, or another host. Restrict OpenBao policies to only the path
 required by each consumer.
 
+## Optional Web UI
+
+Enable the Web UI through `crowdsec_web_ui` in the private configuration
+repository. Put its LAPI password and shared OIDC client secret in
+`group_vars/secrets.sops.yaml` as `vault_crowdsec_web_ui_lapi_password` and
+`vault_oidc_crowdsec_web_ui_client_secret`. Convergence stores them as
+root-owned files readable only by a dedicated group used by this container.
+Keep those permissions; do not make the files world-readable.
+
+The container runs directly as the image's non-root `node` user. Convergence
+assigns the persistent application directory to that runtime UID and starts
+the systemd stack unit so a previously failed unit is recovered. Check the
+container health and local health endpoint after convergence:
+
+```bash
+docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' crowdsec-web-ui
+docker exec crowdsec-web-ui node -e "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+systemctl status admin-stack@crowdsec-web-ui.service
+```
+
 ## Verify enforcement
 
 After convergence, first confirm the containers and networks:

@@ -52,6 +52,21 @@
       traefik_bouncer:
         plugin_version: "v1.4.5"
         update_interval_seconds: 60
+    crowdsec_web_ui_secret_gid: 45000
+    crowdsec_web_ui:
+      enabled: true
+      image: "ghcr.io/theduffman85/crowdsec-web-ui:2026.8.1"
+      hostname: "crowdsec-ui.example.com"
+      uid: 1000
+      lapi:
+        username: "crowdsec-web-ui"
+        password: "ci-crowdsec-web-ui-lapi-password"
+      oidc:
+        enabled: true
+        client_id: "crowdsec-web-ui"
+        client_secret: "ci-crowdsec-web-ui-oidc-secret"
+        issuer_url: "https://keycloak.example.com/realms/homelab"
+        admin_groups: ["admin"]
   tasks:
     - name: Render CrowdSec stack and Traefik configuration
       ansible.builtin.set_fact:
@@ -61,6 +76,27 @@
         crowdsec_traefik_dynamic: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/dynamic/config.yml.j2') }}"
         crowdsec_cloudflared_compose: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/cloudflared/compose.yaml.j2') }}"
         crowdsec_cloudflared_config: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/cloudflared/config.yml.tpl') }}"
+        crowdsec_web_ui_compose: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/crowdsec-web-ui/compose.yaml.j2') }}"
+        crowdsec_web_ui_tasks: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../ansible/roles/crowdsec_web_ui/tasks/main.yml') }}"
+        admin_site_tasks: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../ansible/site.yml') }}"
+        admin_secret_example: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../examples/admin-config/group_vars/secrets.sops.yaml.example') }}"
+
+    - name: Assert CrowdSec Web UI secret access and CI wiring contracts
+      ansible.builtin.assert:
+        that:
+          - "'user: node' in crowdsec_web_ui_compose"
+          - "'group_add:' in crowdsec_web_ui_compose"
+          - "'45000' in crowdsec_web_ui_compose"
+          - "'cap_add:' not in crowdsec_web_ui_compose"
+          - "'crowdsec-web-ui-secrets' in crowdsec_web_ui_tasks"
+          - "'mode: \"0640\"' in crowdsec_web_ui_tasks"
+          - crowdsec_web_ui_tasks is not search('path:.*/env"')
+          - "'state: started' in crowdsec_web_ui_tasks"
+          - "'vault_oidc_crowdsec_web_ui_client_secret:' in admin_site_tasks"
+          - "'vault_crowdsec_web_ui_lapi_password:' in admin_site_tasks"
+          - "'vault_oidc_crowdsec_web_ui_client_secret:' in admin_secret_example"
+          - "'vault_crowdsec_web_ui_lapi_password:' in admin_secret_example"
+        fail_msg: "CrowdSec Web UI runtime or secret wiring contract is incomplete."
 
     - name: Assert CrowdSec LAPI-only stack contracts
       ansible.builtin.assert:

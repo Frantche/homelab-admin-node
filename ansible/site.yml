@@ -35,6 +35,8 @@
         vault_oidc_harbor_client_secret: "{{ decrypted_inventory_secrets.vault_oidc_harbor_client_secret | default(vault_oidc_harbor_client_secret | default('')) }}"
         vault_oidc_openbao_client_secret: "{{ decrypted_inventory_secrets.vault_oidc_openbao_client_secret | default(vault_oidc_openbao_client_secret | default('')) }}"
         vault_oidc_gitea_client_secret: "{{ decrypted_inventory_secrets.vault_oidc_gitea_client_secret | default(vault_oidc_gitea_client_secret | default('')) }}"
+        vault_oidc_crowdsec_web_ui_client_secret: "{{ decrypted_inventory_secrets.vault_oidc_crowdsec_web_ui_client_secret | default(vault_oidc_crowdsec_web_ui_client_secret | default('')) }}"
+        vault_crowdsec_web_ui_lapi_password: "{{ decrypted_inventory_secrets.vault_crowdsec_web_ui_lapi_password | default(vault_crowdsec_web_ui_lapi_password | default('')) }}"
         vault_registry_mirror_private_username: "{{ decrypted_inventory_secrets.vault_registry_mirror_private_username | default(vault_registry_mirror_private_username | default('')) }}"
         vault_registry_mirror_private_password: "{{ decrypted_inventory_secrets.vault_registry_mirror_private_password | default(vault_registry_mirror_private_password | default('')) }}"
       vars:

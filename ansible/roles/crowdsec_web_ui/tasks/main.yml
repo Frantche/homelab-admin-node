@@ -13,17 +13,36 @@
     fail_msg: "CrowdSec Web UI requires LAPI credentials and an OIDC client configuration."
   no_log: true
 
+- name: Ensure CrowdSec Web UI secret group
+  ansible.builtin.group:
+    name: crowdsec-web-ui-secrets
+    system: true
+
+- name: Read CrowdSec Web UI secret group
+  ansible.builtin.getent:
+    database: group
+    key: crowdsec-web-ui-secrets
+
+- name: Set CrowdSec Web UI secret group ID
+  ansible.builtin.set_fact:
+    crowdsec_web_ui_secret_gid: "{{ ansible_facts.getent_group['crowdsec-web-ui-secrets'][1] | int }}"
+
 - name: Ensure CrowdSec Web UI directories
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
     mode: "{{ item.mode }}"
   loop:
-    - { path: "{{ admin_node_root }}/stacks/crowdsec-web-ui", mode: "0755" }
-    - { path: "{{ admin_node_root }}/data/crowdsec-web-ui", mode: "0750" }
-    - { path: "{{ admin_node_root }}/env", mode: "0750" }
+    - path: "{{ admin_node_root }}/stacks/crowdsec-web-ui"
+      owner: root
+      group: root
+      mode: "0755"
+    - path: "{{ admin_node_root }}/data/crowdsec-web-ui"
+      owner: "{{ crowdsec_web_ui.uid | default('1000') }}"
+      group: root
+      mode: "0750"
 
 - name: Register CrowdSec Web UI watcher
   ansible.builtin.command:
@@ -51,8 +70,8 @@
     content: "{{ item.value }}\n"
     dest: "{{ admin_node_root }}/env/{{ item.name }}"
     owner: root
-    group: root
-    mode: "0600"
+    group: crowdsec-web-ui-secrets
+    mode: "0640"
   loop:
     - { name: crowdsec-web-ui-lapi-password, value: "{{ crowdsec_web_ui.lapi.password }}" }
     - { name: crowdsec-web-ui-oidc-client-secret, value: "{{ crowdsec_web_ui.oidc.client_secret }}" }
@@ -74,7 +93,8 @@
   register: crowdsec_web_ui_stack
   changed_when: "'Created' in crowdsec_web_ui_stack.stderr or 'Recreated' in crowdsec_web_ui_stack.stderr or 'Started' in crowdsec_web_ui_stack.stderr"
 
-- name: Enable CrowdSec Web UI stack at boot
+- name: Enable and start CrowdSec Web UI stack
   ansible.builtin.systemd:
     name: admin-stack@crowdsec-web-ui.service
     enabled: true
+    state: started

@@ -27,7 +27,6 @@ USER_EXCEPTIONS = {
     "openbao",
     "traefik",
     "crowdsec",
-    "crowdsec-web-ui",
 }
 
 WRITE_EXCEPTIONS = {
