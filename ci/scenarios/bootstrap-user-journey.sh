@@ -304,7 +304,7 @@ assert_harbor_robot_token_contract() {
 
 assert_crowdsec_contract() {
   local credential_json bouncer_key status
-  credential_json="$(docker exec -e BAO_ADDR=https://127.0.0.1:8200 -e BAO_CACERT=/openbao/tls/ca.pem -e VAULT_TOKEN="$OPENBAO_TOKEN" openbao bao read -format=json admin/data/crowdsec/bouncers/traefik)"
+  credential_json="$(docker exec -e BAO_ADDR=https://127.0.0.1:8200 -e BAO_CACERT=/openbao/tls/ca.pem -e VAULT_TOKEN="$OPENBAO_TOKEN" openbao bao read -format=json secret/data/crowdsec/bouncers/traefik)"
   bouncer_key="$(jq -er '.data.data.api_key' <<<"$credential_json")"
   docker exec \
     -e BAO_ADDR=https://127.0.0.1:8200 \
