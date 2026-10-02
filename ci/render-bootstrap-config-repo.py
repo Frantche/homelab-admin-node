@@ -11,9 +11,26 @@ import yaml
 SECRET_PLACEHOLDER = "CHANGE_ME_IN_SOPS"
 SECRET_ALPHABET = string.ascii_letters + string.digits
 SECRET_LENGTH = 32
+CI_DOCKER_CIDR = "172.16.0.0/12"
 
 
 def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
+    with (group_vars / "all.yml").open() as f:
+        all_vars = yaml.safe_load(f) or {}
+    crowdsec = all_vars.get("crowdsec")
+    if not isinstance(crowdsec, dict):
+        raise SystemExit("bootstrap example configuration must define crowdsec")
+    crowdsec_lapi = crowdsec.get("lapi", {})
+    if not isinstance(crowdsec_lapi, dict):
+        raise SystemExit("bootstrap example crowdsec.lapi configuration must be a mapping")
+    allowed_cidrs = crowdsec_lapi.get("allowed_cidrs", [])
+    if not isinstance(allowed_cidrs, list):
+        raise SystemExit("bootstrap example crowdsec.lapi.allowed_cidrs must be a list")
+    if CI_DOCKER_CIDR not in allowed_cidrs:
+        allowed_cidrs.append(CI_DOCKER_CIDR)
+    crowdsec_lapi["allowed_cidrs"] = allowed_cidrs
+    crowdsec["lapi"] = crowdsec_lapi
+
     data = {
         "ci_mode": True,
         "admin_ci_disable_auto_converge": True,
@@ -25,6 +42,7 @@ def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
         "harbor_validation_scan_project": "dockerhub",
         "harbor_validation_scan_repository": "library/busybox",
         "harbor_validation_scan_reference": "sha256:1cfa4e2b09e127b9c4ed43578d3f3c18e7d44ea47b9ea98475c0cbe9086525f8",
+        "crowdsec": crowdsec,
         "acme_email": "ci@example.com",
         "traefik": {
             "dashboard_enabled": True,
