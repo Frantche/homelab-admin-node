@@ -131,10 +131,14 @@
   ansible.builtin.command: docker compose -f compose.yaml up --wait --wait-timeout 300
   args:
     chdir: "{{ admin_node_root }}/stacks/cloudflared"
+  register: cloudflare_production_compose_up
   when:
     - (cloudflare.enabled | default(true)) | bool
     - not (ci_mode | default(false))
-  changed_when: true
+  changed_when: >-
+    'Created' in cloudflare_production_compose_up.stdout
+    or 'Recreated' in cloudflare_production_compose_up.stdout
+    or 'Started' in cloudflare_production_compose_up.stdout
 
 - name: Enable cloudflared stack at boot
   ansible.builtin.systemd:
