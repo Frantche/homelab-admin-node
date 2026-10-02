@@ -365,11 +365,13 @@ assert_crowdsec_contract() {
 }
 
 assert_crowdsec_web_ui_oidc_login() {
-  local status
-  status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  local hostname status
+  hostname="$("$REPO_ROOT/ci/service-domains.py" get crowdsec_web_ui)"
+  status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
     --max-time 30 \
+    --resolve "${hostname}:443:127.0.0.1" \
     --cacert /srv/admin/certs/ca.pem \
-    https://crowdsec-ui.example.com/api/auth/oidc/login)" || {
+    "https://${hostname}/api/auth/oidc/login")" || {
     echo "ERROR: CrowdSec Web UI OIDC login request failed" >&2
     return 1
   }
