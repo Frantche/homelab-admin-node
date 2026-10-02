@@ -102,7 +102,7 @@ crowdsec_web_ui:
     client_id: "{{ oidc_clients.crowdsec_web_ui.client_id }}"
     client_secret: "{{ oidc_clients.crowdsec_web_ui.client_secret }}"
     issuer_url: "https://keycloak.example.com/realms/homelab"
-    admin_groups: ["admin"]
+    admin_groups: ["harbor-admins"]
 
 hardening:
   apparmor:

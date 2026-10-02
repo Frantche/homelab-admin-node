@@ -253,6 +253,9 @@ oidc_clients:
   gitea:
     client_id: "gitea"
     client_secret: "{{ vault_oidc_gitea_client_secret }}"
+  crowdsec_web_ui:
+    client_id: "crowdsec-web-ui"
+    client_secret: "{{ vault_oidc_crowdsec_web_ui_client_secret }}"
 ```
 
 | Variable | Default in CI | Required outside CI | Purpose |
@@ -263,6 +266,8 @@ oidc_clients:
 | `oidc_clients.openbao.client_secret` | CI placeholder | when OpenBao OIDC is enabled | OpenBao OIDC client secret. Store encrypted. |
 | `oidc_clients.gitea.client_id` | `gitea` | when Gitea OIDC is enabled | Client ID managed in Keycloak and configured in Gitea. |
 | `oidc_clients.gitea.client_secret` | CI placeholder | when Gitea OIDC is enabled | Gitea OIDC client secret. Store encrypted. |
+| `oidc_clients.crowdsec_web_ui.client_id` | `crowdsec-web-ui` | when the CrowdSec Web UI OIDC is enabled | Client ID managed in Keycloak and configured in the Web UI. |
+| `oidc_clients.crowdsec_web_ui.client_secret` | CI placeholder | when the CrowdSec Web UI OIDC is enabled | Web UI OIDC client secret. Store encrypted. |
 
 ## OpenBao
 

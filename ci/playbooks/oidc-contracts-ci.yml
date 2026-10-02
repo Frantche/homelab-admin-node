@@ -135,6 +135,10 @@
       ansible.builtin.set_fact:
         crowdsec_web_ui_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', oidc_clients.crowdsec_web_ui.client_id) | list | first | default({}) }}"
 
+    - name: Capture CrowdSec Web UI CI groups mapper
+      ansible.builtin.set_fact:
+        crowdsec_web_ui_groups_mapper: "{{ crowdsec_web_ui_keycloak_client.protocol_mappers | default([]) | selectattr('name', 'equalto', 'groups') | list | first | default({}) }}"
+
     - name: Capture Gitea CI groups mapper
       ansible.builtin.set_fact:
         gitea_groups_mapper: "{{ gitea_keycloak_client.protocol_mappers | default([]) | selectattr('name', 'equalto', 'groups') | list | first | default({}) }}"
@@ -172,5 +176,11 @@
           - crowdsec_web_ui_keycloak_client | length > 0
           - crowdsec_web_ui_keycloak_client.secret == oidc_clients.crowdsec_web_ui.client_secret
           - crowdsec_web_ui_keycloak_client.public | default(false) == false
+          - crowdsec_web_ui_groups_mapper | length > 0
+          - crowdsec_web_ui_groups_mapper.protocolMapper == 'oidc-group-membership-mapper'
+          - crowdsec_web_ui_groups_mapper.config['claim.name'] == 'groups'
+          - crowdsec_web_ui_groups_mapper.config['full.path'] == 'false'
+          - crowdsec_web_ui_groups_mapper.config['id.token.claim'] == 'true'
+          - crowdsec_web_ui_groups_mapper.config['userinfo.token.claim'] == 'true'
           - crowdsec_web_ui_keycloak_client.redirect_uris == ['https://crowdsec-ui.example.com/api/auth/oidc/callback']
           - crowdsec_web_ui_keycloak_client.web_origins == ['https://crowdsec-ui.example.com']

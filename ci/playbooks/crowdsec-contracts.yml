@@ -103,6 +103,10 @@
           - "'oidc_clients.crowdsec_web_ui.client_id' in admin_config_example.crowdsec_web_ui.oidc.client_id"
           - "'oidc_clients.crowdsec_web_ui.client_secret' in admin_config_example.crowdsec_web_ui.oidc.client_secret"
           - >-
+            (admin_config_example.crowdsec_web_ui.oidc.admin_groups | default([])
+            | intersect((admin_secret_example | from_yaml).keycloak_config.users[0].groups | default([]))
+            | length) > 0
+          - >-
             (admin_config_example.keycloak_config.clients
             | selectattr('client_id', 'equalto', 'crowdsec-web-ui')
             | map(attribute='redirect_uris') | first)

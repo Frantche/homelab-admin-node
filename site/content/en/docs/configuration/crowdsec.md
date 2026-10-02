@@ -111,7 +111,9 @@ Keep the UI client ID and secret sourced from that shared entry, and declare
 `https://<crowdsec_web_ui.hostname>/api/auth/oidc/callback` as its redirect URI
 under `keycloak_config.clients`. Convergence keeps the Keycloak client secret
 aligned with the secret mounted into the UI so the authorization code exchange
-can complete.
+can complete. Users must also belong to a group listed in
+`crowdsec_web_ui.oidc.admin_groups` or a configured read-only group. The example
+uses `harbor-admins`, matching the example Keycloak user's group membership.
 
 The container runs directly as the image's non-root `node` user. Convergence
 assigns the persistent application directory to that runtime UID and starts
