@@ -28,6 +28,8 @@ CI=true \
   NODE_EXTRA_CA_CERTS=/srv/admin/certs/ca.pem \
   SSL_CERT_FILE=/srv/admin/certs/ca.pem \
   PLAYWRIGHT_CHROMIUM_EXECUTABLE="${PLAYWRIGHT_CHROMIUM_EXECUTABLE:-/usr/bin/chromium}" \
+  KEYCLOAK_URL="https://$("$REPO_ROOT/ci/service-domains.py" get keycloak)" \
+  CROWDSEC_UI_URL="https://$("$REPO_ROOT/ci/service-domains.py" get crowdsec_web_ui)" \
   OIDC_TEST_USERNAME="$OIDC_TEST_USERNAME" \
   OIDC_TEST_PASSWORD="$OIDC_TEST_PASSWORD" \
   npm test

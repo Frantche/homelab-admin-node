@@ -138,7 +138,7 @@ keycloak_config:
   clients:
     - client_id: "crowdsec-web-ui"
       redirect_uris:
-        - "https://crowdsec-ui.example.com/auth/oidc/callback"
+        - "https://crowdsec-ui.example.com/api/auth/oidc/callback"
       web_origins:
         - "https://crowdsec-ui.example.com"
     - client_id: "harbor"

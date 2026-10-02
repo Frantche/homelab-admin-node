@@ -80,6 +80,7 @@
         crowdsec_web_ui_tasks: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../ansible/roles/crowdsec_web_ui/tasks/main.yml') }}"
         admin_site_tasks: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../ansible/site.yml') }}"
         admin_secret_example: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../examples/admin-config/group_vars/secrets.sops.yaml.example') }}"
+        admin_config_example: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../examples/admin-config/group_vars/all.yml.example') | from_yaml }}"
 
     - name: Assert CrowdSec Web UI secret access and CI wiring contracts
       ansible.builtin.assert:
@@ -87,6 +88,8 @@
           - "'user: node' in crowdsec_web_ui_compose"
           - "'group_add:' in crowdsec_web_ui_compose"
           - "'45000' in crowdsec_web_ui_compose"
+          - "'NODE_EXTRA_CA_CERTS: /etc/ssl/certs/admin-node-ca.pem' in crowdsec_web_ui_compose"
+          - "'/srv/admin/certs/ca.pem:/etc/ssl/certs/admin-node-ca.pem:ro' in crowdsec_web_ui_compose"
           - "'cap_add:' not in crowdsec_web_ui_compose"
           - "'crowdsec-web-ui-secrets' in crowdsec_web_ui_tasks"
           - "'mode: \"0640\"' in crowdsec_web_ui_tasks"
@@ -96,6 +99,11 @@
           - "'vault_crowdsec_web_ui_lapi_password:' in admin_site_tasks"
           - "'vault_oidc_crowdsec_web_ui_client_secret:' in admin_secret_example"
           - "'vault_crowdsec_web_ui_lapi_password:' in admin_secret_example"
+          - >-
+            (admin_config_example.keycloak_config.clients
+            | selectattr('client_id', 'equalto', 'crowdsec-web-ui')
+            | map(attribute='redirect_uris') | first)
+            == ['https://crowdsec-ui.example.com/api/auth/oidc/callback']
         fail_msg: "CrowdSec Web UI runtime or secret wiring contract is incomplete."
 
     - name: Assert CrowdSec LAPI-only stack contracts

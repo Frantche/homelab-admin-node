@@ -106,6 +106,8 @@ repository. Put its LAPI password and shared OIDC client secret in
 `vault_oidc_crowdsec_web_ui_client_secret`. Convergence stores them as
 root-owned files readable only by a dedicated group used by this container.
 Keep those permissions; do not make the files world-readable.
+Register `https://<crowdsec_web_ui.hostname>/api/auth/oidc/callback` as the
+redirect URI for the `crowdsec-web-ui` Keycloak client.
 
 The container runs directly as the image's non-root `node` user. Convergence
 assigns the persistent application directory to that runtime UID and starts
@@ -123,9 +125,11 @@ the Keycloak issuer hostname as a Docker network alias on that network, so the
 UI can fetch OIDC discovery and token endpoints through Traefik without an
 internet egress network. When Traefik uses its local TLS certificate, the
 configured UI hostname is included in the certificate and a hostname change
-renews it during convergence. Keep `crowdsec_web_ui.oidc.issuer_url` aligned
-with `service_domains.keycloak`. Check the login endpoint returns a redirect
-or a success response rather than an internal server error:
+renews it during convergence. The UI also trusts the local CA in that mode so
+its server-side OIDC discovery and token requests can reach Keycloak. Keep
+`crowdsec_web_ui.oidc.issuer_url` aligned with `service_domains.keycloak`.
+Check the login endpoint returns a redirect or a success response rather than
+an internal server error:
 
 ```bash
 curl --silent --show-error --output /dev/null --write-out 'HTTP %{http_code}\n' \
