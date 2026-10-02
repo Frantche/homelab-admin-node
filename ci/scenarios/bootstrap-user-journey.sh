@@ -364,6 +364,21 @@ assert_crowdsec_contract() {
   fi
 }
 
+assert_crowdsec_web_ui_oidc_login() {
+  local status
+  status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --max-time 30 \
+    --cacert /srv/admin/certs/ca.pem \
+    https://crowdsec-ui.example.com/api/auth/oidc/login)" || {
+    echo "ERROR: CrowdSec Web UI OIDC login request failed" >&2
+    return 1
+  }
+  if [[ "$status" != "200" && "$status" != "302" ]]; then
+    echo "ERROR: CrowdSec Web UI OIDC login returned HTTP $status, expected 200 or 302" >&2
+    return 1
+  fi
+}
+
 trap dump_debug ERR
 trap stop_otel_mock EXIT
 
@@ -377,6 +392,7 @@ assert_openbao_operation_token_contract restore update
 exercise_openbao_operation_token_recovery
 assert_harbor_robot_token_contract
 assert_crowdsec_contract
+assert_crowdsec_web_ui_oidc_login
 
 # --- Verify final mode is normal ---
 assert_contains /etc/admin-node/mode "normal"

@@ -118,6 +118,19 @@ docker exec crowdsec-web-ui node -e "fetch('http://127.0.0.1:3000/api/health').t
 systemctl status admin-stack@crowdsec-web-ui.service
 ```
 
+The Web UI stays on the isolated `traefik-crowdsec` network. Traefik publishes
+the Keycloak issuer hostname as a Docker network alias on that network, so the
+UI can fetch OIDC discovery and token endpoints through Traefik without an
+internet egress network. Keep `crowdsec_web_ui.oidc.issuer_url` aligned with
+`service_domains.keycloak`. Check the login endpoint returns a redirect or a
+success response rather than an internal server error:
+
+```bash
+curl --silent --output /dev/null --write-out 'HTTP %{http_code}\n' \
+  --cacert /srv/admin/certs/ca.pem \
+  "https://<crowdsec_web_ui.hostname>/api/auth/oidc/login"
+```
+
 ## Verify enforcement
 
 After convergence, first confirm the containers and networks:

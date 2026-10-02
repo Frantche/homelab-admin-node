@@ -114,6 +114,9 @@
     - name: Assert Traefik CrowdSec plugin contracts
       ansible.builtin.assert:
         that:
+          - >-
+            'keycloak.example.com' in
+            crowdsec_traefik_compose.split('traefik-crowdsec:')[1].split('networks:')[0]
           - "'moduleName: github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin' in crowdsec_traefik_static"
           - "'version: \"v1.4.5\"' in crowdsec_traefik_static"
           - "'/plugins-storage' in crowdsec_traefik_compose"
