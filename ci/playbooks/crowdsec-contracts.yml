@@ -53,6 +53,7 @@
         plugin_version: "v1.4.5"
         update_interval_seconds: 60
     crowdsec_web_ui_secret_gid: 45000
+    crowdsec_web_ui_oidc_client_id: "crowdsec-web-ui"
     crowdsec_web_ui:
       enabled: true
       image: "ghcr.io/theduffman85/crowdsec-web-ui:2026.8.1"
@@ -99,6 +100,8 @@
           - "'vault_crowdsec_web_ui_lapi_password:' in admin_site_tasks"
           - "'vault_oidc_crowdsec_web_ui_client_secret:' in admin_secret_example"
           - "'vault_crowdsec_web_ui_lapi_password:' in admin_secret_example"
+          - "'oidc_clients.crowdsec_web_ui.client_id' in admin_config_example.crowdsec_web_ui.oidc.client_id"
+          - "'oidc_clients.crowdsec_web_ui.client_secret' in admin_config_example.crowdsec_web_ui.oidc.client_secret"
           - >-
             (admin_config_example.keycloak_config.clients
             | selectattr('client_id', 'equalto', 'crowdsec-web-ui')

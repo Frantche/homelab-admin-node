@@ -22,7 +22,7 @@ services:
       CONFIG_INSTANCE_LAPI_AUTH_PASSWORD_FILE: /run/secrets/crowdsec-web-ui-lapi-password
       CONFIG_AUTH_ENABLED: "true"
       CONFIG_AUTH_OIDC_ISSUER_URL: "{{ crowdsec_web_ui.oidc.issuer_url }}"
-      CONFIG_AUTH_OIDC_CLIENT_ID: "{{ crowdsec_web_ui.oidc.client_id }}"
+      CONFIG_AUTH_OIDC_CLIENT_ID: "{{ crowdsec_web_ui_oidc_client_id }}"
       CONFIG_AUTH_OIDC_CLIENT_SECRET_FILE: /run/secrets/crowdsec-web-ui-oidc-client-secret
       CONFIG_AUTH_OIDC_SCOPE: "openid profile email"
       CONFIG_AUTH_OIDC_GROUPS_CLAIM: groups

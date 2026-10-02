@@ -7,6 +7,7 @@
     admin_node_root: /srv/admin
     admin_repo_root: /opt/homelab-admin-node
     crowdsec_web_ui_secret_gid: 45000
+    crowdsec_web_ui_oidc_client_id: crowdsec-web-ui
     admin_apparmor_runtime_active: false
     admin_converge_timer_on_boot_sec: 5m
     admin_converge_timer_on_unit_active_sec: 30m

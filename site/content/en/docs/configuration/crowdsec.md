@@ -105,9 +105,13 @@ repository. Put its LAPI password and shared OIDC client secret in
 `group_vars/secrets.sops.yaml` as `vault_crowdsec_web_ui_lapi_password` and
 `vault_oidc_crowdsec_web_ui_client_secret`. Convergence stores them as
 root-owned files readable only by a dedicated group used by this container.
-Keep those permissions; do not make the files world-readable.
-Register `https://<crowdsec_web_ui.hostname>/api/auth/oidc/callback` as the
-redirect URI for the `crowdsec-web-ui` Keycloak client.
+Keep those permissions; do not make the files world-readable. Convergence
+manages the confidential Keycloak client from `oidc_clients.crowdsec_web_ui`.
+Keep the UI client ID and secret sourced from that shared entry, and declare
+`https://<crowdsec_web_ui.hostname>/api/auth/oidc/callback` as its redirect URI
+under `keycloak_config.clients`. Convergence keeps the Keycloak client secret
+aligned with the secret mounted into the UI so the authorization code exchange
+can complete.
 
 The container runs directly as the image's non-root `node` user. Convergence
 assigns the persistent application directory to that runtime UID and starts

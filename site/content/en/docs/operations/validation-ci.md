@@ -29,6 +29,9 @@ sudo ./bin/admin-node validate hardening
 sudo ./bin/admin-node validate observability
 ```
 
+The observability check is reported as skipped when `observability.enabled`
+is `false`; when enabled, it requires the collector to be running.
+
 CI is organized around operator journeys:
 
 | Journey | Purpose |

@@ -6,6 +6,7 @@
     keycloak_manage_harbor_oidc_client: "{{ (harbor_config.enabled | default(false)) and (harbor_config.oidc.enabled | default(false)) }}"
     keycloak_manage_openbao_oidc_client: "{{ (openbao_config.enabled | default(false)) and (openbao_config.oidc.enabled | default(false)) }}"
     keycloak_manage_gitea_oidc_client: "{{ (gitea_config.enabled | default(false)) and (gitea_config.oidc.enabled | default(false)) }}"
+    keycloak_manage_crowdsec_web_ui_oidc_client: "{{ (crowdsec.enabled | default(false)) and (crowdsec_web_ui.enabled | default(false)) and (crowdsec_web_ui.oidc.enabled | default(false)) }}"
 
 - name: Build Keycloak-managed OIDC client facts
   ansible.builtin.set_fact:
@@ -15,6 +16,8 @@
     keycloak_openbao_client_secret: "{{ oidc_clients.openbao.client_secret | default('ci-oidc-openbao-client-secret', true) if (ci_mode | default(false)) else (oidc_clients.openbao.client_secret | default('', true)) }}"
     keycloak_gitea_client_id: "{{ oidc_clients.gitea.client_id | default('gitea', true) if (ci_mode | default(false)) else (oidc_clients.gitea.client_id | default('', true)) }}"
     keycloak_gitea_client_secret: "{{ oidc_clients.gitea.client_secret | default('ci-oidc-gitea-client-secret', true) if (ci_mode | default(false)) else (oidc_clients.gitea.client_secret | default('', true)) }}"
+    keycloak_crowdsec_web_ui_client_id: "{{ oidc_clients.crowdsec_web_ui.client_id | default(crowdsec_web_ui.oidc.client_id | default('crowdsec-web-ui', true), true) }}"
+    keycloak_crowdsec_web_ui_client_secret: "{{ oidc_clients.crowdsec_web_ui.client_secret | default(crowdsec_web_ui.oidc.client_secret | default('ci-oidc-crowdsec-web-ui-client-secret' if (ci_mode | default(false)) else '', true), true) }}"
     keycloak_groups_protocol_mapper:
       name: groups
       protocol: openid-connect
@@ -50,6 +53,14 @@
         ((keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', 'gitea') | list | first) | default({}, true))
         | combine(
             ((keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_gitea_client_id) | list | first) | default({}, true)),
+          recursive=True
+        )
+      }}
+    keycloak_crowdsec_web_ui_client_template: >-
+      {{
+        ((keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', 'crowdsec-web-ui') | list | first) | default({}, true))
+        | combine(
+            ((keycloak_config.clients | default([]) | selectattr('client_id', 'equalto', keycloak_crowdsec_web_ui_client_id) | list | first) | default({}, true)),
             recursive=True
           )
       }}
@@ -108,6 +119,25 @@
   when:
     - keycloak_manage_gitea_oidc_client
     - not (ci_mode | default(false))
+
+- name: Validate required CrowdSec Web UI OIDC client settings
+  ansible.builtin.assert:
+    that:
+      - keycloak_required_crowdsec_web_ui_oidc_values[item.key] | length > 0
+    fail_msg: "{{ item.path }} is required when ci_mode is false. Define it in the inventory, preferably in secrets.sops.yaml."
+  vars:
+    keycloak_required_crowdsec_web_ui_oidc_values:
+      crowdsec_web_ui_client_id: "{{ keycloak_crowdsec_web_ui_client_id }}"
+      crowdsec_web_ui_client_secret: "{{ keycloak_crowdsec_web_ui_client_secret }}"
+  loop:
+    - { path: "oidc_clients.crowdsec_web_ui.client_id", key: "crowdsec_web_ui_client_id" }
+    - { path: "oidc_clients.crowdsec_web_ui.client_secret", key: "crowdsec_web_ui_client_secret" }
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - keycloak_manage_crowdsec_web_ui_oidc_client
+    - not (ci_mode | default(false))
+  no_log: true
 
 - name: Build Harbor Keycloak client definition
   ansible.builtin.set_fact:
@@ -199,6 +229,36 @@
   when: keycloak_manage_gitea_oidc_client
   no_log: true
 
+- name: Build CrowdSec Web UI Keycloak client definition
+  ansible.builtin.set_fact:
+    keycloak_crowdsec_web_ui_client_definition: >-
+      {{
+        {
+          'client_id': keycloak_crowdsec_web_ui_client_id,
+          'name': keycloak_crowdsec_web_ui_client_id,
+          'enabled': true,
+          'public': false,
+          'client_authenticator_type': 'client-secret',
+          'standard_flow_enabled': true,
+          'direct_access_grants_enabled': false,
+          'service_accounts_enabled': false,
+          'secret': keycloak_crowdsec_web_ui_client_secret,
+          'protocol_mappers': [keycloak_groups_protocol_mapper]
+        }
+        | combine(
+            (
+              keycloak_crowdsec_web_ui_client_template
+              | dict2items
+              | rejectattr('key', 'equalto', 'client_id')
+              | rejectattr('key', 'equalto', 'secret')
+              | items2dict
+            ),
+            recursive=True
+          )
+      }}
+  when: keycloak_manage_crowdsec_web_ui_oidc_client
+  no_log: true
+
 - name: Build effective Keycloak client list
   ansible.builtin.set_fact:
     keycloak_effective_clients: >-
@@ -207,10 +267,12 @@
         | rejectattr('client_id', 'equalto', keycloak_harbor_client_id)
         | rejectattr('client_id', 'equalto', keycloak_openbao_client_id)
         | rejectattr('client_id', 'equalto', keycloak_gitea_client_id)
+        | rejectattr('client_id', 'equalto', keycloak_crowdsec_web_ui_client_id)
         | list
         + ([keycloak_harbor_client_definition] if keycloak_manage_harbor_oidc_client else [])
         + ([keycloak_openbao_client_definition] if keycloak_manage_openbao_oidc_client else [])
         + ([keycloak_gitea_client_definition] if keycloak_manage_gitea_oidc_client else [])
+        + ([keycloak_crowdsec_web_ui_client_definition] if keycloak_manage_crowdsec_web_ui_oidc_client else [])
       }}
   no_log: true
 

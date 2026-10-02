@@ -10,6 +10,7 @@
       keycloak: "keycloak.example.com"
       gitea: "git.example.com"
       traefik: "traefik.example.com"
+      crowdsec_web_ui: "crowdsec-ui.example.com"
     harbor: {}
     gitea: {}
     oidc_clients:
@@ -22,6 +23,17 @@
       gitea:
         client_id: "ci-gitea-contract"
         client_secret: "ci-gitea-contract-secret"
+      crowdsec_web_ui:
+        client_id: "ci-crowdsec-web-ui-contract"
+        client_secret: "ci-crowdsec-web-ui-contract-secret"
+    crowdsec:
+      enabled: true
+    crowdsec_web_ui:
+      enabled: true
+      oidc:
+        enabled: true
+        client_id: "ci-crowdsec-web-ui-contract"
+        client_secret: "ci-crowdsec-web-ui-contract-secret"
     keycloak_config:
       enabled: true
       realm:
@@ -38,6 +50,11 @@
         - client_id: "gitea"
           redirect_uris:
             - "https://git.example.com/user/oauth2/keycloak/callback"
+        - client_id: "ci-crowdsec-web-ui-contract"
+          redirect_uris:
+            - "https://crowdsec-ui.example.com/api/auth/oidc/callback"
+          web_origins:
+            - "https://crowdsec-ui.example.com"
       users:
         - username: "ci-sso-user"
           password: "ci-sso-user-password"
@@ -114,6 +131,10 @@
       ansible.builtin.set_fact:
         gitea_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', (oidc_clients.gitea.client_id | default('gitea'))) | list | first | default({}) }}"
 
+    - name: Capture CrowdSec Web UI CI Keycloak client
+      ansible.builtin.set_fact:
+        crowdsec_web_ui_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', oidc_clients.crowdsec_web_ui.client_id) | list | first | default({}) }}"
+
     - name: Capture Gitea CI groups mapper
       ansible.builtin.set_fact:
         gitea_groups_mapper: "{{ gitea_keycloak_client.protocol_mappers | default([]) | selectattr('name', 'equalto', 'groups') | list | first | default({}) }}"
@@ -148,3 +169,8 @@
           - gitea_groups_mapper.config['claim.name'] == 'groups'
           - gitea_oidc_client_id == oidc_clients.gitea.client_id
           - gitea_oidc_client_secret == oidc_clients.gitea.client_secret
+          - crowdsec_web_ui_keycloak_client | length > 0
+          - crowdsec_web_ui_keycloak_client.secret == oidc_clients.crowdsec_web_ui.client_secret
+          - crowdsec_web_ui_keycloak_client.public | default(false) == false
+          - crowdsec_web_ui_keycloak_client.redirect_uris == ['https://crowdsec-ui.example.com/api/auth/oidc/callback']
+          - crowdsec_web_ui_keycloak_client.web_origins == ['https://crowdsec-ui.example.com']

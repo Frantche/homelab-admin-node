@@ -99,8 +99,8 @@ crowdsec_web_ui:
     password: "{{ vault_crowdsec_web_ui_lapi_password }}"
   oidc:
     enabled: true
-    client_id: "crowdsec-web-ui"
-    client_secret: "{{ vault_oidc_crowdsec_web_ui_client_secret }}"
+    client_id: "{{ oidc_clients.crowdsec_web_ui.client_id }}"
+    client_secret: "{{ oidc_clients.crowdsec_web_ui.client_secret }}"
     issuer_url: "https://keycloak.example.com/realms/homelab"
     admin_groups: ["admin"]
 
