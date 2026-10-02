@@ -65,7 +65,19 @@
 
 - name: Compute local TLS expected DNS names
   ansible.builtin.set_fact:
-    traefik_local_tls_expected_dns_names: "{{ ((service_domains | dict2items | map(attribute='value') | list) + (traefik_external_services | map(attribute='hostname') | list) + (admin_node_fqdn | default('', true)).split() + ['localhost']) | unique }}"
+    traefik_local_tls_expected_dns_names: >-
+      {{
+        (
+          (service_domains | dict2items | map(attribute='value') | list)
+          + (traefik_external_services | map(attribute='hostname') | list)
+          + (admin_node_fqdn | default('', true)).split()
+          + [((crowdsec_web_ui | default({})).hostname | default('', true))]
+          + ['localhost']
+        )
+        | reject('equalto', '')
+        | unique
+        | list
+      }}
   when: not traefik_letsencrypt_enabled
 
 - name: Ensure traefik stack directory

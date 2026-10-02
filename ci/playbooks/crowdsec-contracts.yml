@@ -154,6 +154,7 @@
     - name: Read CrowdSec reconciliation role
       ansible.builtin.set_fact:
         crowdsec_role_tasks: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../ansible/roles/crowdsec/tasks/main.yml') }}"
+        traefik_role_tasks: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../ansible/roles/traefik/tasks/main.yml') }}"
 
     - name: Assert CrowdSec bouncer registration contracts
       ansible.builtin.assert:
@@ -161,3 +162,10 @@
           - "'cscli bouncers add' in crowdsec_role_tasks"
           - "'admin-node-traefik-' in crowdsec_role_tasks"
           - "'/run/secrets/bouncer_key_traefik' in crowdsec_role_tasks"
+
+    - name: Assert local TLS certificate includes the CrowdSec Web UI hostname
+      ansible.builtin.assert:
+        that:
+          - "'crowdsec_web_ui | default({})).hostname' in traefik_role_tasks"
+          - "'subjectAltName=' in traefik_role_tasks"
+          - "'traefik_local_tls_expected_dns_names' in traefik_role_tasks"

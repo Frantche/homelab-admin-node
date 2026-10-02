@@ -121,15 +121,20 @@ systemctl status admin-stack@crowdsec-web-ui.service
 The Web UI stays on the isolated `traefik-crowdsec` network. Traefik publishes
 the Keycloak issuer hostname as a Docker network alias on that network, so the
 UI can fetch OIDC discovery and token endpoints through Traefik without an
-internet egress network. Keep `crowdsec_web_ui.oidc.issuer_url` aligned with
-`service_domains.keycloak`. Check the login endpoint returns a redirect or a
-success response rather than an internal server error:
+internet egress network. When Traefik uses its local TLS certificate, the
+configured UI hostname is included in the certificate and a hostname change
+renews it during convergence. Keep `crowdsec_web_ui.oidc.issuer_url` aligned
+with `service_domains.keycloak`. Check the login endpoint returns a redirect
+or a success response rather than an internal server error:
 
 ```bash
-curl --silent --output /dev/null --write-out 'HTTP %{http_code}\n' \
-  --cacert /srv/admin/certs/ca.pem \
+curl --silent --show-error --output /dev/null --write-out 'HTTP %{http_code}\n' \
   "https://<crowdsec_web_ui.hostname>/api/auth/oidc/login"
 ```
+
+This uses the host trust store when Traefik serves a public certificate. If
+`traefik.local_tls_enabled` is enabled, add
+`--cacert /srv/admin/certs/ca.pem` to trust the generated local CA.
 
 ## Verify enforcement
 
