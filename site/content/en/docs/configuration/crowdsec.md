@@ -3,9 +3,10 @@ title: CrowdSec and Traefik
 weight: 35
 ---
 
-CrowdSec is an optional central decision API for the admin node. It is disabled
-by default. When enabled, Traefik downloads the pinned bouncer plugin and checks
-every HTTPS request against the LAPI decision stream.
+CrowdSec is an optional decision API and log-based detection engine for the
+admin node. It is disabled by default. When enabled, Traefik downloads the
+pinned bouncer plugin and checks every HTTPS request against the LAPI decision
+stream. The log acquisition agent is separately opt-in.
 
 ## Request paths
 
@@ -19,6 +20,7 @@ Cloudflare ----> cloudflared ----> Traefik :8443 cloudflarewebsecure +--> CrowdS
                     +----> Cloudflare edge (dedicated egress network)
 
 Traefik bouncer ----------------> crowdsec:8080 (private network)
+Traefik access log -------------> CrowdSec agent (read-only shared directory)
 CrowdSec LAPI ------------------> CAPI (dedicated egress network)
 ```
 
@@ -53,6 +55,10 @@ cloudflare:
 
 crowdsec:
   enabled: true
+  agent:
+    enabled: true
+    collections:
+      - crowdsecurity/traefik
   capi:
     enabled: true
   lapi:
@@ -76,6 +82,33 @@ tunnel traffic during convergence.
 must not be confused with `traefik.forwarded_headers_trusted_ips`, which lists
 additional reverse proxies allowed in front of the direct HTTPS entrypoint.
 Never add arbitrary client or LAN ranges merely to make forwarded headers work.
+
+## Automatic HTTP attack detection
+
+Set `crowdsec.agent.enabled: true` to enable log acquisition. Convergence writes
+Traefik access logs as JSON to
+`/srv/admin/data/traefik/crowdsec-logs/access.log`, mounts that directory
+read-only into CrowdSec, and installs the `crowdsecurity/traefik` collection.
+The collection includes a Traefik parser and common HTTP scenarios for crawling,
+404 scanning, and brute force ([collection details](https://app.crowdsec.net/hub/author/crowdsecurity/collections/traefik)).
+Traefik drops request headers and query parameters from these logs. Log rotation
+keeps seven compressed files and checks daily for logs larger than 25 MB.
+
+Check that CrowdSec is reading and parsing the access log and that scenarios
+are loaded:
+
+```bash
+docker exec crowdsec cscli metrics show acquisition parsers scenarios
+docker exec crowdsec cscli collections list | grep crowdsecurity/traefik
+docker exec crowdsec cscli alerts list
+sudo tail -n 50 /srv/admin/data/traefik/crowdsec-logs/access.log
+```
+
+CrowdSec's default allowlist ignores loopback and private LAN source addresses
+to avoid banning local clients. Test automatic detections from an external
+client through the public hostname; inspect alerts and decisions before
+removing a test decision. This log-based setup detects the patterns covered by
+the installed scenarios. It is not a WAF and does not inspect request bodies.
 
 ## Secrets and generated credentials
 
@@ -190,6 +223,7 @@ docker logs --tail 200 crowdsec
 docker logs --tail 200 traefik
 docker exec crowdsec cscli metrics
 docker exec crowdsec cscli decisions list
+sudo tail -n 200 /srv/admin/data/traefik/crowdsec-logs/access.log
 ```
 
 CrowdSec participates in optional-stack cleanup, systemd startup ordering, and

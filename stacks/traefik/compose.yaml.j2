@@ -30,6 +30,9 @@ services:
       - ./dynamic:/etc/traefik/dynamic:ro
       - /srv/admin/data/traefik/letsencrypt:/letsencrypt
       - /srv/admin/certs:/certs:ro
+{% if (crowdsec.agent | default({})).enabled | default(false) | bool %}
+      - /srv/admin/data/traefik/crowdsec-logs:/var/log/traefik
+{% endif %}
 {% if crowdsec.enabled | default(false) | bool %}
       - /srv/admin/data/traefik/plugins-storage:/plugins-storage
       - /srv/admin/env/crowdsec-traefik-bouncer-key:/run/secrets/crowdsec-traefik-bouncer-key:ro

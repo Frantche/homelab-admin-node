@@ -1,0 +1,10 @@
+{{ admin_node_root }}/data/traefik/crowdsec-logs/access.log {
+    daily
+    maxsize 25M
+    rotate 7
+    compress
+    missingok
+    notifempty
+    copytruncate
+    su root root
+}

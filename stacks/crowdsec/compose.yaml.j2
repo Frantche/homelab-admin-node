@@ -15,7 +15,10 @@ services:
     tmpfs:
       - /tmp:size=32m,mode=0700
     environment:
-      DISABLE_AGENT: "true"
+      DISABLE_AGENT: "{{ (not ((crowdsec.agent | default({})).enabled | default(false) | bool)) | ternary('true', 'false') }}"
+{% if (crowdsec.agent | default({})).enabled | default(false) | bool %}
+      COLLECTIONS: "{{ (crowdsec.agent | default({})).collections | default(['crowdsecurity/traefik']) | join(' ') }}"
+{% endif %}
       DISABLE_ONLINE_API: "{{ (not (crowdsec.capi.enabled | default(true) | bool)) | ternary('true', 'false') }}"
       TZ: "UTC"
     secrets:
@@ -23,6 +26,9 @@ services:
     volumes:
       - /srv/admin/data/crowdsec/config:/etc/crowdsec
       - /srv/admin/data/crowdsec/data:/var/lib/crowdsec/data
+{% if (crowdsec.agent | default({})).enabled | default(false) | bool %}
+      - /srv/admin/data/traefik/crowdsec-logs:/var/log/traefik:ro
+{% endif %}
     healthcheck:
       test: ["CMD", "cscli", "lapi", "status"]
       interval: 10s

@@ -5,6 +5,13 @@
     traefik_local_ca_enabled: "{{ (ci_mode | default(false)) or (traefik.local_tls_enabled | default(false)) or (not ((cloudflare.enabled | default(true)) | bool)) or ((cloudflare.dns_api_token | default('') | length) == 0) or ((acme_email | default('') | length) == 0) }}"
     traefik_external_services: "{{ (traefik | default({})).external_services | default([]) }}"
 
+- name: Validate CrowdSec Traefik log acquisition prerequisites
+  ansible.builtin.assert:
+    that:
+      - not ((crowdsec.agent | default({})).enabled | default(false) | bool) or (crowdsec.enabled | default(false) | bool)
+      - not ((crowdsec.agent | default({})).enabled | default(false) | bool) or (traefik.access_logs | default(true) | bool)
+    fail_msg: "CrowdSec Traefik log acquisition requires CrowdSec and Traefik access logs to be enabled."
+
 - name: Require dashboard authentication when dashboard is enabled
   ansible.builtin.assert:
     that:
@@ -100,6 +107,54 @@
     group: root
     mode: "0755"
   when: crowdsec.enabled | default(false) | bool
+
+- name: Install logrotate for CrowdSec Traefik access logs
+  ansible.builtin.package:
+    name: logrotate
+    state: present
+  when: (crowdsec.agent | default({})).enabled | default(false) | bool
+
+- name: Ensure CrowdSec Traefik access log directory
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/data/traefik/crowdsec-logs"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  when: (crowdsec.agent | default({})).enabled | default(false) | bool
+
+- name: Ensure CrowdSec Traefik access log file
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/data/traefik/crowdsec-logs/access.log"
+    state: touch
+    owner: root
+    group: root
+    mode: "0640"
+    modification_time: preserve
+    access_time: preserve
+  when: (crowdsec.agent | default({})).enabled | default(false) | bool
+
+- name: Configure Traefik access log rotation for CrowdSec
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../stacks/traefik/crowdsec-access-log.logrotate.j2"
+    dest: /etc/logrotate.d/admin-node-traefik-access
+    owner: root
+    group: root
+    mode: "0644"
+  when: (crowdsec.agent | default({})).enabled | default(false) | bool
+
+- name: Enable logrotate timer for CrowdSec access logs
+  ansible.builtin.systemd:
+    name: logrotate.timer
+    enabled: true
+    state: started
+  when: (crowdsec.agent | default({})).enabled | default(false) | bool
+
+- name: Remove Traefik access log rotation when CrowdSec log acquisition is disabled
+  ansible.builtin.file:
+    path: /etc/logrotate.d/admin-node-traefik-access
+    state: absent
+  when: not ((crowdsec.agent | default({})).enabled | default(false) | bool)
 
 - name: Check CrowdSec Traefik bouncer key
   ansible.builtin.stat:

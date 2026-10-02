@@ -32,15 +32,21 @@ mode-selection rules, and verification commands.
 
 ## CrowdSec
 
-CrowdSec is optional and disabled by default. This deployment runs a central
-Local API (LAPI) connected to CAPI, without a local log acquisition agent or
-AppSec. Traefik consumes LAPI decisions through the CrowdSec middleware plugin.
-The LAPI has no published container port: Traefik reaches it over a private
-network, while a separate outbound-only network is used for CAPI.
+CrowdSec is optional and disabled by default. When enabled, this deployment
+runs a central Local API (LAPI) connected to CAPI. A local log acquisition
+agent is opt-in; enable it to parse Traefik access logs and detect common HTTP
+scanning, crawling, and brute-force patterns. Traefik consumes resulting
+decisions through the CrowdSec middleware plugin. The LAPI has no published
+container port: Traefik reaches it over a private network, while a separate
+outbound-only network is used for CAPI.
 
 ```yaml
 crowdsec:
   enabled: true
+  agent:
+    enabled: false
+    collections:
+      - crowdsecurity/traefik
   capi:
     enabled: true
   lapi:
@@ -57,6 +63,8 @@ crowdsec:
 | Variable | Default/example | Purpose |
 | --- | --- | --- |
 | `crowdsec.enabled` | `false` | Deploys the LAPI and enables Traefik enforcement. |
+| `crowdsec.agent.enabled` | `false` | Acquires Traefik access logs and enables automatic HTTP attack detection. |
+| `crowdsec.agent.collections[]` | `crowdsecurity/traefik` | CrowdSec collection installed for Traefik parsing and HTTP scenarios. Keep the Traefik collection when acquisition is enabled. |
 | `crowdsec.capi.enabled` | `true` | Registers the LAPI with CAPI. Disable only for offline or CI environments. |
 | `crowdsec.lapi.allowed_cidrs[]` | `192.168.1.0/24` | Source networks allowed to reach the HTTPS LAPI route. An empty list is rejected. |
 | `crowdsec.traefik_bouncer.plugin_version` | `v1.4.5` | Pinned Traefik plugin version. |

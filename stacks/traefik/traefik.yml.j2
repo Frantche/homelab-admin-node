@@ -71,5 +71,19 @@ certificatesResolvers:
 log:
   level: "{{ traefik.log_level | default('INFO') }}"
 {% if traefik.access_logs | default(true) | bool %}
+{% if (crowdsec.agent | default({})).enabled | default(false) | bool %}
+accessLog:
+  filePath: /var/log/traefik/access.log
+  format: json
+  fields:
+    defaultMode: keep
+    names:
+      ClientUsername: drop
+    headers:
+      defaultMode: drop
+    queryParameters:
+      defaultMode: drop
+{% else %}
 accessLog: {}
+{% endif %}
 {% endif %}

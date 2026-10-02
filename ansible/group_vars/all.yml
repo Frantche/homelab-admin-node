@@ -36,6 +36,10 @@ traefik:
 crowdsec:
   enabled: false
   image: "crowdsecurity/crowdsec:v1.8.1@sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975"
+  agent:
+    enabled: false
+    collections:
+      - crowdsecurity/traefik
   capi:
     enabled: true
   lapi:

@@ -150,6 +150,10 @@ observability:
 
 crowdsec:
   enabled: true
+  agent:
+    enabled: true
+    collections:
+      - crowdsecurity/traefik
   capi:
     enabled: false
   lapi:

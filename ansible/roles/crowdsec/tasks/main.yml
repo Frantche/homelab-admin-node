@@ -7,6 +7,17 @@
       - crowdsec.openbao.mount | default('', true) | length > 0
       - crowdsec.openbao.path_prefix | default('', true) | length > 0
       - "'..' not in crowdsec.openbao.path_prefix.split('/')"
+      - not ((crowdsec.agent | default({})).enabled | default(false) | bool) or ((traefik | default({})).access_logs | default(true) | bool)
+      - >-
+        not ((crowdsec.agent | default({})).enabled | default(false) | bool)
+        or ((crowdsec.agent | default({})).collections | default(['crowdsecurity/traefik'])) is sequence
+      - >-
+        not ((crowdsec.agent | default({})).enabled | default(false) | bool)
+        or ((crowdsec.agent | default({})).collections | default(['crowdsecurity/traefik'])) is not string
+      - >-
+        not ((crowdsec.agent | default({})).enabled | default(false) | bool)
+        or 'crowdsecurity/traefik' in
+        ((crowdsec.agent | default({})).collections | default(['crowdsecurity/traefik']))
     fail_msg: "CrowdSec requires LAN CIDRs, a pinned Traefik plugin version, and a safe OpenBao destination."
 
 - name: Ensure CrowdSec runtime directories
@@ -19,7 +30,24 @@
   loop:
     - { path: "{{ admin_node_root }}/stacks/crowdsec", mode: "0755" }
     - { path: "{{ admin_node_root }}/data/crowdsec/config", mode: "0750" }
+    - { path: "{{ admin_node_root }}/data/crowdsec/config/acquis.d", mode: "0750" }
     - { path: "{{ admin_node_root }}/data/crowdsec/data", mode: "0750" }
+
+- name: Install Traefik access log acquisition for CrowdSec
+  ansible.builtin.template:
+    src: acquis-traefik.yaml.j2
+    dest: "{{ admin_node_root }}/data/crowdsec/config/acquis.d/traefik.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: crowdsec_agent_acquisition_render
+  when: (crowdsec.agent | default({})).enabled | default(false) | bool
+
+- name: Remove Traefik access log acquisition when CrowdSec agent is disabled
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/data/crowdsec/config/acquis.d/traefik.yaml"
+    state: absent
+  when: not ((crowdsec.agent | default({})).enabled | default(false) | bool)
 
 - name: Require the CrowdSec Traefik bouncer key
   ansible.builtin.stat:
@@ -35,6 +63,7 @@
     owner: root
     group: root
     mode: "0644"
+  register: crowdsec_compose_render
 
 - name: Start CrowdSec stack
   ansible.builtin.command:
@@ -56,6 +85,29 @@
     'Recreated' in crowdsec_stack_start.stderr or
     'Started' in crowdsec_stack_start.stderr
   when: admin_mode != 'restore'
+
+- name: Recreate CrowdSec to load an updated Traefik acquisition
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - -f
+      - compose.yaml
+      - up
+      - --force-recreate
+      - --wait
+      - --wait-timeout
+      - "300"
+      - crowdsec
+  args:
+    chdir: "{{ admin_node_root }}/stacks/crowdsec"
+  register: crowdsec_acquisition_restart
+  changed_when: true
+  when:
+    - admin_mode != 'restore'
+    - (crowdsec.agent | default({})).enabled | default(false) | bool
+    - crowdsec_agent_acquisition_render.changed | default(false)
+    - not (crowdsec_compose_render.changed | default(false))
 
 - name: Enable CrowdSec stack at boot
   ansible.builtin.systemd:

@@ -303,7 +303,9 @@ assert_harbor_robot_token_contract() {
 }
 
 assert_crowdsec_contract() {
-  local credential_json bouncer_key status
+  local credential_json bouncer_key status probe_path client_ip access_log sample_line detection_test_ip synthetic_path synthetic_line acquisition_metrics
+  access_log=/srv/admin/data/traefik/crowdsec-logs/access.log
+  detection_test_ip="198.51.100.$((RANDOM % 254 + 1))"
   credential_json="$(docker exec -e BAO_ADDR=https://127.0.0.1:8200 -e BAO_CACERT=/openbao/tls/ca.pem -e VAULT_TOKEN="$OPENBAO_TOKEN" openbao bao read -format=json secret/data/crowdsec/bouncers/traefik)"
   bouncer_key="$(jq -er '.data.data.api_key' <<<"$credential_json")"
   docker exec \
@@ -331,11 +333,60 @@ assert_crowdsec_contract() {
   probe_path="crowdsec-probe-$RANDOM"
   curl --silent --output /dev/null --cacert /srv/admin/certs/ca.pem \
     "https://keycloak.example.com/$probe_path"
-  client_ip="$(docker logs traefik --since 10s 2>&1 | awk -v probe="$probe_path" '$0 ~ probe {print $1}' | tail -n1)"
+  client_ip="$(sudo jq -r --arg probe "/$probe_path" \
+    'select(.RequestPath == $probe) | .ClientHost' "$access_log" | tail -n1)"
   if [[ -z "$client_ip" ]]; then
     echo "ERROR: Traefik access log did not expose the CrowdSec probe client IP" >&2
     return 1
   fi
+
+  for _ in $(seq 1 30); do
+    acquisition_metrics="$(docker exec crowdsec cscli metrics show acquisition parsers -o json)"
+    if jq -e '.acquisition | keys | any(contains("/var/log/traefik/access.log"))' \
+      <<<"$acquisition_metrics" >/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  if ! jq -e '.acquisition | keys | any(contains("/var/log/traefik/access.log"))' \
+    <<<"$acquisition_metrics" >/dev/null; then
+    echo "ERROR: CrowdSec is not acquiring the Traefik access log" >&2
+    jq . <<<"$acquisition_metrics" >&2
+    return 1
+  fi
+
+  sample_line="$(sudo jq -c --arg probe "/$probe_path" \
+    'select(.RequestPath == $probe)' "$access_log" | tail -n1)"
+  if [[ -z "$sample_line" ]]; then
+    echo "ERROR: could not read the CrowdSec Traefik log sample" >&2
+    return 1
+  fi
+  for attempt in $(seq 1 12); do
+    synthetic_path="/crowdsec-automatic-test-${RANDOM}-${attempt}"
+    synthetic_line="$(jq -c --arg client "$detection_test_ip" --arg path "$synthetic_path" \
+      '.ClientHost = $client | .ClientAddr = ($client + ":4242") | .RequestPath = $path | .DownstreamStatus = 404 | .time = (now | strftime("%Y-%m-%dT%H:%M:%SZ")) | .StartUTC = (now | todateiso8601)' \
+      <<<"$sample_line")"
+    printf '%s\n' "$synthetic_line" | sudo tee -a "$access_log" >/dev/null
+  done
+
+  for _ in $(seq 1 90); do
+    if docker exec crowdsec cscli alerts list -o json \
+      | jq -e --arg ip "$detection_test_ip" 'any(.[]?; .scenario == "crowdsecurity/http-probing" and any(.decisions[]?; .value == $ip))' >/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  if ! docker exec crowdsec cscli alerts list -o json \
+    | jq -e --arg ip "$detection_test_ip" 'any(.[]?; .scenario == "crowdsecurity/http-probing" and any(.decisions[]?; .value == $ip))' >/dev/null; then
+    docker exec crowdsec cscli decisions delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
+    docker exec crowdsec cscli alerts delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
+    echo "ERROR: CrowdSec did not detect the synthetic Traefik 404 scan" >&2
+    docker exec crowdsec cscli metrics show acquisition parsers scenarios >&2 || true
+    return 1
+  fi
+  docker exec crowdsec cscli decisions delete --ip "$detection_test_ip" >/dev/null
+  docker exec crowdsec cscli alerts delete --ip "$detection_test_ip" >/dev/null
+
   docker exec crowdsec cscli decisions add --ip "$client_ip" --duration 2m --type ban >/dev/null
 
   for _ in $(seq 1 90); do

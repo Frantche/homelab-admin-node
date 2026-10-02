@@ -79,6 +79,11 @@ traefik:
 
 crowdsec:
   enabled: true
+  agent:
+    # Reads Traefik access logs and enables CrowdSec HTTP attack scenarios.
+    enabled: false
+    collections:
+      - crowdsecurity/traefik
   capi:
     enabled: true
   lapi:
