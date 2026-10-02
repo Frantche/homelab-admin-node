@@ -20,6 +20,14 @@ def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
     crowdsec = all_vars.get("crowdsec")
     if not isinstance(crowdsec, dict):
         raise SystemExit("bootstrap example configuration must define crowdsec")
+    crowdsec_agent = crowdsec.get("agent", {})
+    if not isinstance(crowdsec_agent, dict):
+        raise SystemExit("bootstrap example crowdsec.agent configuration must be a mapping")
+    collections = crowdsec_agent.get("collections", [])
+    if not isinstance(collections, list) or "crowdsecurity/traefik" not in collections:
+        raise SystemExit("bootstrap example CrowdSec agent must include crowdsecurity/traefik")
+    crowdsec_agent["enabled"] = True
+    crowdsec["agent"] = crowdsec_agent
     crowdsec_lapi = crowdsec.get("lapi", {})
     if not isinstance(crowdsec_lapi, dict):
         raise SystemExit("bootstrap example crowdsec.lapi configuration must be a mapping")

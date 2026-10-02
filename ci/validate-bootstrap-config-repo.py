@@ -91,6 +91,15 @@ def validate_crowdsec_ci_config(all_vars, ci_vars) -> None:
     if not isinstance(expected, dict) or not isinstance(configured, dict):
         raise SystemExit("ci-bootstrap-vars.yml must preserve the CrowdSec example configuration")
 
+    agent = expected.get("agent", {})
+    if not isinstance(agent, dict):
+        raise SystemExit("bootstrap example crowdsec.agent configuration must be a mapping")
+    collections = agent.get("collections", [])
+    if not isinstance(collections, list) or "crowdsecurity/traefik" not in collections:
+        raise SystemExit("bootstrap example CrowdSec agent must include crowdsecurity/traefik")
+    agent["enabled"] = True
+    expected["agent"] = agent
+
     lapi = expected.get("lapi", {})
     if not isinstance(lapi, dict):
         raise SystemExit("bootstrap example crowdsec.lapi configuration must be a mapping")
@@ -104,8 +113,9 @@ def validate_crowdsec_ci_config(all_vars, ci_vars) -> None:
 
     if configured != expected:
         raise SystemExit(
-            "ci-bootstrap-vars.yml CrowdSec settings must preserve the example config "
-            f"and allow the CI Docker bridge range {CI_DOCKER_CIDR}"
+            "ci-bootstrap-vars.yml must enable the Traefik agent, preserve the "
+            "example CrowdSec config, and allow the CI Docker bridge range "
+            f"{CI_DOCKER_CIDR}"
         )
 
 

@@ -306,6 +306,10 @@ assert_crowdsec_contract() {
   local credential_json bouncer_key status probe_path client_ip access_log sample_line detection_test_ip synthetic_path synthetic_line acquisition_metrics
   access_log=/srv/admin/data/traefik/crowdsec-logs/access.log
   detection_test_ip="198.51.100.$((RANDOM % 254 + 1))"
+  if [[ ! -f "$access_log" ]]; then
+    echo "ERROR: Traefik access log for CrowdSec is missing: $access_log" >&2
+    return 1
+  fi
   credential_json="$(docker exec -e BAO_ADDR=https://127.0.0.1:8200 -e BAO_CACERT=/openbao/tls/ca.pem -e VAULT_TOKEN="$OPENBAO_TOKEN" openbao bao read -format=json secret/data/crowdsec/bouncers/traefik)"
   bouncer_key="$(jq -er '.data.data.api_key' <<<"$credential_json")"
   docker exec \
