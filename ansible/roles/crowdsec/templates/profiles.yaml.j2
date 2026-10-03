@@ -1,9 +1,17 @@
+{% set crowdsec_remediation = (crowdsec.remediation | default({})) %}
+{% set crowdsec_ban_duration = crowdsec_remediation.ban_duration | default('4h') %}
+{% set crowdsec_recidivism = crowdsec_remediation.recidivism | default({}) %}
+{% set crowdsec_recidivism_enabled = crowdsec_recidivism.enabled | default(true) | bool %}
+{% set crowdsec_recidivism_window = crowdsec_recidivism.window | default('720h') %}
 name: default_ip_remediation
 filters:
   - Alert.Remediation == true && Alert.GetScope() == "Ip"
 decisions:
   - type: ban
-    duration: {{ (crowdsec.remediation | default({})).ban_duration | default('4h') }}
+    duration: {{ crowdsec_ban_duration }}
+{% if crowdsec_recidivism_enabled %}
+duration_expr: "Sprintf('%dh', (GetDecisionsSinceCount(Alert.GetValue(), '{{ crowdsec_recidivism_window }}') + 1) * {{ crowdsec_ban_duration | regex_replace('h$', '') }})"
+{% endif %}
 on_success: break
 ---
 name: default_range_remediation
@@ -11,5 +19,8 @@ filters:
   - Alert.Remediation == true && Alert.GetScope() == "Range"
 decisions:
   - type: ban
-    duration: {{ (crowdsec.remediation | default({})).ban_duration | default('4h') }}
+    duration: {{ crowdsec_ban_duration }}
+{% if crowdsec_recidivism_enabled %}
+duration_expr: "Sprintf('%dh', (GetDecisionsSinceCount(Alert.GetValue(), '{{ crowdsec_recidivism_window }}') + 1) * {{ crowdsec_ban_duration | regex_replace('h$', '') }})"
+{% endif %}
 on_success: break

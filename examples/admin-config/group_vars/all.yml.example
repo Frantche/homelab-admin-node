@@ -97,6 +97,9 @@ crowdsec:
       - "192.168.1.0/24"
   remediation:
     ban_duration: "4h"
+    recidivism:
+      enabled: true
+      window: "720h"
   traefik_bouncer:
     plugin_version: "v1.4.5"
     update_interval_seconds: 60

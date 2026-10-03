@@ -65,6 +65,9 @@ crowdsec:
       leakspeed: "10s"
   remediation:
     ban_duration: "4h"
+    recidivism:
+      enabled: true
+      window: "720h"
   capi:
     enabled: true
   lapi:
@@ -109,8 +112,16 @@ Traefik bouncer refresh and a 24-hour ban profile. The DI configuration keeps
 the optional scenario disabled and the normal 60-second refresh and four-hour
 ban duration.
 
-Set `crowdsec.remediation.ban_duration` to control IP and range ban duration.
-CrowdSec accepts Go duration strings such as `30m`, `4h`, or `1h30m`.
+Set `crowdsec.remediation.ban_duration` to control the base IP and range ban
+duration. With recidivism enabled, a base duration in whole hours is required.
+CrowdSec accepts Go duration strings such as `30m`, `4h`, or `1h30m` when
+recidivism is disabled.
+`crowdsec.remediation.recidivism.window` controls how far back CrowdSec counts
+prior decisions for the same source. The default `720h` is 30 days. Within that
+window, the first ban uses the base duration, the first repeat doubles it, and
+each additional repeat adds one more base duration. For a `4h` base, successive
+bans are `4h`, `8h`, `12h`, and so on. Set `enabled: false` to keep a fixed
+duration.
 Traefik's `crowdsec.traefik_bouncer.update_interval_seconds` controls how often
 the stream-mode bouncer fetches decisions from the LAPI; reducing it shortens
 the delay between a decision and enforcement, but does not change scenario

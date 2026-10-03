@@ -7,6 +7,12 @@
       - (crowdsec.traefik_bouncer.update_interval_seconds | default(60) | int) >= 1
       - (crowdsec.traefik_bouncer.update_interval_seconds | default(60) | int) <= 3600
       - (((crowdsec | default({})).remediation | default({})).ban_duration | default('4h', true)) is match('^[1-9][0-9]*(ns|us|ms|s|m|h)([0-9]+(ns|us|ms|s|m|h))*$')
+      - >-
+        not (((((crowdsec | default({})).remediation | default({})).recidivism | default({})).enabled | default(true)) | bool)
+        or (((crowdsec | default({})).remediation | default({})).ban_duration | default('4h', true)) is match('^[1-9][0-9]*h$')
+      - >-
+        (((((crowdsec | default({})).remediation | default({})).recidivism | default({})).window | default('720h', true)))
+        is match('^[1-9][0-9]*(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$')
       - crowdsec.openbao.mount | default('', true) | length > 0
       - crowdsec.openbao.path_prefix | default('', true) | length > 0
       - "'..' not in crowdsec.openbao.path_prefix.split('/')"
@@ -34,8 +40,9 @@
     fail_msg: >-
       CrowdSec requires LAN CIDRs, a pinned Traefik plugin version, a bouncer
       refresh interval from 1 to 3600 seconds, a valid ban duration, and a safe
-      OpenBao destination. The fast HTTP probing scenario also requires the
-      agent and a valid capacity and leakspeed.
+      OpenBao destination. Recidivism scaling requires a whole-hour base ban
+      duration and a valid decision-count window. The fast HTTP probing scenario
+      also requires the agent and a valid capacity and leakspeed.
 
 - name: Ensure CrowdSec runtime directories
   ansible.builtin.file:
@@ -128,6 +135,17 @@
     'Created' in crowdsec_stack_start.stderr or
     'Recreated' in crowdsec_stack_start.stderr or
     'Started' in crowdsec_stack_start.stderr
+  when: admin_mode != 'restore'
+
+- name: Validate CrowdSec profiles before restarting the agent
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - crowdsec
+      - crowdsec
+      - -t
+  changed_when: false
   when: admin_mode != 'restore'
 
 - name: Recreate CrowdSec to load updated acquisition and detection configuration

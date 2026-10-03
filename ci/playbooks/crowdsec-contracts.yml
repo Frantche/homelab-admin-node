@@ -53,6 +53,9 @@
           leakspeed: "10s"
       remediation:
         ban_duration: "4h"
+        recidivism:
+          enabled: true
+          window: "720h"
       image: "crowdsecurity/crowdsec:v1.8.1@sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975"
       capi:
         enabled: true
@@ -134,11 +137,16 @@
           - "'DISABLE_AGENT: \"false\"' in crowdsec_compose"
           - "'COLLECTIONS: \"crowdsecurity/traefik\"' in crowdsec_compose"
           - "'duration: 4h' in crowdsec_profiles_template"
+          - "'GetDecisionsSinceCount(Alert.GetValue()' in crowdsec_profiles_template"
+          - "'720h' in crowdsec_profiles_template"
+          - "'* 4)' in crowdsec_profiles_template"
           - "'name: local/admin-node-http-probing-fast' in crowdsec_fast_probing_template"
           - "'capacity: 3' in crowdsec_fast_probing_template"
           - "'distinct: \"evt.Meta.http_path\"' in crowdsec_fast_probing_template"
           - "'reprocess: true' in crowdsec_fast_probing_template"
           - "crowdsec_default_vars.crowdsec.remediation.ban_duration == '4h'"
+          - "crowdsec_default_vars.crowdsec.remediation.recidivism.enabled == true"
+          - "crowdsec_default_vars.crowdsec.remediation.recidivism.window == '720h'"
           - "crowdsec_default_vars.crowdsec.traefik_bouncer.update_interval_seconds == 60"
           - "crowdsec_default_vars.crowdsec.agent.fast_http_probing.enabled == false"
           - "'DISABLE_ONLINE_API: \"false\"' in crowdsec_compose"

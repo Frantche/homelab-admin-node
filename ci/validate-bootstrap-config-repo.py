@@ -126,6 +126,11 @@ def validate_crowdsec_ci_config(all_vars, ci_vars) -> None:
     if not isinstance(remediation, dict):
         raise SystemExit("bootstrap example crowdsec.remediation must be a mapping")
     remediation["ban_duration"] = "24h"
+    recidivism = remediation.get("recidivism", {})
+    if not isinstance(recidivism, dict):
+        raise SystemExit("bootstrap example crowdsec.remediation.recidivism must be a mapping")
+    recidivism.update({"enabled": True, "window": "720h"})
+    remediation["recidivism"] = recidivism
     expected["remediation"] = remediation
 
     bouncer = expected.get("traefik_bouncer", {})

@@ -160,6 +160,9 @@ crowdsec:
       leakspeed: "10s"
   remediation:
     ban_duration: "24h"
+    recidivism:
+      enabled: true
+      window: "720h"
   capi:
     enabled: false
   lapi:
