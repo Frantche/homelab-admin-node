@@ -4,6 +4,9 @@
     that:
       - crowdsec.lapi.allowed_cidrs | default([]) | length > 0
       - crowdsec.traefik_bouncer.plugin_version | default('', true) is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
+      - (crowdsec.traefik_bouncer.update_interval_seconds | default(60) | int) >= 1
+      - (crowdsec.traefik_bouncer.update_interval_seconds | default(60) | int) <= 3600
+      - (((crowdsec | default({})).remediation | default({})).ban_duration | default('4h', true)) is match('^[1-9][0-9]*(ns|us|ms|s|m|h)([0-9]+(ns|us|ms|s|m|h))*$')
       - crowdsec.openbao.mount | default('', true) | length > 0
       - crowdsec.openbao.path_prefix | default('', true) | length > 0
       - "'..' not in crowdsec.openbao.path_prefix.split('/')"
@@ -18,7 +21,21 @@
         not ((crowdsec.agent | default({})).enabled | default(false) | bool)
         or 'crowdsecurity/traefik' in
         ((crowdsec.agent | default({})).collections | default(['crowdsecurity/traefik']))
-    fail_msg: "CrowdSec requires LAN CIDRs, a pinned Traefik plugin version, and a safe OpenBao destination."
+      - >-
+        not (((crowdsec.agent | default({})).fast_http_probing | default({})).enabled | default(false) | bool)
+        or ((crowdsec.agent | default({})).enabled | default(false) | bool)
+      - >-
+        (((crowdsec.agent | default({})).fast_http_probing | default({})).capacity | default(3) | int) >= 1
+      - >-
+        (((crowdsec.agent | default({})).fast_http_probing | default({})).capacity | default(3) | int) <= 100
+      - >-
+        (((crowdsec.agent | default({})).fast_http_probing | default({})).leakspeed | default('10s', true))
+        is match('^[1-9][0-9]*(ms|s|m|h)$')
+    fail_msg: >-
+      CrowdSec requires LAN CIDRs, a pinned Traefik plugin version, a bouncer
+      refresh interval from 1 to 3600 seconds, a valid ban duration, and a safe
+      OpenBao destination. The fast HTTP probing scenario also requires the
+      agent and a valid capacity and leakspeed.
 
 - name: Ensure CrowdSec runtime directories
   ansible.builtin.file:
@@ -31,7 +48,34 @@
     - { path: "{{ admin_node_root }}/stacks/crowdsec", mode: "0755" }
     - { path: "{{ admin_node_root }}/data/crowdsec/config", mode: "0750" }
     - { path: "{{ admin_node_root }}/data/crowdsec/config/acquis.d", mode: "0750" }
+    - { path: "{{ admin_node_root }}/data/crowdsec/config/scenarios", mode: "0750" }
     - { path: "{{ admin_node_root }}/data/crowdsec/data", mode: "0750" }
+
+- name: Install CrowdSec remediation profiles
+  ansible.builtin.template:
+    src: profiles.yaml.j2
+    dest: "{{ admin_node_root }}/data/crowdsec/config/profiles.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: crowdsec_remediation_profile_render
+
+- name: Install lower-threshold HTTP probing scenario
+  ansible.builtin.template:
+    src: fast-http-probing.yaml.j2
+    dest: "{{ admin_node_root }}/data/crowdsec/config/scenarios/admin-node-http-probing-fast.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: crowdsec_fast_http_probing_render
+  when: (crowdsec.agent.fast_http_probing | default({})).enabled | default(false) | bool
+
+- name: Remove lower-threshold HTTP probing scenario when disabled
+  ansible.builtin.file:
+    path: "{{ admin_node_root }}/data/crowdsec/config/scenarios/admin-node-http-probing-fast.yaml"
+    state: absent
+  register: crowdsec_fast_http_probing_remove
+  when: not ((crowdsec.agent.fast_http_probing | default({})).enabled | default(false) | bool)
 
 - name: Install Traefik access log acquisition for CrowdSec
   ansible.builtin.template:
@@ -86,7 +130,7 @@
     'Started' in crowdsec_stack_start.stderr
   when: admin_mode != 'restore'
 
-- name: Recreate CrowdSec to load an updated Traefik acquisition
+- name: Recreate CrowdSec to load updated acquisition and detection configuration
   ansible.builtin.command:
     argv:
       - docker
@@ -105,8 +149,11 @@
   changed_when: true
   when:
     - admin_mode != 'restore'
-    - (crowdsec.agent | default({})).enabled | default(false) | bool
-    - crowdsec_agent_acquisition_render.changed | default(false)
+    - >-
+      (crowdsec_agent_acquisition_render.changed | default(false)) or
+      (crowdsec_remediation_profile_render.changed | default(false)) or
+      (crowdsec_fast_http_probing_render.changed | default(false)) or
+      (crowdsec_fast_http_probing_remove.changed | default(false))
     - not (crowdsec_compose_render.changed | default(false))
 
 - name: Enable CrowdSec stack at boot

@@ -59,6 +59,12 @@ crowdsec:
     enabled: true
     collections:
       - crowdsecurity/traefik
+    fast_http_probing:
+      enabled: false
+      capacity: 3
+      leakspeed: "10s"
+  remediation:
+    ban_duration: "4h"
   capi:
     enabled: true
   lapi:
@@ -93,6 +99,22 @@ The collection includes a Traefik parser and common HTTP scenarios for crawling,
 404 scanning, and brute force ([collection details](https://app.crowdsec.net/hub/author/crowdsecurity/collections/traefik)).
 Traefik drops request headers and query parameters from these logs. Log rotation
 keeps seven compressed files and checks daily for logs larger than 25 MB.
+
+The optional `crowdsec.agent.fast_http_probing` scenario detects distinct HTTP
+error paths at a configurable threshold without changing the collection's
+upstream scenarios. Enable it only where a lower threshold is wanted; for
+example, `capacity: 3` triggers after four distinct matching paths in the
+bucket. The bootstrap PR journey enables this scenario with a one-second
+Traefik bouncer refresh and a 24-hour ban profile. The DI configuration keeps
+the optional scenario disabled and the normal 60-second refresh and four-hour
+ban duration.
+
+Set `crowdsec.remediation.ban_duration` to control IP and range ban duration.
+CrowdSec accepts Go duration strings such as `30m`, `4h`, or `1h30m`.
+Traefik's `crowdsec.traefik_bouncer.update_interval_seconds` controls how often
+the stream-mode bouncer fetches decisions from the LAPI; reducing it shortens
+the delay between a decision and enforcement, but does not change scenario
+detection thresholds.
 
 Check that CrowdSec is reading and parsing the access log and that scenarios
 are loaded:

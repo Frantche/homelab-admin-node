@@ -388,6 +388,14 @@ assert_crowdsec_contract() {
     docker exec crowdsec cscli metrics show acquisition parsers scenarios >&2 || true
     return 1
   fi
+  if ! docker exec crowdsec cscli alerts list -o json \
+    | jq -e --arg ip "$detection_test_ip" 'any(.[]?; .scenario == "local/admin-node-http-probing-fast" and any(.decisions[]?; .value == $ip))' >/dev/null; then
+    docker exec crowdsec cscli decisions delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
+    docker exec crowdsec cscli alerts delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
+    echo "ERROR: CrowdSec fast HTTP probing scenario did not detect the synthetic Traefik 404 scan" >&2
+    docker exec crowdsec cscli metrics show acquisition parsers scenarios >&2 || true
+    return 1
+  fi
   docker exec crowdsec cscli decisions delete --ip "$detection_test_ip" >/dev/null
   docker exec crowdsec cscli alerts delete --ip "$detection_test_ip" >/dev/null
 

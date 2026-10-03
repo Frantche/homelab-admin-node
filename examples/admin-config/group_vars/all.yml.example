@@ -84,11 +84,19 @@ crowdsec:
     enabled: false
     collections:
       - crowdsecurity/traefik
+    # Optional lower threshold scenario for environments where rapid detection
+    # is preferred over the stock HTTP probing threshold.
+    fast_http_probing:
+      enabled: false
+      capacity: 3
+      leakspeed: "10s"
   capi:
     enabled: true
   lapi:
     allowed_cidrs:
       - "192.168.1.0/24"
+  remediation:
+    ban_duration: "4h"
   traefik_bouncer:
     plugin_version: "v1.4.5"
     update_interval_seconds: 60

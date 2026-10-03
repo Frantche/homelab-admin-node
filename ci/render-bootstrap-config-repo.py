@@ -27,7 +27,28 @@ def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
     if not isinstance(collections, list) or "crowdsecurity/traefik" not in collections:
         raise SystemExit("bootstrap example CrowdSec agent must include crowdsecurity/traefik")
     crowdsec_agent["enabled"] = True
+    fast_http_probing = crowdsec_agent.get("fast_http_probing", {})
+    if not isinstance(fast_http_probing, dict):
+        raise SystemExit("bootstrap example crowdsec.agent.fast_http_probing must be a mapping")
+    fast_http_probing.update(
+        {
+            "enabled": True,
+            "capacity": 3,
+            "leakspeed": "10s",
+        }
+    )
+    crowdsec_agent["fast_http_probing"] = fast_http_probing
     crowdsec["agent"] = crowdsec_agent
+    remediation = crowdsec.get("remediation", {})
+    if not isinstance(remediation, dict):
+        raise SystemExit("bootstrap example crowdsec.remediation must be a mapping")
+    remediation["ban_duration"] = "24h"
+    crowdsec["remediation"] = remediation
+    bouncer = crowdsec.get("traefik_bouncer", {})
+    if not isinstance(bouncer, dict):
+        raise SystemExit("bootstrap example crowdsec.traefik_bouncer must be a mapping")
+    bouncer["update_interval_seconds"] = 1
+    crowdsec["traefik_bouncer"] = bouncer
     crowdsec_lapi = crowdsec.get("lapi", {})
     if not isinstance(crowdsec_lapi, dict):
         raise SystemExit("bootstrap example crowdsec.lapi configuration must be a mapping")

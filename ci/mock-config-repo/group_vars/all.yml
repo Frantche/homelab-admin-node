@@ -154,6 +154,12 @@ crowdsec:
     enabled: true
     collections:
       - crowdsecurity/traefik
+    fast_http_probing:
+      enabled: true
+      capacity: 3
+      leakspeed: "10s"
+  remediation:
+    ban_duration: "24h"
   capi:
     enabled: false
   lapi:

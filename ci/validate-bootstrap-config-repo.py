@@ -98,6 +98,17 @@ def validate_crowdsec_ci_config(all_vars, ci_vars) -> None:
     if not isinstance(collections, list) or "crowdsecurity/traefik" not in collections:
         raise SystemExit("bootstrap example CrowdSec agent must include crowdsecurity/traefik")
     agent["enabled"] = True
+    fast_http_probing = agent.get("fast_http_probing", {})
+    if not isinstance(fast_http_probing, dict):
+        raise SystemExit("bootstrap example crowdsec.agent.fast_http_probing must be a mapping")
+    fast_http_probing.update(
+        {
+            "enabled": True,
+            "capacity": 3,
+            "leakspeed": "10s",
+        }
+    )
+    agent["fast_http_probing"] = fast_http_probing
     expected["agent"] = agent
 
     lapi = expected.get("lapi", {})
@@ -110,6 +121,18 @@ def validate_crowdsec_ci_config(all_vars, ci_vars) -> None:
         allowed_cidrs.append(CI_DOCKER_CIDR)
     lapi["allowed_cidrs"] = allowed_cidrs
     expected["lapi"] = lapi
+
+    remediation = expected.get("remediation", {})
+    if not isinstance(remediation, dict):
+        raise SystemExit("bootstrap example crowdsec.remediation must be a mapping")
+    remediation["ban_duration"] = "24h"
+    expected["remediation"] = remediation
+
+    bouncer = expected.get("traefik_bouncer", {})
+    if not isinstance(bouncer, dict):
+        raise SystemExit("bootstrap example crowdsec.traefik_bouncer must be a mapping")
+    bouncer["update_interval_seconds"] = 1
+    expected["traefik_bouncer"] = bouncer
 
     if configured != expected:
         raise SystemExit(

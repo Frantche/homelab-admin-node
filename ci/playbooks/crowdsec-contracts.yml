@@ -47,6 +47,12 @@
         enabled: true
         collections:
           - crowdsecurity/traefik
+        fast_http_probing:
+          enabled: true
+          capacity: 3
+          leakspeed: "10s"
+      remediation:
+        ban_duration: "4h"
       image: "crowdsecurity/crowdsec:v1.8.1@sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975"
       capi:
         enabled: true
@@ -76,6 +82,8 @@
     - name: Render CrowdSec stack and Traefik configuration
       ansible.builtin.set_fact:
         crowdsec_compose: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/crowdsec/compose.yaml.j2') }}"
+        crowdsec_profiles_template: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../ansible/roles/crowdsec/templates/profiles.yaml.j2') }}"
+        crowdsec_fast_probing_template: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../ansible/roles/crowdsec/templates/fast-http-probing.yaml.j2') }}"
         crowdsec_traefik_compose: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/compose.yaml.j2') }}"
         crowdsec_traefik_static: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/traefik.yml.j2') }}"
         crowdsec_traefik_ci_static: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/traefik-ci.yml') }}"
@@ -125,6 +133,12 @@
         that:
           - "'DISABLE_AGENT: \"false\"' in crowdsec_compose"
           - "'COLLECTIONS: \"crowdsecurity/traefik\"' in crowdsec_compose"
+          - "'duration: 4h' in crowdsec_profiles_template"
+          - "'name: local/admin-node-http-probing-fast' in crowdsec_fast_probing_template"
+          - "'capacity: 3' in crowdsec_fast_probing_template"
+          - "crowdsec_default_vars.crowdsec.remediation.ban_duration == '4h'"
+          - "crowdsec_default_vars.crowdsec.traefik_bouncer.update_interval_seconds == 60"
+          - "crowdsec_default_vars.crowdsec.agent.fast_http_probing.enabled == false"
           - "'DISABLE_ONLINE_API: \"false\"' in crowdsec_compose"
           - "'/etc/crowdsec' in crowdsec_compose"
           - "'/var/lib/crowdsec/data' in crowdsec_compose"

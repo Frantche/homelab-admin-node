@@ -47,6 +47,12 @@ crowdsec:
     enabled: false
     collections:
       - crowdsecurity/traefik
+    fast_http_probing:
+      enabled: false
+      capacity: 3
+      leakspeed: "10s"
+  remediation:
+    ban_duration: "4h"
   capi:
     enabled: true
   lapi:
@@ -65,8 +71,12 @@ crowdsec:
 | `crowdsec.enabled` | `false` | Deploys the LAPI and enables Traefik enforcement. |
 | `crowdsec.agent.enabled` | `false` | Acquires Traefik access logs and enables automatic HTTP attack detection. |
 | `crowdsec.agent.collections[]` | `crowdsecurity/traefik` | CrowdSec collection installed for Traefik parsing and HTTP scenarios. Keep the Traefik collection when acquisition is enabled. |
+| `crowdsec.agent.fast_http_probing.enabled` | `false` | Adds an optional lower-threshold HTTP probing scenario alongside the collection scenarios. |
+| `crowdsec.agent.fast_http_probing.capacity` | `3` | Distinct matching error paths required by the optional fast scenario. |
+| `crowdsec.agent.fast_http_probing.leakspeed` | `10s` | How quickly events leave the optional fast scenario bucket. |
 | `crowdsec.capi.enabled` | `true` | Registers the LAPI with CAPI. Disable only for offline or CI environments. |
 | `crowdsec.lapi.allowed_cidrs[]` | `192.168.1.0/24` | Source networks allowed to reach the HTTPS LAPI route. An empty list is rejected. |
+| `crowdsec.remediation.ban_duration` | `4h` | Ban duration for IP and range remediation profiles. |
 | `crowdsec.traefik_bouncer.plugin_version` | `v1.4.5` | Pinned Traefik plugin version. |
 | `crowdsec.traefik_bouncer.update_interval_seconds` | `60` | Stream-mode decision refresh interval. |
 | `crowdsec.openbao.mount` | `secret` | Existing KV-v2 mount receiving CrowdSec credentials. |
