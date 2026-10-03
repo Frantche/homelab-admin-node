@@ -365,8 +365,40 @@ assert_crowdsec_contract() {
     echo "ERROR: could not read the CrowdSec Traefik log sample" >&2
     return 1
   fi
-  for attempt in $(seq 1 12); do
+  for attempt in $(seq 1 4); do
     synthetic_path="/crowdsec-automatic-test-${RANDOM}-${attempt}"
+    synthetic_line="$(jq -c --arg client "$detection_test_ip" --arg path "$synthetic_path" \
+      '.ClientHost = $client | .ClientAddr = ($client + ":4242") | .RequestPath = $path | .DownstreamStatus = 404 | .time = (now | strftime("%Y-%m-%dT%H:%M:%SZ")) | .StartUTC = (now | todateiso8601)' \
+      <<<"$sample_line")"
+    printf '%s\n' "$synthetic_line" | sudo tee -a "$access_log" >/dev/null
+  done
+
+  for _ in $(seq 1 90); do
+    if docker exec crowdsec cscli alerts list -o json \
+      | jq -e --arg ip "$detection_test_ip" 'any(.[]?; .scenario == "local/admin-node-http-probing-fast" and any(.decisions[]?; .value == $ip))' >/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  if ! docker exec crowdsec cscli alerts list -o json \
+    | jq -e --arg ip "$detection_test_ip" 'any(.[]?; .scenario == "local/admin-node-http-probing-fast" and any(.decisions[]?; .value == $ip))' >/dev/null; then
+    docker exec crowdsec cscli decisions delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
+    docker exec crowdsec cscli alerts delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
+    echo "ERROR: CrowdSec fast HTTP probing scenario did not detect four synthetic 404s" >&2
+    docker exec crowdsec cscli metrics show acquisition parsers scenarios >&2 || true
+    return 1
+  fi
+
+  if docker exec crowdsec cscli alerts list -o json \
+    | jq -e --arg ip "$detection_test_ip" 'any(.[]?; .scenario == "crowdsecurity/http-probing" and any(.decisions[]?; .value == $ip))' >/dev/null; then
+    docker exec crowdsec cscli decisions delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
+    docker exec crowdsec cscli alerts delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
+    echo "ERROR: stock HTTP probing threshold fired after only four synthetic 404s" >&2
+    return 1
+  fi
+
+  for attempt in $(seq 5 12); do
+    synthetic_path="/crowdsec-automatic-test-$RANDOM-$attempt"
     synthetic_line="$(jq -c --arg client "$detection_test_ip" --arg path "$synthetic_path" \
       '.ClientHost = $client | .ClientAddr = ($client + ":4242") | .RequestPath = $path | .DownstreamStatus = 404 | .time = (now | strftime("%Y-%m-%dT%H:%M:%SZ")) | .StartUTC = (now | todateiso8601)' \
       <<<"$sample_line")"
@@ -384,15 +416,7 @@ assert_crowdsec_contract() {
     | jq -e --arg ip "$detection_test_ip" 'any(.[]?; .scenario == "crowdsecurity/http-probing" and any(.decisions[]?; .value == $ip))' >/dev/null; then
     docker exec crowdsec cscli decisions delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
     docker exec crowdsec cscli alerts delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
-    echo "ERROR: CrowdSec did not detect the synthetic Traefik 404 scan" >&2
-    docker exec crowdsec cscli metrics show acquisition parsers scenarios >&2 || true
-    return 1
-  fi
-  if ! docker exec crowdsec cscli alerts list -o json \
-    | jq -e --arg ip "$detection_test_ip" 'any(.[]?; .scenario == "local/admin-node-http-probing-fast" and any(.decisions[]?; .value == $ip))' >/dev/null; then
-    docker exec crowdsec cscli decisions delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
-    docker exec crowdsec cscli alerts delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
-    echo "ERROR: CrowdSec fast HTTP probing scenario did not detect the synthetic Traefik 404 scan" >&2
+    echo "ERROR: CrowdSec did not detect the stock synthetic Traefik 404 scan after twelve events" >&2
     docker exec crowdsec cscli metrics show acquisition parsers scenarios >&2 || true
     return 1
   fi

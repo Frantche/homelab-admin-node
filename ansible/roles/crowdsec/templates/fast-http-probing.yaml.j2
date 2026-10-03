@@ -3,10 +3,11 @@ name: local/admin-node-http-probing-fast
 description: "Detect HTTP probing after a configurable number of distinct error paths"
 filter: "evt.Meta.service == 'http' && evt.Meta.http_status in ['404', '403', '400'] && evt.Parsed.static_ressource == 'false'"
 groupby: "evt.Meta.source_ip + '/' + evt.Parsed.target_fqdn"
-distinct: "evt.Parsed.target_uri"
+distinct: "evt.Meta.http_path"
 capacity: {{ ((crowdsec.agent | default({})).fast_http_probing | default({})).capacity | default(3) }}
 leakspeed: "{{ ((crowdsec.agent | default({})).fast_http_probing | default({})).leakspeed | default('10s') }}"
 blackhole: 5m
+reprocess: true
 labels:
   remediation: true
   classification:
