@@ -116,11 +116,13 @@
           - "'buffering:' not in traefik_dynamic_config"
           - "'trustedIPs:' in traefik_static_config"
           - "'192.0.2.0/24' in traefik_static_config"
+          - "'cloudflarewebsecure:' in traefik_static_config"
 
     - name: Assert Cloudflared only renders enabled external services
       ansible.builtin.assert:
         that:
           - "'hostname: \"insecure.example.com\"' in cloudflared_config"
+          - "cloudflared_config.count('service: \"https://traefik:8443\"') == 5"
           - "'hostname: \"ca.example.com\"' not in cloudflared_config"
           - "'hostname: \"traefik.example.com\"' not in cloudflared_config"
           - "cloudflare_tunnel_dns_hostnames | length == 5"
@@ -129,6 +131,7 @@
           - "'harbor.example.com' in cloudflare_tunnel_dns_hostnames"
           - "'git.example.com' in cloudflare_tunnel_dns_hostnames"
           - "'traefik.example.com' not in cloudflare_tunnel_dns_hostnames"
+          - "'crowdsec.example.com' not in cloudflare_tunnel_dns_hostnames"
           - "'insecure.example.com' in cloudflare_tunnel_dns_hostnames"
           - "'ca.example.com' not in cloudflare_tunnel_dns_hostnames"
 

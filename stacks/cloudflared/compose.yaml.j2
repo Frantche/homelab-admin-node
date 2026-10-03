@@ -31,8 +31,12 @@ services:
       retries: 30
       start_period: 20s
     networks:
-      - admin-edge
+      traefik-cloudflared:
+        ipv4_address: "{{ ((cloudflare.origin_network | default({})).cloudflared_ip | default('172.31.255.3')) }}"
+      cloudflare-egress: {}
 
 networks:
-  admin-edge:
+  traefik-cloudflared:
+    external: true
+  cloudflare-egress:
     external: true

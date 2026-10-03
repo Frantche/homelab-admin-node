@@ -42,7 +42,7 @@ dump_debug() {
   journalctl -u admin-converge.service --no-pager -n 80 >&2 2>/dev/null || true
   echo "--- docker ps ---" >&2
   docker ps -a >&2 2>/dev/null || true
-  for svc in traefik keycloak keycloak-db openbao harbor-core harbor-db gitea gitea-db cloudflared otel-collector; do
+  for svc in traefik keycloak keycloak-db openbao harbor-core harbor-db gitea gitea-db cloudflared crowdsec crowdsec-web-ui otel-collector; do
     echo "--- docker logs: $svc ---" >&2
     docker logs "$svc" 2>&1 | tail -80 >&2 || true
   done
@@ -302,6 +302,175 @@ assert_harbor_robot_token_contract() {
   done
 }
 
+assert_crowdsec_contract() {
+  local credential_json bouncer_key status probe_path client_ip access_log sample_line detection_test_ip synthetic_path synthetic_line acquisition_metrics
+  access_log=/srv/admin/data/traefik/crowdsec-logs/access.log
+  detection_test_ip="198.51.100.$((RANDOM % 254 + 1))"
+  if [[ ! -f "$access_log" ]]; then
+    echo "ERROR: Traefik access log for CrowdSec is missing: $access_log" >&2
+    return 1
+  fi
+  credential_json="$(docker exec -e BAO_ADDR=https://127.0.0.1:8200 -e BAO_CACERT=/openbao/tls/ca.pem -e VAULT_TOKEN="$OPENBAO_TOKEN" openbao bao read -format=json secret/data/crowdsec/bouncers/traefik)"
+  bouncer_key="$(jq -er '.data.data.api_key' <<<"$credential_json")"
+  docker exec \
+    -e BAO_ADDR=https://127.0.0.1:8200 \
+    -e BAO_CACERT=/openbao/tls/ca.pem \
+    -e VAULT_TOKEN="$OPENBAO_TOKEN" \
+    openbao bao read secret/data/crowdsec/lapi/machine >/dev/null
+
+  status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --cacert /srv/admin/certs/ca.pem \
+    https://crowdsec.example.com/v1/decisions)"
+  if [[ "$status" != "401" && "$status" != "403" ]]; then
+    echo "ERROR: unauthenticated CrowdSec LAPI request returned HTTP $status, expected 401 or 403" >&2
+    return 1
+  fi
+  status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --cacert /srv/admin/certs/ca.pem \
+    -H "X-Api-Key: $bouncer_key" \
+    https://crowdsec.example.com/v1/decisions)"
+  if [[ "$status" != "200" ]]; then
+    echo "ERROR: authenticated CrowdSec LAPI request returned HTTP $status, expected 200" >&2
+    return 1
+  fi
+
+  probe_path="crowdsec-probe-$RANDOM"
+  curl --silent --output /dev/null --cacert /srv/admin/certs/ca.pem \
+    "https://keycloak.example.com/$probe_path"
+  client_ip="$(sudo jq -r --arg probe "/$probe_path" \
+    'select(.RequestPath == $probe) | .ClientHost' "$access_log" | tail -n1)"
+  if [[ -z "$client_ip" ]]; then
+    echo "ERROR: Traefik access log did not expose the CrowdSec probe client IP" >&2
+    return 1
+  fi
+
+  for _ in $(seq 1 30); do
+    acquisition_metrics="$(docker exec crowdsec cscli metrics show acquisition parsers -o json)"
+    if jq -e '.acquisition | keys | any(contains("/var/log/traefik/access.log"))' \
+      <<<"$acquisition_metrics" >/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  if ! jq -e '.acquisition | keys | any(contains("/var/log/traefik/access.log"))' \
+    <<<"$acquisition_metrics" >/dev/null; then
+    echo "ERROR: CrowdSec is not acquiring the Traefik access log" >&2
+    jq . <<<"$acquisition_metrics" >&2
+    return 1
+  fi
+
+  sample_line="$(sudo jq -c --arg probe "/$probe_path" \
+    'select(.RequestPath == $probe)' "$access_log" | tail -n1)"
+  if [[ -z "$sample_line" ]]; then
+    echo "ERROR: could not read the CrowdSec Traefik log sample" >&2
+    return 1
+  fi
+
+  docker exec crowdsec cscli decisions add --ip "$detection_test_ip" --duration 1s --type ban >/dev/null
+  sleep 2
+  for attempt in $(seq 1 4); do
+    synthetic_path="/crowdsec-automatic-test-${RANDOM}-${attempt}"
+    synthetic_line="$(jq -c --arg client "$detection_test_ip" --arg path "$synthetic_path" \
+      '.ClientHost = $client | .ClientAddr = ($client + ":4242") | .RequestPath = $path | .DownstreamStatus = 404 | .time = (now | strftime("%Y-%m-%dT%H:%M:%SZ")) | .StartUTC = (now | todateiso8601)' \
+      <<<"$sample_line")"
+    printf '%s\n' "$synthetic_line" | sudo tee -a "$access_log" >/dev/null
+  done
+
+  for _ in $(seq 1 90); do
+    if docker exec crowdsec cscli alerts list -o json \
+      | jq -e --arg ip "$detection_test_ip" 'any(.[]?; .scenario == "local/admin-node-http-probing-fast" and any(.decisions[]?; .value == $ip))' >/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  if ! docker exec crowdsec cscli alerts list -o json \
+    | jq -e --arg ip "$detection_test_ip" 'any(.[]?; .scenario == "local/admin-node-http-probing-fast" and any(.decisions[]?; .value == $ip and (.duration | test("^(47h|48h)"))))' >/dev/null; then
+    docker exec crowdsec cscli decisions delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
+    docker exec crowdsec cscli alerts delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
+    echo "ERROR: CrowdSec fast HTTP probing did not detect four synthetic 404s and apply the expected 48-hour repeat-offender ban" >&2
+    docker exec crowdsec cscli metrics show acquisition parsers scenarios >&2 || true
+    return 1
+  fi
+
+  if docker exec crowdsec cscli alerts list -o json \
+    | jq -e --arg ip "$detection_test_ip" 'any(.[]?; .scenario == "crowdsecurity/http-probing" and any(.decisions[]?; .value == $ip))' >/dev/null; then
+    docker exec crowdsec cscli decisions delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
+    docker exec crowdsec cscli alerts delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
+    echo "ERROR: stock HTTP probing threshold fired after only four synthetic 404s" >&2
+    return 1
+  fi
+
+  for attempt in $(seq 5 12); do
+    synthetic_path="/crowdsec-automatic-test-$RANDOM-$attempt"
+    synthetic_line="$(jq -c --arg client "$detection_test_ip" --arg path "$synthetic_path" \
+      '.ClientHost = $client | .ClientAddr = ($client + ":4242") | .RequestPath = $path | .DownstreamStatus = 404 | .time = (now | strftime("%Y-%m-%dT%H:%M:%SZ")) | .StartUTC = (now | todateiso8601)' \
+      <<<"$sample_line")"
+    printf '%s\n' "$synthetic_line" | sudo tee -a "$access_log" >/dev/null
+  done
+
+  for _ in $(seq 1 90); do
+    if docker exec crowdsec cscli alerts list -o json \
+      | jq -e --arg ip "$detection_test_ip" 'any(.[]?; .scenario == "crowdsecurity/http-probing" and any(.decisions[]?; .value == $ip))' >/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  if ! docker exec crowdsec cscli alerts list -o json \
+    | jq -e --arg ip "$detection_test_ip" 'any(.[]?; .scenario == "crowdsecurity/http-probing" and any(.decisions[]?; .value == $ip))' >/dev/null; then
+    docker exec crowdsec cscli decisions delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
+    docker exec crowdsec cscli alerts delete --ip "$detection_test_ip" >/dev/null 2>&1 || true
+    echo "ERROR: CrowdSec did not detect the stock synthetic Traefik 404 scan after twelve events" >&2
+    docker exec crowdsec cscli metrics show acquisition parsers scenarios >&2 || true
+    return 1
+  fi
+  docker exec crowdsec cscli decisions delete --ip "$detection_test_ip" >/dev/null
+  docker exec crowdsec cscli alerts delete --ip "$detection_test_ip" >/dev/null
+
+  docker exec crowdsec cscli decisions add --ip "$client_ip" --duration 2m --type ban >/dev/null
+
+  for _ in $(seq 1 90); do
+    status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+      --cacert /srv/admin/certs/ca.pem \
+      "https://keycloak.example.com/$probe_path")"
+    [[ "$status" == "403" ]] && break
+    sleep 1
+  done
+  if [[ "$status" != "403" ]]; then
+    echo "ERROR: CrowdSec ban did not propagate to Traefik; last HTTP status was $status" >&2
+    return 1
+  fi
+
+  docker exec crowdsec cscli decisions delete --ip "$client_ip" >/dev/null
+  for _ in $(seq 1 90); do
+    status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+      --cacert /srv/admin/certs/ca.pem \
+      "https://keycloak.example.com/$probe_path")"
+    [[ "$status" != "403" ]] && break
+    sleep 1
+  done
+  if [[ "$status" == "403" ]]; then
+    echo "ERROR: removed CrowdSec ban remained active in Traefik" >&2
+    return 1
+  fi
+}
+
+assert_crowdsec_web_ui_oidc_login() {
+  local hostname status
+  hostname="$("$REPO_ROOT/ci/service-domains.py" get crowdsec_web_ui)"
+  status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+    --max-time 30 \
+    --resolve "${hostname}:443:127.0.0.1" \
+    --cacert /srv/admin/certs/ca.pem \
+    "https://${hostname}/api/auth/oidc/login")" || {
+    echo "ERROR: CrowdSec Web UI OIDC login request failed" >&2
+    return 1
+  }
+  if [[ "$status" != "200" && "$status" != "302" ]]; then
+    echo "ERROR: CrowdSec Web UI OIDC login returned HTTP $status, expected 200 or 302" >&2
+    return 1
+  fi
+}
+
 trap dump_debug ERR
 trap stop_otel_mock EXIT
 
@@ -314,6 +483,8 @@ assert_openbao_operation_token_contract backup read
 assert_openbao_operation_token_contract restore update
 exercise_openbao_operation_token_recovery
 assert_harbor_robot_token_contract
+assert_crowdsec_contract
+assert_crowdsec_web_ui_oidc_login
 
 # --- Verify final mode is normal ---
 assert_contains /etc/admin-node/mode "normal"
@@ -341,6 +512,19 @@ docker exec \
   -e BAO_CACERT=/openbao/tls/ca.pem \
   openbao bao status -format=json >/dev/null
 
+crowdsec_networks="$(docker inspect -f '{{json .NetworkSettings.Networks}}' crowdsec)"
+if [[ "$(jq -r 'keys | sort | join(",")' <<<"$crowdsec_networks")" != "crowdsec-egress,traefik-crowdsec" ]]; then
+  echo "ERROR: CrowdSec is not isolated on its dedicated Traefik network" >&2
+  jq . <<<"$crowdsec_networks" >&2
+  exit 1
+fi
+sudo test "$(sudo stat -c '%a:%U:%G' /srv/admin/env/crowdsec-traefik-bouncer-key)" = "600:root:root"
+cloudflared_networks="$(docker inspect -f '{{json .NetworkSettings.Networks}}' cloudflared)"
+if [[ "$(jq -r 'keys | sort | join(",")' <<<"$cloudflared_networks")" != "cloudflare-egress,traefik-cloudflared" ]]; then
+  echo "ERROR: cloudflared is not isolated on its origin and egress networks" >&2
+  jq . <<<"$cloudflared_networks" >&2
+  exit 1
+fi
 # --- Verify Harbor private token material permissions ---
 if [[ "$(stat -c '%a:%U:%g' /srv/admin/data/harbor/core)" != "750:root:10000" ]]; then
   echo "ERROR: Harbor core directory permissions are not 0750 root:10000" >&2

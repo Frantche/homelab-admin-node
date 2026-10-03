@@ -7,6 +7,7 @@ It targets an `admin-01` node, usually deployed on Proxmox from an Arch Linux cl
 ## What It Runs
 
 - Traefik for HTTPS ingress.
+- Optional CrowdSec LAPI enforcement for every Traefik route.
 - Keycloak for identity and OIDC.
 - OpenBao for secret management.
 - Harbor for registry, proxy-cache mirrors, and scoped robot tokens published to OpenBao.

@@ -7,7 +7,8 @@ const domains = {
   harbor: process.env.HARBOR_URL || 'https://harbor.example.com',
   gitea: process.env.GITEA_URL || 'https://git.example.com',
   openbao: process.env.OPENBAO_URL || 'https://bao.example.com',
-  keycloak: process.env.KEYCLOAK_URL || 'https://keycloak.example.com'
+  keycloak: process.env.KEYCLOAK_URL || 'https://keycloak.example.com',
+  crowdsec: process.env.CROWDSEC_UI_URL || 'https://crowdsec-ui.example.com'
 };
 
 async function clickFirstVisible(page, locators, timeout = 5000) {
@@ -135,5 +136,18 @@ test.describe('OIDC user journey', () => {
         });
       }, { timeout: 30000 })
       .toBeTruthy();
+  });
+
+  test('CrowdSec Web UI accepts the Keycloak SSO user', async ({ page }) => {
+    await page.goto(`${domains.crowdsec}/api/auth/oidc/login`, { waitUntil: 'domcontentloaded' });
+    await completeKeycloakLogin(page);
+    await expect.poll(async () => new URL(page.url()).origin, { timeout: 60000 })
+      .toBe(new URL(domains.crowdsec).origin);
+    await expectJSONFromBrowser(
+      page,
+      '/api/auth/me',
+      (json) => json && typeof json === 'object' && Object.keys(json).length > 0,
+      'CrowdSec Web UI current user'
+    );
   });
 });

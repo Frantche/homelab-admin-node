@@ -54,6 +54,10 @@ func (v Validator) All(ctx context.Context) []CheckResult {
 
 func (v Validator) Observability(ctx context.Context) CheckResult {
 	return timed("Observability", func() (Status, string) {
+		if v.Config.ObservabilityDisabled {
+			return StatusSkipped, "observability disabled in runtime configuration"
+		}
+
 		if v.Config.ValidateMockAll {
 			return StatusSkipped, "ADMIN_NODE_VALIDATE_MOCK_ALL=true"
 		}

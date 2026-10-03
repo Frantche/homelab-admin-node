@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 import re
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 import yaml
 
 SECRET_PLACEHOLDER = "CHANGE_ME_IN_SOPS"
 GENERATED_SECRET_RE = re.compile(r"^[A-Za-z0-9]{32}$")
+CI_DOCKER_CIDR = "172.16.0.0/12"
 
 
 def split_image_reference(image: str):
@@ -83,6 +85,68 @@ def validate_backup_secrets_are_not_shadowed(ci_vars) -> None:
         )
 
 
+def validate_crowdsec_ci_config(all_vars, ci_vars) -> None:
+    expected = deepcopy(all_vars.get("crowdsec"))
+    configured = ci_vars.get("crowdsec")
+    if not isinstance(expected, dict) or not isinstance(configured, dict):
+        raise SystemExit("ci-bootstrap-vars.yml must preserve the CrowdSec example configuration")
+
+    agent = expected.get("agent", {})
+    if not isinstance(agent, dict):
+        raise SystemExit("bootstrap example crowdsec.agent configuration must be a mapping")
+    collections = agent.get("collections", [])
+    if not isinstance(collections, list) or "crowdsecurity/traefik" not in collections:
+        raise SystemExit("bootstrap example CrowdSec agent must include crowdsecurity/traefik")
+    agent["enabled"] = True
+    fast_http_probing = agent.get("fast_http_probing", {})
+    if not isinstance(fast_http_probing, dict):
+        raise SystemExit("bootstrap example crowdsec.agent.fast_http_probing must be a mapping")
+    fast_http_probing.update(
+        {
+            "enabled": True,
+            "capacity": 3,
+            "leakspeed": "10s",
+        }
+    )
+    agent["fast_http_probing"] = fast_http_probing
+    expected["agent"] = agent
+
+    lapi = expected.get("lapi", {})
+    if not isinstance(lapi, dict):
+        raise SystemExit("bootstrap example crowdsec.lapi configuration must be a mapping")
+    allowed_cidrs = lapi.get("allowed_cidrs", [])
+    if not isinstance(allowed_cidrs, list):
+        raise SystemExit("bootstrap example crowdsec.lapi.allowed_cidrs must be a list")
+    if CI_DOCKER_CIDR not in allowed_cidrs:
+        allowed_cidrs.append(CI_DOCKER_CIDR)
+    lapi["allowed_cidrs"] = allowed_cidrs
+    expected["lapi"] = lapi
+
+    remediation = expected.get("remediation", {})
+    if not isinstance(remediation, dict):
+        raise SystemExit("bootstrap example crowdsec.remediation must be a mapping")
+    remediation["ban_duration"] = "24h"
+    recidivism = remediation.get("recidivism", {})
+    if not isinstance(recidivism, dict):
+        raise SystemExit("bootstrap example crowdsec.remediation.recidivism must be a mapping")
+    recidivism.update({"enabled": True, "window": "720h"})
+    remediation["recidivism"] = recidivism
+    expected["remediation"] = remediation
+
+    bouncer = expected.get("traefik_bouncer", {})
+    if not isinstance(bouncer, dict):
+        raise SystemExit("bootstrap example crowdsec.traefik_bouncer must be a mapping")
+    bouncer["update_interval_seconds"] = 1
+    expected["traefik_bouncer"] = bouncer
+
+    if configured != expected:
+        raise SystemExit(
+            "ci-bootstrap-vars.yml must enable the Traefik agent, preserve the "
+            "example CrowdSec config, and allow the CI Docker bridge range "
+            f"{CI_DOCKER_CIDR}"
+        )
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit("usage: validate-bootstrap-config-repo.py <yaml>... [--secrets-example <example>]")
@@ -109,6 +173,7 @@ def main() -> None:
     if len(loaded) >= 3:
         validate_backup_secrets_are_not_shadowed(loaded[2])
         validate_harbor_scan_matches_mirror(loaded[1], loaded[2])
+        validate_crowdsec_ci_config(loaded[1], loaded[2])
 
 
 if __name__ == "__main__":

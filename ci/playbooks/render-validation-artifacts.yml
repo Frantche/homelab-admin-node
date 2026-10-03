@@ -6,6 +6,8 @@
   vars:
     admin_node_root: /srv/admin
     admin_repo_root: /opt/homelab-admin-node
+    crowdsec_web_ui_secret_gid: 45000
+    crowdsec_web_ui_oidc_client_id: crowdsec-web-ui
     admin_apparmor_runtime_active: false
     admin_converge_timer_on_boot_sec: 5m
     admin_converge_timer_on_unit_active_sec: 30m
@@ -19,6 +21,7 @@
       harbor: registry.example.com
       gitea: git.example.com
       traefik: traefik.example.com
+      crowdsec: crowdsec.example.com
     cloudflare:
       dns_api_token: ""
       tunnel_id: validation-tunnel-id
@@ -36,6 +39,32 @@
       metrics_endpoint: http://otel-mock:4318/v1/metrics
       logs_endpoint: http://otel-mock:4318/v1/logs
       headers: {}
+    crowdsec:
+      enabled: true
+      agent:
+        enabled: true
+        collections:
+          - crowdsecurity/traefik
+      image: "crowdsecurity/crowdsec:v1.8.1@sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975"
+      lapi:
+        allowed_cidrs: ["192.168.1.0/24"]
+      traefik_bouncer:
+        plugin_version: "v1.4.5"
+        update_interval_seconds: 60
+    crowdsec_web_ui:
+      enabled: true
+      image: "ghcr.io/theduffman85/crowdsec-web-ui:2026.8.1"
+      hostname: crowdsec-ui.example.com
+      uid: 1000
+      lapi:
+        username: crowdsec-web-ui
+        password: validation-crowdsec-web-ui-lapi-password
+      oidc:
+        enabled: true
+        client_id: crowdsec-web-ui
+        client_secret: validation-crowdsec-web-ui-oidc-secret
+        issuer_url: https://keycloak.example.com/realms/homelab
+        admin_groups: [admin]
     traefik:
       dashboard_enabled: false
       local_tls_enabled: true
@@ -47,6 +76,8 @@
         on_calendar: "*-*-* 03:30:00"
     compose_templates:
       - cloudflared
+      - crowdsec
+      - crowdsec-web-ui
       - gitea
       - harbor
       - observability
@@ -78,6 +109,9 @@
           - "'--config /etc/cloudflared/config.yml run validation-tunnel-id' in (rendered_cloudflared_compose.content | b64decode)"
           - "'./config.yml:/etc/cloudflared/config.yml:ro' in (rendered_cloudflared_compose.content | b64decode)"
           - "'./credentials.json:/etc/cloudflared/credentials.json:ro' in (rendered_cloudflared_compose.content | b64decode)"
+          - "'traefik-cloudflared:' in (rendered_cloudflared_compose.content | b64decode)"
+          - "'cloudflare-egress: {}' in (rendered_cloudflared_compose.content | b64decode)"
+          - "'admin-edge' not in (rendered_cloudflared_compose.content | b64decode)"
           - "'--token' not in (rendered_cloudflared_compose.content | b64decode)"
 
     - name: Render Keycloak Compose configuration
