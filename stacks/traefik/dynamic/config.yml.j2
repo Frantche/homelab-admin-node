@@ -92,6 +92,9 @@ http:
       service: crowdsec-web-ui
       middlewares:
         - security-headers
+{% if (crowdsec_web_ui.allowed_cidrs | default([])) | length > 0 %}
+        - crowdsec-web-ui-allowlist
+{% endif %}
 {% endif %}
 {% if traefik.dashboard_enabled | default(false) | bool %}
     dashboard:
@@ -259,6 +262,14 @@ http:
       ipAllowList:
         sourceRange:
 {% for cidr in crowdsec.lapi.allowed_cidrs | default([]) %}
+          - "{{ cidr }}"
+{% endfor %}
+{% endif %}
+{% if crowdsec_web_ui.enabled | default(false) | bool and (crowdsec_web_ui.allowed_cidrs | default([])) | length > 0 %}
+    crowdsec-web-ui-allowlist:
+      ipAllowList:
+        sourceRange:
+{% for cidr in crowdsec_web_ui.allowed_cidrs %}
           - "{{ cidr }}"
 {% endfor %}
 {% endif %}

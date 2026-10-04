@@ -133,6 +133,8 @@ crowdsec:
 crowdsec_web_ui:
   enabled: true
   hostname: "crowdsec-ui.example.com"
+  allowed_cidrs:
+    - "192.168.1.0/24"
   lapi:
     username: "crowdsec-web-ui"
     password: "{{ vault_crowdsec_web_ui_lapi_password }}"
