@@ -93,6 +93,7 @@ service_domains:
   keycloak: "keycloak.example.com"
   gitea: "git.example.com"
   traefik: "traefik.example.com"
+  crowdsec: "crowdsec.example.com"
 ```
 
 ## Service domains
@@ -106,6 +107,7 @@ service_domains:
 | `service_domains.keycloak` | `keycloak.example.com` | Keycloak realm and OIDC issuer hostname. |
 | `service_domains.gitea` | `git.example.com` | Gitea UI and API hostname. |
 | `service_domains.traefik` | `traefik.example.com` | Traefik dashboard hostname and default certificate common name. |
+| `service_domains.crowdsec` | `crowdsec.example.com` | LAN-only HTTPS hostname for the authenticated CrowdSec LAPI. |
 
 ## Traefik external services
 

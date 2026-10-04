@@ -11,6 +11,7 @@
       keycloak: "keycloak.example.com"
       gitea: "git.example.com"
       traefik: "traefik.example.com"
+      crowdsec_web_ui: "crowdsec-ui.example.com"
     harbor:
       admin_password: "prod-harbor-admin"
       db_password: "prod-harbor-db"
@@ -36,6 +37,14 @@
       gitea:
         client_id: "gitea"
         client_secret: "prod-gitea-oidc-secret"
+    crowdsec:
+      enabled: true
+    crowdsec_web_ui:
+      enabled: true
+      oidc:
+        enabled: true
+        client_id: "crowdsec-web-ui"
+        client_secret: "prod-crowdsec-web-ui-oidc-secret"
     keycloak_config:
       enabled: true
       realm:
@@ -54,6 +63,11 @@
             - "https://git.example.com/user/oauth2/keycloak/callback"
           web_origins:
             - "https://git.example.com"
+        - client_id: "crowdsec-web-ui"
+          redirect_uris:
+            - "https://crowdsec-ui.example.com/api/auth/oidc/callback"
+          web_origins:
+            - "https://crowdsec-ui.example.com"
         - client_id: "automation-client"
           standard_flow_enabled: false
           service_accounts_enabled: true
@@ -155,6 +169,14 @@
       ansible.builtin.set_fact:
         openbao_groups_mapper: "{{ openbao_keycloak_client.protocol_mappers | default([]) | selectattr('name', 'equalto', 'groups') | list | first | default({}) }}"
 
+    - name: Capture CrowdSec Web UI Keycloak client
+      ansible.builtin.set_fact:
+        crowdsec_web_ui_keycloak_client: "{{ keycloak_effective_clients | selectattr('client_id', 'equalto', crowdsec_web_ui.oidc.client_id) | list | first | default({}) }}"
+
+    - name: Capture CrowdSec Web UI groups mapper
+      ansible.builtin.set_fact:
+        crowdsec_web_ui_groups_mapper: "{{ crowdsec_web_ui_keycloak_client.protocol_mappers | default([]) | selectattr('name', 'equalto', 'groups') | list | first | default({}) }}"
+
     - name: Capture Gitea groups mapper
       ansible.builtin.set_fact:
         gitea_groups_mapper: "{{ gitea_keycloak_client.protocol_mappers | default([]) | selectattr('name', 'equalto', 'groups') | list | first | default({}) }}"
@@ -184,6 +206,17 @@
           - gitea_groups_mapper.config['claim.name'] == 'groups'
           - gitea_oidc_client_id == oidc_clients.gitea.client_id
           - gitea_oidc_client_secret == oidc_clients.gitea.client_secret
+          - crowdsec_web_ui_keycloak_client | length > 0
+          - crowdsec_web_ui_keycloak_client.secret == crowdsec_web_ui.oidc.client_secret
+          - crowdsec_web_ui_keycloak_client.public | default(false) == false
+          - crowdsec_web_ui_groups_mapper | length > 0
+          - crowdsec_web_ui_groups_mapper.protocolMapper == 'oidc-group-membership-mapper'
+          - crowdsec_web_ui_groups_mapper.config['claim.name'] == 'groups'
+          - crowdsec_web_ui_groups_mapper.config['full.path'] == 'false'
+          - crowdsec_web_ui_groups_mapper.config['id.token.claim'] == 'true'
+          - crowdsec_web_ui_groups_mapper.config['userinfo.token.claim'] == 'true'
+          - crowdsec_web_ui_keycloak_client.redirect_uris == ['https://crowdsec-ui.example.com/api/auth/oidc/callback']
+          - crowdsec_web_ui_keycloak_client.web_origins == ['https://crowdsec-ui.example.com']
           - gitea_oidc_discovery_url == 'https://keycloak.example.com/realms/homelab/.well-known/openid-configuration'
           - keycloak_openbao_publication_clients | map(attribute='client_id') | list == ['automation-client']
           - (keycloak_effective_clients | selectattr('client_id', 'equalto', 'automation-client') | list | length) == 1

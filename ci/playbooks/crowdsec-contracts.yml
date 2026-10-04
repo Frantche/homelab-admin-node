@@ -1,0 +1,227 @@
+---
+- name: Validate CrowdSec and Traefik rendering contracts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    admin_node_root: "/srv/admin"
+    ci_mode: true
+    traefik_letsencrypt_enabled: false
+    TRAEFIK_DASHBOARD_BASIC_AUTH: "admin:test"
+    service_domains:
+      openbao: "bao.example.com"
+      keycloak: "keycloak.example.com"
+      gitea: "git.example.com"
+      harbor: "harbor.example.com"
+      traefik: "traefik.example.com"
+      crowdsec: "crowdsec.example.com"
+    traefik:
+      dashboard_enabled: true
+      forwarded_headers_trusted_ips:
+        - "172.16.0.0/12"
+      security:
+        interactive_rate_limit:
+          average: 100
+          burst: 200
+        interactive_max_in_flight: 100
+        transfer_max_in_flight: 200
+    traefik_external_services:
+      - name: "nas"
+        hostname: "nas.example.com"
+        url: "http://192.168.1.50"
+    cloudflare:
+      enabled: true
+      tunnel_id: "00000000-0000-0000-0000-000000000000"
+      origin_network:
+        subnet: "172.31.255.0/29"
+        traefik_ip: "172.31.255.2"
+        cloudflared_ip: "172.31.255.3"
+    hardening:
+      apparmor:
+        enabled: false
+        profiles:
+          cloudflared: false
+    crowdsec:
+      enabled: true
+      agent:
+        enabled: true
+        collections:
+          - crowdsecurity/traefik
+        fast_http_probing:
+          enabled: true
+          capacity: 3
+          leakspeed: "10s"
+      remediation:
+        ban_duration: "4h"
+        recidivism:
+          enabled: true
+          window: "720h"
+      image: "crowdsecurity/crowdsec:v1.8.1@sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975"
+      capi:
+        enabled: true
+      lapi:
+        allowed_cidrs:
+          - "192.168.1.0/24"
+      traefik_bouncer:
+        plugin_version: "v1.4.5"
+        update_interval_seconds: 60
+    crowdsec_web_ui_secret_gid: 45000
+    crowdsec_web_ui_oidc_client_id: "crowdsec-web-ui"
+    crowdsec_web_ui:
+      enabled: true
+      image: "ghcr.io/theduffman85/crowdsec-web-ui:2026.8.1"
+      hostname: "crowdsec-ui.example.com"
+      uid: 1000
+      lapi:
+        username: "crowdsec-web-ui"
+        password: "ci-crowdsec-web-ui-lapi-password"
+      oidc:
+        enabled: true
+        client_id: "crowdsec-web-ui"
+        client_secret: "ci-crowdsec-web-ui-oidc-secret"
+        issuer_url: "https://keycloak.example.com/realms/homelab"
+        admin_groups: ["admin"]
+  tasks:
+    - name: Render CrowdSec stack and Traefik configuration
+      ansible.builtin.set_fact:
+        crowdsec_compose: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/crowdsec/compose.yaml.j2') }}"
+        crowdsec_profiles_template: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../ansible/roles/crowdsec/templates/profiles.yaml.j2') }}"
+        crowdsec_fast_probing_template: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../ansible/roles/crowdsec/templates/fast-http-probing.yaml.j2') }}"
+        crowdsec_traefik_compose: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/compose.yaml.j2') }}"
+        crowdsec_traefik_static: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/traefik.yml.j2') }}"
+        crowdsec_traefik_ci_static: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/traefik-ci.yml') }}"
+        crowdsec_traefik_dynamic: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/traefik/dynamic/config.yml.j2') }}"
+        crowdsec_cloudflared_compose: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/cloudflared/compose.yaml.j2') }}"
+        crowdsec_cloudflared_config: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/cloudflared/config.yml.tpl') }}"
+        crowdsec_web_ui_compose: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/crowdsec-web-ui/compose.yaml.j2') }}"
+        crowdsec_acquisition_template: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../ansible/roles/crowdsec/templates/acquis-traefik.yaml.j2') }}"
+        crowdsec_default_vars: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../ansible/group_vars/all.yml') | from_yaml }}"
+        crowdsec_web_ui_tasks: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../ansible/roles/crowdsec_web_ui/tasks/main.yml') }}"
+        admin_site_tasks: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../ansible/site.yml') }}"
+        admin_secret_example: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../examples/admin-config/group_vars/secrets.sops.yaml.example') }}"
+        admin_config_example: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../examples/admin-config/group_vars/all.yml.example') | from_yaml }}"
+
+    - name: Assert CrowdSec Web UI secret access and CI wiring contracts
+      ansible.builtin.assert:
+        that:
+          - "'user: node' in crowdsec_web_ui_compose"
+          - "'group_add:' in crowdsec_web_ui_compose"
+          - "'45000' in crowdsec_web_ui_compose"
+          - "'NODE_EXTRA_CA_CERTS: /etc/ssl/certs/admin-node-ca.pem' in crowdsec_web_ui_compose"
+          - "'/srv/admin/certs/ca.pem:/etc/ssl/certs/admin-node-ca.pem:ro' in crowdsec_web_ui_compose"
+          - "'cap_add:' not in crowdsec_web_ui_compose"
+          - "'crowdsec-web-ui-secrets' in crowdsec_web_ui_tasks"
+          - "'mode: \"0640\"' in crowdsec_web_ui_tasks"
+          - crowdsec_web_ui_tasks is not search('path:.*/env"')
+          - "'state: started' in crowdsec_web_ui_tasks"
+          - "'vault_oidc_crowdsec_web_ui_client_secret:' in admin_site_tasks"
+          - "'vault_crowdsec_web_ui_lapi_password:' in admin_site_tasks"
+          - "'vault_oidc_crowdsec_web_ui_client_secret:' in admin_secret_example"
+          - "'vault_crowdsec_web_ui_lapi_password:' in admin_secret_example"
+          - "'oidc_clients.crowdsec_web_ui.client_id' in admin_config_example.crowdsec_web_ui.oidc.client_id"
+          - "'oidc_clients.crowdsec_web_ui.client_secret' in admin_config_example.crowdsec_web_ui.oidc.client_secret"
+          - >-
+            (admin_config_example.crowdsec_web_ui.oidc.admin_groups | default([])
+            | intersect((admin_secret_example | from_yaml).keycloak_config.users[0].groups | default([]))
+            | length) > 0
+          - >-
+            (admin_config_example.keycloak_config.clients
+            | selectattr('client_id', 'equalto', 'crowdsec-web-ui')
+            | map(attribute='redirect_uris') | first)
+            == ['https://crowdsec-ui.example.com/api/auth/oidc/callback']
+        fail_msg: "CrowdSec Web UI runtime or secret wiring contract is incomplete."
+
+    - name: Assert CrowdSec agent-enabled stack contracts
+      ansible.builtin.assert:
+        that:
+          - "'DISABLE_AGENT: \"false\"' in crowdsec_compose"
+          - "'COLLECTIONS: \"crowdsecurity/traefik\"' in crowdsec_compose"
+          - "'duration: 4h' in crowdsec_profiles_template"
+          - "'GetDecisionsSinceCount(Alert.GetValue()' in crowdsec_profiles_template"
+          - "'720h' in crowdsec_profiles_template"
+          - "'* 4)' in crowdsec_profiles_template"
+          - "'name: local/admin-node-http-probing-fast' in crowdsec_fast_probing_template"
+          - "'capacity: 3' in crowdsec_fast_probing_template"
+          - "'distinct: \"evt.Meta.http_path\"' in crowdsec_fast_probing_template"
+          - "'reprocess: true' in crowdsec_fast_probing_template"
+          - "crowdsec_default_vars.crowdsec.remediation.ban_duration == '4h'"
+          - "crowdsec_default_vars.crowdsec.remediation.recidivism.enabled == true"
+          - "crowdsec_default_vars.crowdsec.remediation.recidivism.window == '720h'"
+          - "crowdsec_default_vars.crowdsec.traefik_bouncer.update_interval_seconds == 60"
+          - "crowdsec_default_vars.crowdsec.agent.fast_http_probing.enabled == false"
+          - "'DISABLE_ONLINE_API: \"false\"' in crowdsec_compose"
+          - "'/etc/crowdsec' in crowdsec_compose"
+          - "'/var/lib/crowdsec/data' in crowdsec_compose"
+          - "'bouncer_key_traefik' in crowdsec_compose"
+          - "'ports:' not in crowdsec_compose"
+          - "'/srv/admin/data/traefik/crowdsec-logs:/var/log/traefik:ro' in crowdsec_compose"
+          - "'filePath: /var/log/traefik/access.log' in crowdsec_traefik_ci_static"
+          - "'format: json' in crowdsec_traefik_ci_static"
+          - "'filenames:' in crowdsec_acquisition_template"
+          - "'/var/log/traefik/access.log' in crowdsec_acquisition_template"
+          - "'type: traefik' in crowdsec_acquisition_template"
+          - "crowdsec_default_vars.crowdsec.agent.enabled == false"
+          - "'traefik-crowdsec' in crowdsec_compose"
+          - "'crowdsec-egress' in crowdsec_compose"
+          - "'maxsize 25M' in lookup('ansible.builtin.file', playbook_dir ~ '/../../stacks/traefik/crowdsec-access-log.logrotate.j2')"
+
+    - name: Assert Traefik CrowdSec plugin contracts
+      ansible.builtin.assert:
+        that:
+          - >-
+            'keycloak.example.com' in
+            crowdsec_traefik_compose.split('traefik-crowdsec:')[1].split('networks:')[0]
+          - "'moduleName: github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin' in crowdsec_traefik_static"
+          - "'version: \"v1.4.5\"' in crowdsec_traefik_static"
+          - "'/plugins-storage' in crowdsec_traefik_compose"
+          - "'/run/secrets/crowdsec-traefik-bouncer-key' in crowdsec_traefik_compose"
+          - "'crowdsecMode: stream' in crowdsec_traefik_dynamic"
+          - "'updateMaxFailure: -1' in crowdsec_traefik_dynamic"
+          - "'crowdsecAppsecEnabled: false' in crowdsec_traefik_dynamic"
+          - "'crowdsecLapiKeyFile: /run/secrets/crowdsec-traefik-bouncer-key' in crowdsec_traefik_dynamic"
+          - "'forwardedHeadersTrustedIPs:' in crowdsec_traefik_dynamic"
+          - "crowdsec_traefik_static.count('- crowdsec-bouncer@file') == 2"
+          - "'cloudflarewebsecure:' in crowdsec_traefik_static"
+          - "'172.31.255.3/32' in crowdsec_traefik_static"
+          - "'/var/log/traefik/access.log' in crowdsec_traefik_static"
+          - "'crowdsec-logs:/var/log/traefik' in crowdsec_traefik_compose"
+
+    - name: Assert LAN-only LAPI and route coverage contracts
+      ansible.builtin.assert:
+        that:
+          - "'rule: \"Host(`crowdsec.example.com`)\"' in crowdsec_traefik_dynamic"
+          - "'crowdsec-lapi-allowlist' in crowdsec_traefik_dynamic"
+          - "'192.168.1.0/24' in crowdsec_traefik_dynamic"
+          - "crowdsec_traefik_dynamic.count('- crowdsec-bouncer') == 0"
+          - "crowdsec_traefik_dynamic.count('- cloudflarewebsecure') == 4"
+          - "'service: crowdsec-lapi' in crowdsec_traefik_dynamic"
+          - "'crowdsec-lapi-allowlist' in crowdsec_traefik_dynamic"
+
+    - name: Assert dedicated Cloudflare origin contracts
+      ansible.builtin.assert:
+        that:
+          - "crowdsec_cloudflared_config.count('service: \"https://traefik:8443\"') == 4"
+          - "'traefik-cloudflared:' in crowdsec_cloudflared_compose"
+          - "'ipv4_address: \"172.31.255.2\"' in crowdsec_traefik_compose"
+          - "'ipv4_address: \"172.31.255.3\"' in crowdsec_cloudflared_compose"
+          - "'cloudflare-egress: {}' in crowdsec_cloudflared_compose"
+          - "'admin-edge' not in crowdsec_cloudflared_compose"
+
+    - name: Read CrowdSec reconciliation role
+      ansible.builtin.set_fact:
+        crowdsec_role_tasks: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../ansible/roles/crowdsec/tasks/main.yml') }}"
+        traefik_role_tasks: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../ansible/roles/traefik/tasks/main.yml') }}"
+
+    - name: Assert CrowdSec bouncer registration contracts
+      ansible.builtin.assert:
+        that:
+          - "'cscli bouncers add' in crowdsec_role_tasks"
+          - "'admin-node-traefik-' in crowdsec_role_tasks"
+          - "'/run/secrets/bouncer_key_traefik' in crowdsec_role_tasks"
+
+    - name: Assert local TLS certificate includes the CrowdSec Web UI hostname
+      ansible.builtin.assert:
+        that:
+          - "'crowdsec_web_ui | default({})).hostname' in traefik_role_tasks"
+          - "'subjectAltName=' in traefik_role_tasks"
+          - "'traefik_local_tls_expected_dns_names' in traefik_role_tasks"

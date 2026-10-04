@@ -465,6 +465,17 @@ func TestObservabilityOKWhenCollectorIsHealthy(t *testing.T) {
 	}
 }
 
+func TestObservabilitySkippedWhenDisabled(t *testing.T) {
+	v := Validator{
+		Config: config.Config{ObservabilityDisabled: true},
+		Runner: observabilityRunner{},
+	}
+	result := v.Observability(context.Background())
+	if result.Status != StatusSkipped {
+		t.Fatalf("status = %s, want %s (%s)", result.Status, StatusSkipped, result.Message)
+	}
+}
+
 func TestObservabilityOKWithExpectedMockContent(t *testing.T) {
 	mockDir := t.TempDir()
 	t.Setenv("CI_OTEL_MOCK_STATE_DIR", mockDir)

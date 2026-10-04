@@ -9,6 +9,7 @@ cat >"$tmp_dir/secrets.yaml" <<'EOF'
 vault_oidc_harbor_client_secret: oidc-harbor-old
 vault_oidc_openbao_client_secret: oidc-openbao-old
 vault_oidc_gitea_client_secret: oidc-gitea-old
+vault_oidc_crowdsec_web_ui_client_secret: oidc-crowdsec-web-ui-old
 keycloak:
   db_password: keycloak-db-old
   admin_password: keycloak-admin-old

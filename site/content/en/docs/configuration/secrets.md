@@ -42,7 +42,7 @@ Typical secret groups are:
 | `openbao.root_token` | OpenBao root token used by the OpenBao configuration role. |
 | `keycloak_config.users[].password` | Password for managed Keycloak users. |
 | `keycloak_config.clients[].secret` | Secret for extra Keycloak clients, when not supplied through `oidc_clients`. |
-| `oidc_clients.*.client_secret` | Shared OIDC client secrets for Harbor, OpenBao, and Gitea. |
+| `oidc_clients.*.client_secret` | Shared OIDC client secrets for Harbor, OpenBao, Gitea, and CrowdSec Web UI. |
 | `backup.restic_repositories[].password` | Restic repository password. |
 | `backup.restic_repositories[].env` | Backend-specific environment variables such as S3 credentials. |
 | `observability.*` | Optional credentials or endpoint-specific values if telemetry backends require them. |
