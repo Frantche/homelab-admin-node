@@ -95,4 +95,4 @@ pinned image. Fixable critical findings block images maintained under
 `ghcr.io/frantche/`; findings in third-party images are listed as non-blocking
 workflow warnings because their remediation depends on the upstream publisher.
 
-CI can use mock Pi-hole and Cloudflare Tunnel services when real external infrastructure is not available.
+CI can use mock DNS-provider and Cloudflare Tunnel behavior when real external infrastructure is not available.

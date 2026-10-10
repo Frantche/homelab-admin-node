@@ -72,10 +72,20 @@ traefik:
       tls:
         verify: false
 
-pihole:
+dns:
   enabled: true
+  provider: "pihole" # or "adguardhome"
+  records:
+    - name: "nas.mondomaine.fr"
+      ip: "{{ admin_node_lan_ip }}"
+
+pihole:
   url: "http://pihole.local/admin"
   api_url: "http://pihole.local"
+
+adguardhome:
+  api_url: "http://adguardhome.local"
+  username: "admin"
   dns_records:
     - name: "harbor.mondomaine.fr"
       ip: "{{ admin_node_lan_ip }}"

@@ -119,7 +119,7 @@ traefik:
     - name: "nas"
       hostname: "nas.example.com"
       url: "https://192.168.1.50:8443"
-      pihole_dns: true
+      local_dns: true
       cloudflare: false
       tls:
         verify: false
@@ -133,7 +133,7 @@ Use `tls.ca_pem` instead of `tls.verify: false` when the backend has a private C
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ci.mock_pihole` | `true` | Allows Pi-hole validation to run against CI mocks. |
+| `ci.mock_dns` | `true` | Allows DNS provider validation to use CI mocks. `ci.mock_pihole` remains a compatibility alias. |
 | `ci.mock_cloudflare_tunnel` | `true` | Allows Cloudflare Tunnel validation to run without a real tunnel. |
 | `ci.skip_public_url_validation` | `true` | Skips public URL validation in CI-oriented runs. |
 

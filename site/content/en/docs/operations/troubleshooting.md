@@ -52,7 +52,7 @@ covers every required DNS zone. See
 
 ## External integrations
 
-`ci_mode: true` enables mock behavior for integrations such as Pi-hole and Cloudflare Tunnel. It is useful for bootstrap when external providers are not ready, but production validation requires real provider credentials, correct Pi-hole API settings, and a valid Cloudflare tunnel token.
+`ci_mode: true` enables mock behavior for integrations such as Pi-hole, AdGuard Home, and Cloudflare Tunnel. It is useful for bootstrap when external providers are not ready, but production validation requires real DNS provider credentials and a valid Cloudflare tunnel token.
 
 ## Services
 

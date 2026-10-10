@@ -569,8 +569,17 @@ func (v Validator) Hardening(ctx context.Context) CheckResult {
 			"tcpkeepalive no",
 		}
 		for _, expected := range expectedSSH {
-			if !containsFieldsLineFold(result.Stdout, expected) {
-				return StatusFail, "sshd option mismatch: expected " + expected
+			if !containsSSHDOption(result.Stdout, expected) {
+				expectedFields := strings.Fields(expected)
+				actual := "not present"
+				for _, line := range strings.Split(result.Stdout, "\n") {
+					fields := strings.Fields(line)
+					if len(fields) > 0 && len(expectedFields) > 0 && strings.EqualFold(fields[0], expectedFields[0]) {
+						actual = line
+						break
+					}
+				}
+				return StatusFail, fmt.Sprintf("sshd option mismatch: expected %s, got %s", expected, actual)
 			}
 		}
 		expectedSysctls := map[string]string{
@@ -711,6 +720,26 @@ func containsFieldsLineFold(text string, expected string) bool {
 	return false
 }
 
+func containsSSHDOption(text string, expected string) bool {
+	expectedFields := strings.Fields(expected)
+	if len(expectedFields) != 2 {
+		return false
+	}
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 || !strings.EqualFold(fields[0], expectedFields[0]) {
+			continue
+		}
+		actualValue, expectedValue := strings.ToLower(fields[1]), strings.ToLower(expectedFields[1])
+		if actualValue == expectedValue ||
+			(expectedValue == "yes" && actualValue == "true") ||
+			(expectedValue == "no" && actualValue == "false") {
+			return true
+		}
+	}
+	return false
+}
+
 func (v Validator) Gitea(ctx context.Context) CheckResult {
 	return timed("Gitea", func() (Status, string) {
 		if v.Config.ValidateMockAll {
@@ -836,14 +865,14 @@ func (v Validator) Traefik(ctx context.Context) CheckResult {
 
 func (v Validator) DNS(ctx context.Context) CheckResult {
 	return timed("DNS", func() (Status, string) {
-		if v.Config.PiholeDisabled {
-			return StatusSkipped, "PIHOLE_ENABLED=false"
+		if v.Config.DNSDisabled || v.Config.PiholeDisabled {
+			return StatusSkipped, "DNS_ENABLED=false"
 		}
 		if v.Config.ValidateMockAll {
 			return StatusSkipped, "ADMIN_NODE_VALIDATE_MOCK_ALL=true"
 		}
-		if v.Config.CIMockPihole {
-			return StatusSkipped, "CI_MOCK_PIHOLE=true"
+		if v.Config.CIMockDNS || v.Config.CIMockPihole {
+			return StatusSkipped, "CI_MOCK_DNS=true"
 		}
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()

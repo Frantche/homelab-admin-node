@@ -38,7 +38,7 @@ traefik:
     - name: "nas"
       hostname: "nas.example.com"
       url: "http://192.168.1.50:8080"
-      pihole_dns: true
+      local_dns: true
       cloudflare: false
 ```
 
@@ -69,4 +69,4 @@ traefik:
           -----END CERTIFICATE-----
 ```
 
-`pihole_dns: true` adds a local DNS record to `admin_node_lan_ip`. `cloudflare: true` renders the hostname in the local Cloudflare Tunnel ingress config and requires `cloudflare.tunnel_id` plus `cloudflare.credentials_json`.
+`local_dns: true` adds a local DNS record to `admin_node_lan_ip`. The legacy `pihole_dns` option remains supported. `cloudflare: true` renders the hostname in the local Cloudflare Tunnel ingress config and requires `cloudflare.tunnel_id` plus `cloudflare.credentials_json`.

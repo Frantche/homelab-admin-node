@@ -95,42 +95,63 @@ under `secret/crowdsec/lapi/machine`. Secret-bearing Ansible operations are
 redacted.
 
 `service_domains.crowdsec` is added to the local certificate and should have a
-Pi-hole record pointing to the admin node. It is deliberately omitted from the
-Cloudflare Tunnel. Future Talos bouncers should receive individual LAPI keys;
-do not reuse the admin-node Traefik key.
+local DNS record pointing to the admin node. It is deliberately omitted from
+the Cloudflare Tunnel. Future Talos bouncers should receive individual LAPI
+keys; do not reuse the admin-node Traefik key.
 
 See [CrowdSec and Traefik]({{< relref "/docs/configuration/crowdsec" >}}) for
 the ingress architecture, Cloudflare client-IP handling, verification commands,
 credential paths, failure behavior, and operational procedures.
 
-## Pi-hole DNS
+## Internal DNS
 
-Pi-hole integration creates or validates local DNS records.
+The selected provider creates missing local DNS records and validates that
+they resolve to the expected IP. The repository configures an existing DNS
+server; it does not deploy Pi-hole or AdGuard Home.
 
-Reference: [Pi-hole documentation](https://docs.pi-hole.net/).
+References: [Pi-hole](https://docs.pi-hole.net/) and
+[AdGuard Home](https://github.com/AdguardTeam/AdGuardHome).
 
 ```yaml
-pihole:
+dns:
   enabled: true
+  provider: "pihole" # or "adguardhome"
+  records:
+    - name: "harbor.example.com"
+      ip: "{{ admin_node_lan_ip }}"
+
+pihole:
   api_version: "auto"
   url: "http://pihole.local/admin"
   api_url: "http://pihole.local"
-  dns_records:
-    - name: "harbor.example.com"
-      ip: "{{ admin_node_lan_ip }}"
+
+adguardhome:
+  api_url: "http://adguardhome.local"
+  username: "admin"
+  validate_certs: true
 ```
 
-Store the Pi-hole API token in encrypted secrets.
+Store `pihole.api_token` or `adguardhome.password` in encrypted secrets. The
+AdGuard Home integration uses its HTTP API to list and add DNS rewrites.
 
 | Variable | Default/example | Purpose |
 | --- | --- | --- |
-| `pihole.enabled` | `true` | Enables Pi-hole DNS record management and validation. |
+| `dns.enabled` | `true` | Enables internal DNS record management and validation. Defaults to legacy `pihole.enabled` when omitted. |
+| `dns.provider` | `pihole` | Selects `pihole` or `adguardhome`. |
+| `dns.records[].name` | `harbor.example.com` | DNS name to create or validate. |
+| `dns.records[].ip` | `{{ admin_node_lan_ip }}` | Target IP for the DNS record. |
 | `pihole.api_version` | `auto` | API mode used by the role. Supported values are `auto`, `v5`, and `v6`. |
 | `pihole.url` | `http://pihole.local/admin` | Pi-hole admin UI URL. |
 | `pihole.api_url` | `http://pihole.local` | Base URL used for Pi-hole API calls. |
-| `pihole.dns_records[].name` | `harbor.example.com` | DNS name to create or validate. |
-| `pihole.dns_records[].ip` | `{{ admin_node_lan_ip }}` | Target IP for the DNS record. |
-| `pihole.api_token` | secret | API token stored in the active environment secrets file, such as `di/group_vars/secrets.sops.yaml`. |
+| `pihole.api_token` | secret | Pi-hole API token stored in encrypted secrets. |
+| `adguardhome.api_url` | `http://adguardhome.local` | AdGuard Home base API URL. |
+| `adguardhome.username` | `admin` | AdGuard Home API username. |
+| `adguardhome.password` | secret | AdGuard Home API password stored in encrypted secrets. |
+| `adguardhome.validate_certs` | `true` outside CI | Validates TLS certificates for AdGuard Home API calls. |
+
+For existing config repositories, `pihole.dns_records` remains a fallback when
+`dns.records` is omitted. Traefik external services can use `local_dns: true`;
+the legacy `pihole_dns` option remains supported.
 
 ## Cloudflare Tunnel
 

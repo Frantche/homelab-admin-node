@@ -506,6 +506,22 @@ func TestContainsFieldsLineFoldMatchesSSHDOutput(t *testing.T) {
 	}
 }
 
+func TestContainsSSHDOptionAcceptsOpenSSHDumpBooleans(t *testing.T) {
+	output := "TCPKeepAlive false\npubkeyauthentication true\npasswordauthentication no\n"
+	for _, expected := range []string{
+		"tcpkeepalive no",
+		"PubkeyAuthentication yes",
+		"passwordauthentication no",
+	} {
+		if !containsSSHDOption(output, expected) {
+			t.Errorf("expected %q to match OpenSSH output %q", expected, output)
+		}
+	}
+	if containsSSHDOption(output, "TCPKeepAlive yes") {
+		t.Fatal("TCPKeepAlive false must not match expected yes")
+	}
+}
+
 func TestObservabilityFailsWhenMetricContentIsMissing(t *testing.T) {
 	mockDir := t.TempDir()
 	t.Setenv("CI_OTEL_MOCK_STATE_DIR", mockDir)
@@ -702,7 +718,7 @@ func TestDNSDisabledSkipped(t *testing.T) {
 	if result.Status != StatusSkipped {
 		t.Fatalf("status = %s, want %s", result.Status, StatusSkipped)
 	}
-	if !strings.Contains(result.Message, "PIHOLE_ENABLED=false") {
+	if !strings.Contains(result.Message, "DNS_ENABLED=false") {
 		t.Fatalf("message = %q", result.Message)
 	}
 }

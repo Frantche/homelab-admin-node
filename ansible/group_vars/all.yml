@@ -63,7 +63,7 @@ crowdsec:
 
 crowdsec_web_ui:
   enabled: false
-  image: "ghcr.io/theduffman85/crowdsec-web-ui:2026.8.1@sha256:6acdda14b96f3ccad25132e64f1218854238e0a86d1407ed27eb74b11dbd4dca"
+  image: "ghcr.io/theduffman85/crowdsec-web-ui:2026.10.1@sha256:4f5426310ffc527578dc801a967c3119031b7c03d56af60541b01a2f52b43c91"
   hostname: "crowdsec-ui.example.com"
   lapi:
     username: "crowdsec-web-ui"
@@ -83,6 +83,9 @@ service_domains:
   traefik: "traefik.example.com"
   crowdsec: "crowdsec.example.com"
 
+dns:
+  provider: "pihole"
+
 pihole:
   enabled: true
   api_version: "auto"
@@ -100,6 +103,11 @@ pihole:
     - name: "traefik.example.com"
       ip: "{{ admin_node_lan_ip }}"
 
+adguardhome:
+  api_url: "http://adguardhome.local"
+  username: "admin"
+  validate_certs: true
+
 cloudflare:
   enabled: true
   # Private origin link between cloudflared and Traefik. The fixed connector
@@ -113,6 +121,7 @@ cloudflare:
     zone: "example.com"
 
 ci:
+  mock_dns: true
   mock_pihole: true
   mock_cloudflare_tunnel: true
   skip_public_url_validation: true

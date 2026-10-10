@@ -1,0 +1,45 @@
+---
+- name: Validate selected DNS provider API
+  ansible.builtin.uri:
+    url: "{{ pihole_api_url ~ ('/api/auth' if pihole_api_version_effective == 'v6' else '/admin/api.php') if dns_provider_effective == 'pihole' else adguardhome_api_url ~ '/control/rewrite/list' }}"
+    method: GET
+    user: "{{ (adguardhome | default({})).username | default(omit) if dns_provider_effective == 'adguardhome' else omit }}"
+    password: "{{ (adguardhome | default({})).password | default(omit) if dns_provider_effective == 'adguardhome' else omit }}"
+    force_basic_auth: "{{ dns_provider_effective == 'adguardhome' }}"
+    status_code: "{{ [200, 401] if dns_provider_effective == 'pihole' and pihole_api_version_effective == 'v6' else 200 }}"
+    validate_certs: "{{ dns_api_validate_certs }}"
+  changed_when: false
+  no_log: "{{ dns_provider_effective == 'adguardhome' }}"
+  when: dns_provider_effective == 'pihole'
+
+- name: Validate AdGuard Home API reachability
+  ansible.builtin.uri:
+    url: "{{ adguardhome_api_url }}/control/rewrite/list"
+    method: GET
+    user: "{{ adguardhome.username }}"
+    password: "{{ adguardhome.password }}"
+    force_basic_auth: true
+    status_code: 200
+    validate_certs: "{{ dns_api_validate_certs }}"
+  changed_when: false
+  no_log: true
+  when: dns_provider_effective == 'adguardhome'
+
+- name: Validate DNS resolution for configured records
+  ansible.builtin.command:
+    argv:
+      - getent
+      - ahostsv4
+      - "{{ item.name }}"
+  register: dns_results
+  changed_when: false
+  loop: "{{ dns_effective_records }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Assert DNS records resolve to expected IP
+  ansible.builtin.assert:
+    that:
+      - item.item.ip in (item.stdout_lines | map('split') | map('first') | list)
+    fail_msg: "DNS record {{ item.item.name }} does not resolve to {{ item.item.ip }}"
+  loop: "{{ dns_results.results }}"

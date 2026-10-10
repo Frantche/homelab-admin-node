@@ -47,6 +47,26 @@ service_domains:
   traefik: "traefik.example.com"
   crowdsec: "crowdsec.example.com"
 
+dns:
+  enabled: true
+  provider: "pihole" # or "adguardhome"
+  records:
+    - name: "harbor.example.com"
+      ip: "{{ admin_node_lan_ip }}"
+    - name: "bao.example.com"
+      ip: "{{ admin_node_lan_ip }}"
+    - name: "keycloak.example.com"
+      ip: "{{ admin_node_lan_ip }}"
+    - name: "git.example.com"
+      ip: "{{ admin_node_lan_ip }}"
+    - name: "traefik.example.com"
+      ip: "{{ admin_node_lan_ip }}"
+
+adguardhome:
+  api_url: "http://adguardhome.local"
+  username: "admin"
+  validate_certs: true
+
 cloudflare:
   enabled: true
   origin_network:
@@ -56,6 +76,9 @@ cloudflare:
   dns:
     enabled: false
     zone: "example.com"
+
+ci:
+  mock_dns: true
 
 backup:
   offline:

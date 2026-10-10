@@ -14,7 +14,7 @@ You need:
 - `age` and `sops` for encrypted secrets.
 - DNS names for the services, either local-only or public.
 - Optional Cloudflare account and tunnel if public ingress is required.
-- Optional Pi-hole if local DNS records should be managed automatically.
+- Optional Pi-hole or AdGuard Home instance if local DNS records should be managed automatically.
 
 The VM should have at least:
 
@@ -23,4 +23,4 @@ The VM should have at least:
 - 20 GiB disk minimum, more if Harbor or local backups are used.
 - Btrfs root filesystem for the default storage-isolation example and CI quota path. LVM storage isolation requires an existing guest OS volume group.
 
-Development and CI use mocks for Pi-hole and Cloudflare Tunnel when external infrastructure is unavailable.
+Development and CI use mocks for DNS providers and Cloudflare Tunnel when external infrastructure is unavailable.

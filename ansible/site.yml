@@ -48,6 +48,7 @@
       ansible.builtin.set_fact:
         admin: "{{ admin | default({}) | combine(decrypted_inventory_secrets.admin | default({}), recursive=True) }}"
         pihole: "{{ pihole | default({}) | combine(decrypted_inventory_secrets.pihole | default({}), recursive=True) }}"
+        adguardhome: "{{ adguardhome | default({}) | combine(decrypted_inventory_secrets.adguardhome | default({}), recursive=True) }}"
         cloudflare: "{{ cloudflare | default({}) | combine(decrypted_inventory_secrets.cloudflare | default({}), recursive=True) }}"
         openbao: "{{ openbao | default({}) | combine(decrypted_inventory_secrets.openbao | default({}), recursive=True) }}"
         keycloak: "{{ keycloak | default({}) | combine(decrypted_inventory_secrets.keycloak | default({}), recursive=True) }}"
@@ -151,8 +152,8 @@
       when: admin_mode == 'normal' and (gitea_config.enabled | default(false))
     - role: cloudflare
       when: admin_mode in ['init', 'normal'] and ((cloudflare.enabled | default(true)) | bool)
-    - role: pihole_dns
-      when: admin_mode in ['init', 'normal'] and not (ci_mode | default(false)) and ((pihole.enabled | default(true)) | bool)
+    - role: internal_dns
+      when: admin_mode in ['init', 'normal'] and not (ci_mode | default(false)) and ((dns.enabled | default(pihole.enabled | default(true))) | bool)
     - role: validate_apis
       when: admin_mode == 'normal'
     - role: backup

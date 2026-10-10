@@ -47,6 +47,9 @@ func TestFromEnvDefaults(t *testing.T) {
 	if cfg.PiholeDisabled {
 		t.Fatal("PiholeDisabled = true, want false")
 	}
+	if cfg.DNSDisabled {
+		t.Fatal("DNSDisabled = true, want false")
+	}
 	if cfg.CloudflareDisabled {
 		t.Fatal("CloudflareDisabled = true, want false")
 	}
@@ -78,6 +81,19 @@ func TestFromEnvReadsStackFlagsFromBackupEnv(t *testing.T) {
 	t.Setenv("OBSERVABILITY_ENABLED", "false")
 	if cfg := FromEnv(); !cfg.ObservabilityDisabled {
 		t.Fatal("explicit OBSERVABILITY_ENABLED did not override backup.env")
+	}
+}
+
+func TestDNSFlagPrefersGenericRuntimeValueAndSupportsLegacyValue(t *testing.T) {
+	isolateManagedRuntimeFiles(t)
+	t.Setenv("DNS_ENABLED", "true")
+	t.Setenv("PIHOLE_ENABLED", "false")
+	if cfg := FromEnv(); cfg.DNSDisabled {
+		t.Fatal("DNS_ENABLED=true did not override legacy PIHOLE_ENABLED=false")
+	}
+	t.Setenv("DNS_ENABLED", "")
+	if cfg := FromEnv(); !cfg.DNSDisabled {
+		t.Fatal("legacy PIHOLE_ENABLED=false was not used as the DNS fallback")
 	}
 }
 

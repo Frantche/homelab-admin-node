@@ -6,7 +6,7 @@ SHELL := /usr/bin/env bash
 	dev-deps docs docs-build docs-check docs-deps docs-serve govulncheck lint \
 	python-lint python-test render scan-container-images shellcheck sops-check \
 	test-build-admin-node-cache test-container-hardening test-disaster-recovery-actions \
-	test-crowdsec-contracts \
+	test-adguardhome-contracts test-crowdsec-contracts \
 	test-docker-api-isolation test-gitea-process-backup test-go test-grafana-dashboard-import \
 	test-harbor-mirror-validation test-harbor-robot-tokens test-image-security-policy test-image-security-scanner \
 	test-make-entrypoints test-offline-images test-oidc-contracts test-openbao-approles test-openbao-internal-tls \
@@ -40,7 +40,7 @@ lint: go-vet shellcheck actionlint python-lint ansible-lint ansible-syntax sops-
 
 ci-quality: check-ci-tools test-go lint govulncheck python-test \
 	test-build-admin-node-cache test-repo-permissions test-secret-rotation \
-	test-crowdsec-contracts \
+	test-adguardhome-contracts test-crowdsec-contracts \
 	test-system-update \
 	test-docker-api-isolation test-gitea-process-backup test-openbao-internal-tls \
 	test-harbor-robot-tokens test-openbao-approles \
@@ -121,6 +121,9 @@ test-openbao-approles:
 
 test-harbor-robot-tokens:
 	@go test ./ci -run TestHarborRobotTokens -count=1
+
+test-adguardhome-contracts:
+	@go test ./ci -run TestAdGuardHomeDNSContracts -count=1
 
 test-build-admin-node-cache:
 	@./ci/test-build-admin-node-cache.sh
