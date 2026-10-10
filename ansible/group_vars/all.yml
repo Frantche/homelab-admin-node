@@ -65,6 +65,7 @@ crowdsec_web_ui:
   enabled: false
   image: "ghcr.io/theduffman85/crowdsec-web-ui:2026.10.1@sha256:4f5426310ffc527578dc801a967c3119031b7c03d56af60541b01a2f52b43c91"
   hostname: "crowdsec-ui.example.com"
+  allowed_cidrs: []
   lapi:
     username: "crowdsec-web-ui"
     password: ""
