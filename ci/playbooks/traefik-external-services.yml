@@ -29,7 +29,7 @@
           hostname: "insecure.example.com"
           url: "https://192.0.2.20:8443"
           cloudflare: true
-          pihole_dns: true
+          local_dns: true
           tls:
             verify: false
         - name: "ca-app"
@@ -42,6 +42,11 @@
               -----BEGIN CERTIFICATE-----
               MIIBtest
               -----END CERTIFICATE-----
+        - name: "legacy-dns-app"
+          hostname: "legacy.example.com"
+          url: "http://legacy.internal:8080"
+          cloudflare: false
+          pihole_dns: true
     pihole:
       dns_records:
         - name: "traefik.example.com"
@@ -71,15 +76,15 @@
       ansible.builtin.set_fact:
         cloudflared_config: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../../stacks/cloudflared/config.yml.tpl') }}"
 
-    - name: Build Pi-hole effective DNS records
+    - name: Build effective internal DNS records
       ansible.builtin.set_fact:
-        pihole_effective_dns_records: "{{ pihole.dns_records | default([]) }}"
+        dns_effective_records: "{{ dns.records | default(pihole.dns_records | default([])) }}"
 
-    - name: Add external services to Pi-hole DNS records
+    - name: Add opted-in external services to internal DNS records
       ansible.builtin.set_fact:
-        pihole_effective_dns_records: "{{ pihole_effective_dns_records + [{'name': item.hostname, 'ip': admin_node_lan_ip}] }}"
+        dns_effective_records: "{{ dns_effective_records + [{'name': item.hostname, 'ip': admin_node_lan_ip}] }}"
       loop: "{{ traefik.external_services }}"
-      when: item.pihole_dns | default(false) | bool
+      when: item.local_dns | default(item.pihole_dns | default(false)) | bool
 
     - name: Assert Traefik external service rendering
       ansible.builtin.assert:
@@ -135,8 +140,9 @@
           - "'insecure.example.com' in cloudflare_tunnel_dns_hostnames"
           - "'ca.example.com' not in cloudflare_tunnel_dns_hostnames"
 
-    - name: Assert Pi-hole only includes opted-in external services
+    - name: Assert internal DNS only includes opted-in external services
       ansible.builtin.assert:
         that:
-          - "pihole_effective_dns_records | selectattr('name', 'equalto', 'insecure.example.com') | list | length == 1"
-          - "pihole_effective_dns_records | selectattr('name', 'equalto', 'ca.example.com') | list | length == 0"
+          - "dns_effective_records | selectattr('name', 'equalto', 'insecure.example.com') | list | length == 1"
+          - "dns_effective_records | selectattr('name', 'equalto', 'ca.example.com') | list | length == 0"
+          - "dns_effective_records | selectattr('name', 'equalto', 'legacy.example.com') | list | length == 1"

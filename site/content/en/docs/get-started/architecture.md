@@ -6,7 +6,7 @@ weight: 20
 The runtime flow is:
 
 ```text
-LAN clients -> Pi-hole -> admin-01 -> Traefik -> Keycloak/OpenBao/Harbor/Gitea
+LAN clients -> Pi-hole or AdGuard Home -> admin-01 -> Traefik -> Keycloak/OpenBao/Harbor/Gitea
 Internet    -> Cloudflare -> cloudflared -> Traefik -> same services
 ```
 

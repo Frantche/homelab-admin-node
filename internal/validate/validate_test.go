@@ -702,7 +702,7 @@ func TestDNSDisabledSkipped(t *testing.T) {
 	if result.Status != StatusSkipped {
 		t.Fatalf("status = %s, want %s", result.Status, StatusSkipped)
 	}
-	if !strings.Contains(result.Message, "PIHOLE_ENABLED=false") {
+	if !strings.Contains(result.Message, "DNS_ENABLED=false") {
 		t.Fatalf("message = %q", result.Message)
 	}
 }

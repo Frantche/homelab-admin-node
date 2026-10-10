@@ -1,0 +1,76 @@
+---
+- name: Validate AdGuard Home API configuration
+  ansible.builtin.assert:
+    that:
+      - adguardhome.api_url | default('') | length > 0
+      - adguardhome.username | default('') | length > 0
+      - adguardhome.password | default('') | length > 0
+    fail_msg: "adguardhome.api_url, adguardhome.username, and the SOPS secret adguardhome.password are required when dns.provider is adguardhome."
+
+- name: Build AdGuard Home API URL
+  ansible.builtin.set_fact:
+    adguardhome_api_url: "{{ adguardhome.api_url | regex_replace('/+$', '') }}"
+
+- name: Read existing AdGuard Home DNS rewrites
+  ansible.builtin.uri:
+    url: "{{ adguardhome_api_url }}/control/rewrite/list"
+    method: GET
+    user: "{{ adguardhome.username }}"
+    password: "{{ adguardhome.password }}"
+    force_basic_auth: true
+    status_code: 200
+    return_content: true
+    validate_certs: "{{ dns_api_validate_certs }}"
+  register: adguardhome_rewrites
+  changed_when: false
+  no_log: true
+
+- name: Add missing AdGuard Home DNS rewrites
+  ansible.builtin.uri:
+    url: "{{ adguardhome_api_url }}/control/rewrite/add"
+    method: POST
+    user: "{{ adguardhome.username }}"
+    password: "{{ adguardhome.password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      domain: "{{ item.name }}"
+      answer: "{{ item.ip }}"
+    status_code: 200
+    validate_certs: "{{ dns_api_validate_certs }}"
+  loop: "{{ dns_effective_records }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: >-
+    not (
+      adguardhome_rewrites.json
+      | selectattr('domain', 'equalto', item.name)
+      | list | length > 0
+    )
+  no_log: true
+
+- name: Update changed AdGuard Home DNS rewrites
+  ansible.builtin.uri:
+    url: "{{ adguardhome_api_url }}/control/rewrite/update"
+    method: PUT
+    user: "{{ adguardhome.username }}"
+    password: "{{ adguardhome.password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      target:
+        domain: "{{ item.name }}"
+        answer: "{{ (adguardhome_rewrites.json | selectattr('domain', 'equalto', item.name) | list | first).answer }}"
+      update:
+        domain: "{{ item.name }}"
+        answer: "{{ item.ip }}"
+    status_code: 200
+    validate_certs: "{{ dns_api_validate_certs }}"
+  loop: "{{ dns_effective_records }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: >-
+    (adguardhome_rewrites.json | selectattr('domain', 'equalto', item.name) | list | length > 0)
+    and
+    ((adguardhome_rewrites.json | selectattr('domain', 'equalto', item.name) | list | first).answer != item.ip)
+  no_log: true

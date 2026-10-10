@@ -13,7 +13,7 @@ It targets an `admin-01` node, usually deployed on Proxmox from an Arch Linux cl
 - Harbor for registry, proxy-cache mirrors, and scoped robot tokens published to OpenBao.
 - Gitea for Git hosting and validation workflows.
 - Cloudflare Tunnel for public ingress when enabled.
-- Pi-hole DNS integration for local records.
+- Pi-hole or AdGuard Home integration for local DNS records.
 - Restic backup and restore.
 - Host hardening, service validation, and lifecycle CI scenarios.
 

@@ -1,0 +1,45 @@
+---
+- name: Select and validate internal DNS provider
+  ansible.builtin.assert:
+    that:
+      - (dns.provider | default('pihole')) in ['pihole', 'adguardhome']
+    fail_msg: "dns.provider must be either 'pihole' or 'adguardhome'."
+  when: (dns.enabled | default(pihole.enabled | default(true))) | bool
+
+- name: Build internal DNS facts
+  ansible.builtin.set_fact:
+    dns_provider_effective: "{{ dns.provider | default('pihole') }}"
+    dns_api_validate_certs: "{{ ((pihole | default({})).validate_certs if (dns.provider | default('pihole')) == 'pihole' else (adguardhome | default({})).validate_certs) | default(not (ci_mode | default(false))) }}"
+    dns_effective_records: "{{ dns.records | default(pihole.dns_records | default([])) }}"
+  when: (dns.enabled | default(pihole.enabled | default(true))) | bool
+
+- name: Add Traefik external services to internal DNS records
+  ansible.builtin.set_fact:
+    dns_effective_records: "{{ dns_effective_records + [{'name': item.hostname, 'ip': admin_node_lan_ip}] }}"
+  loop: "{{ (traefik | default({})).external_services | default([]) }}"
+  loop_control:
+    label: "{{ item.hostname | default(item.name | default('unnamed')) }}"
+  when:
+    - (dns.enabled | default(pihole.enabled | default(true))) | bool
+    - item.local_dns | default(item.pihole_dns | default(false)) | bool
+
+- name: Add enabled CrowdSec LAPI to internal DNS records
+  ansible.builtin.set_fact:
+    dns_effective_records: >-
+      {{
+        dns_effective_records
+        + [{'name': service_domains.crowdsec, 'ip': admin_node_lan_ip}]
+      }}
+  when:
+    - (dns.enabled | default(pihole.enabled | default(true))) | bool
+    - crowdsec.enabled | default(false) | bool
+
+- name: Configure selected DNS provider
+  ansible.builtin.include_tasks: "{{ dns_provider_effective }}.yml"
+  when:
+    - (dns.enabled | default(pihole.enabled | default(true))) | bool
+    - not ansible_check_mode
+
+- name: Validate internal DNS records
+  ansible.builtin.include_tasks: validate.yml
+  when: (dns.enabled | default(pihole.enabled | default(true))) | bool

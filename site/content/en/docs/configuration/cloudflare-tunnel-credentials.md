@@ -106,7 +106,7 @@ traefik:
       hostname: "nas.example.com"
       url: "https://192.168.1.50:8443"
       cloudflare: true
-      pihole_dns: false
+      local_dns: false
       tls:
         ca_pem: |
           -----BEGIN CERTIFICATE-----

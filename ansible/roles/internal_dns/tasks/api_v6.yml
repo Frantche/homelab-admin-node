@@ -9,7 +9,7 @@
         body_format: json
         body:
           password: "{{ pihole.api_token }}"
-        validate_certs: "{{ pihole_api_validate_certs }}"
+        validate_certs: "{{ dns_api_validate_certs }}"
       register: pihole_v6_auth
       changed_when: false
       no_log: true
@@ -21,7 +21,7 @@
         status_code: 200
         headers:
           X-FTL-SID: "{{ pihole_v6_auth.json.session.sid }}"
-        validate_certs: "{{ pihole_api_validate_certs }}"
+        validate_certs: "{{ dns_api_validate_certs }}"
       register: pihole_v6_hosts
       changed_when: false
       no_log: true
@@ -33,8 +33,8 @@
         status_code: 201
         headers:
           X-FTL-SID: "{{ pihole_v6_auth.json.session.sid }}"
-        validate_certs: "{{ pihole_api_validate_certs }}"
-      loop: "{{ pihole_effective_dns_records }}"
+        validate_certs: "{{ dns_api_validate_certs }}"
+      loop: "{{ dns_effective_records }}"
       when: (item.ip ~ ' ' ~ item.name) not in (pihole_v6_hosts.json.config.dns.hosts | default([]))
       no_log: true
 
@@ -46,7 +46,7 @@
         status_code: [204, 401, 404]
         headers:
           X-FTL-SID: "{{ pihole_v6_auth.json.session.sid | default('') }}"
-        validate_certs: "{{ pihole_api_validate_certs }}"
+        validate_certs: "{{ dns_api_validate_certs }}"
       changed_when: false
       when: pihole_v6_auth is defined
       no_log: true

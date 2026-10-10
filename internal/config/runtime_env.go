@@ -26,6 +26,7 @@ var managedRuntimeKeys = map[string]struct{}{
 	"TRAEFIK_DOMAIN":                  {},
 	"OPENBAO_DOMAIN":                  {},
 	"PIHOLE_ENABLED":                  {},
+	"DNS_ENABLED":                     {},
 	"CLOUDFLARE_ENABLED":              {},
 	"OBSERVABILITY_ENABLED":           {},
 	"BACKUP_OPERATION_LOCK_TIMEOUT":   {},

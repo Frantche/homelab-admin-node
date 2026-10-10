@@ -1,0 +1,24 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    dns:
+      enabled: true
+      provider: adguardhome
+      records:
+        - name: existing.example.test
+          ip: 192.0.2.20
+        - name: added.example.test
+          ip: 192.0.2.21
+    adguardhome:
+      api_url: "{{ mock_base_url }}"
+      username: ci-user
+      password: ci-password
+      validate_certs: false
+    dns_api_validate_certs: false
+    dns_effective_records: "{{ dns.records }}"
+  tasks:
+    - name: Reconcile AdGuard Home DNS rewrites
+      ansible.builtin.include_tasks: ../../ansible/roles/internal_dns/tasks/adguardhome.yml
+

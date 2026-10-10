@@ -58,9 +58,11 @@ type Config struct {
 	TraefikDomain              string
 	OpenBaoDomain              string
 	CIMode                     bool
+	CIMockDNS                  bool
 	CIMockPihole               bool
 	CIMockCloudflareTunnel     bool
 	PiholeDisabled             bool
+	DNSDisabled                bool
 	CloudflareDisabled         bool
 	ObservabilityDisabled      bool
 	SkipPublicURLValidation    bool
@@ -199,9 +201,13 @@ func load(values map[string]string, loaded bool) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	piholeEnabled, err := resolveBool("PIHOLE_ENABLED", true)
+	legacyPiholeEnabled, err := resolveBool("PIHOLE_ENABLED", true)
 	if err != nil {
 		return Config{}, invalidManagedValue("PIHOLE_ENABLED")
+	}
+	dnsEnabled, err := resolveBool("DNS_ENABLED", legacyPiholeEnabled)
+	if err != nil {
+		return Config{}, invalidManagedValue("DNS_ENABLED")
 	}
 	cloudflareEnabled, err := resolveBool("CLOUDFLARE_ENABLED", true)
 	if err != nil {
@@ -249,9 +255,11 @@ func load(values map[string]string, loaded bool) (Config, error) {
 		TraefikDomain:              resolve("TRAEFIK_DOMAIN", DefaultTraefikDomain),
 		OpenBaoDomain:              resolve("OPENBAO_DOMAIN", DefaultOpenBaoDomain),
 		CIMode:                     ciMode,
+		CIMockDNS:                  getenvBool("CI_MOCK_DNS", false) || getenvBool("CI_MOCK_PIHOLE", false),
 		CIMockPihole:               getenvBool("CI_MOCK_PIHOLE", false),
 		CIMockCloudflareTunnel:     getenvBool("CI_MOCK_CLOUDFLARE_TUNNEL", false),
-		PiholeDisabled:             !piholeEnabled,
+		PiholeDisabled:             !dnsEnabled,
+		DNSDisabled:                !dnsEnabled,
 		CloudflareDisabled:         !cloudflareEnabled,
 		ObservabilityDisabled:      !observabilityEnabled,
 		SkipPublicURLValidation:    getenvBool("SKIP_PUBLIC_URL_VALIDATION", false),

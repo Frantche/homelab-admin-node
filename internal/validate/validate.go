@@ -836,14 +836,14 @@ func (v Validator) Traefik(ctx context.Context) CheckResult {
 
 func (v Validator) DNS(ctx context.Context) CheckResult {
 	return timed("DNS", func() (Status, string) {
-		if v.Config.PiholeDisabled {
-			return StatusSkipped, "PIHOLE_ENABLED=false"
+		if v.Config.DNSDisabled || v.Config.PiholeDisabled {
+			return StatusSkipped, "DNS_ENABLED=false"
 		}
 		if v.Config.ValidateMockAll {
 			return StatusSkipped, "ADMIN_NODE_VALIDATE_MOCK_ALL=true"
 		}
-		if v.Config.CIMockPihole {
-			return StatusSkipped, "CI_MOCK_PIHOLE=true"
+		if v.Config.CIMockDNS || v.Config.CIMockPihole {
+			return StatusSkipped, "CI_MOCK_DNS=true"
 		}
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()

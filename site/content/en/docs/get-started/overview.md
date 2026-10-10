@@ -13,7 +13,7 @@ The node is intentionally independent from Talos or Kubernetes. It hosts and ope
 - Harbor for container registry and proxy-cache mirrors.
 - Gitea for Git hosting and validation workflows.
 - Cloudflare Tunnel for public ingress when enabled.
-- Pi-hole DNS integration for local records.
+- Pi-hole or AdGuard Home integration for local DNS records.
 - Restic-based backups and restore.
 - Hardening, API validation, and CI lifecycle scenarios.
 

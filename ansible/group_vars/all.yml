@@ -83,6 +83,9 @@ service_domains:
   traefik: "traefik.example.com"
   crowdsec: "crowdsec.example.com"
 
+dns:
+  provider: "pihole"
+
 pihole:
   enabled: true
   api_version: "auto"
@@ -100,6 +103,11 @@ pihole:
     - name: "traefik.example.com"
       ip: "{{ admin_node_lan_ip }}"
 
+adguardhome:
+  api_url: "http://adguardhome.local"
+  username: "admin"
+  validate_certs: true
+
 cloudflare:
   enabled: true
   # Private origin link between cloudflared and Traefik. The fixed connector
@@ -113,6 +121,7 @@ cloudflare:
     zone: "example.com"
 
 ci:
+  mock_dns: true
   mock_pihole: true
   mock_cloudflare_tunnel: true
   skip_public_url_validation: true
