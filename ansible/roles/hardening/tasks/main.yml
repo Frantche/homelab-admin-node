@@ -10,29 +10,17 @@
 - name: Deploy SSH hardening drop-in
   ansible.builtin.template:
     src: sshd-hardening.conf.j2
-    dest: /etc/ssh/sshd_config.d/00-admin-hardening.conf
+    dest: /etc/ssh/sshd_config.d/99-admin-hardening.conf
     owner: root
     group: root
     mode: "0644"
     validate: sshd -t -f %s
   notify: Restart sshd
 
-- name: Remove obsolete SSH hardening drop-ins
+- name: Remove legacy SSH hardening drop-in
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: /etc/ssh/sshd_config.d/10-admin-hardening.conf
     state: absent
-  loop:
-    - /etc/ssh/sshd_config.d/10-admin-hardening.conf
-    - /etc/ssh/sshd_config.d/99-admin-hardening.conf
-  notify: Restart sshd
-
-- name: Enforce TCP keepalive policy before SSH includes
-  ansible.builtin.lineinfile:
-    path: /etc/ssh/sshd_config
-    regexp: '^\s*TCPKeepAlive\s+'
-    line: TCPKeepAlive no
-    insertbefore: BOF
-    validate: sshd -t -f %s
   notify: Restart sshd
 
 - name: Deploy sudoers policy

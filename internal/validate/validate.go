@@ -569,7 +569,7 @@ func (v Validator) Hardening(ctx context.Context) CheckResult {
 			"tcpkeepalive no",
 		}
 		for _, expected := range expectedSSH {
-			if !containsFieldsLineFold(result.Stdout, expected) {
+			if !containsSSHDOption(result.Stdout, expected) {
 				expectedFields := strings.Fields(expected)
 				actual := "not present"
 				for _, line := range strings.Split(result.Stdout, "\n") {
@@ -714,6 +714,26 @@ func containsFieldsLineFold(text string, expected string) bool {
 			}
 		}
 		if matched {
+			return true
+		}
+	}
+	return false
+}
+
+func containsSSHDOption(text string, expected string) bool {
+	expectedFields := strings.Fields(expected)
+	if len(expectedFields) != 2 {
+		return false
+	}
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 || !strings.EqualFold(fields[0], expectedFields[0]) {
+			continue
+		}
+		actualValue, expectedValue := strings.ToLower(fields[1]), strings.ToLower(expectedFields[1])
+		if actualValue == expectedValue ||
+			(expectedValue == "yes" && actualValue == "true") ||
+			(expectedValue == "no" && actualValue == "false") {
 			return true
 		}
 	}
