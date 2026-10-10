@@ -570,7 +570,16 @@ func (v Validator) Hardening(ctx context.Context) CheckResult {
 		}
 		for _, expected := range expectedSSH {
 			if !containsFieldsLineFold(result.Stdout, expected) {
-				return StatusFail, "sshd option mismatch: expected " + expected
+				expectedFields := strings.Fields(expected)
+				actual := "not present"
+				for _, line := range strings.Split(result.Stdout, "\n") {
+					fields := strings.Fields(line)
+					if len(fields) > 0 && len(expectedFields) > 0 && strings.EqualFold(fields[0], expectedFields[0]) {
+						actual = line
+						break
+					}
+				}
+				return StatusFail, fmt.Sprintf("sshd option mismatch: expected %s, got %s", expected, actual)
 			}
 		}
 		expectedSysctls := map[string]string{

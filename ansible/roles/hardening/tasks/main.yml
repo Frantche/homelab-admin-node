@@ -26,6 +26,15 @@
     - /etc/ssh/sshd_config.d/99-admin-hardening.conf
   notify: Restart sshd
 
+- name: Enforce TCP keepalive policy before SSH includes
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^\s*TCPKeepAlive\s+'
+    line: TCPKeepAlive no
+    insertbefore: BOF
+    validate: sshd -t -f %s
+  notify: Restart sshd
+
 - name: Deploy sudoers policy
   ansible.builtin.template:
     src: sudoers-admin-node.j2
