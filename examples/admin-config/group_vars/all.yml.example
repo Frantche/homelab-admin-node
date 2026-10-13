@@ -284,6 +284,8 @@ openbao_config:
   secret_engines:
     - path: "secret"
       type: "kv-v2"
+    - path: "homelab"
+      type: "kv-v2"
   oidc:
     enabled: true
     discovery_url: "https://keycloak.example.com/realms/homelab"
@@ -300,6 +302,16 @@ openbao_config:
 gitea_config:
   enabled: true
   validate_certs: true
+  # Optional Cloudbase GARM credential. Declare the homelab KV-v2 engine
+  # under openbao_config.secret_engines before enabling this integration.
+  garm_token:
+    enabled: false
+    name: "garm-token"
+    scopes: ["write:repository", "write:organization"]
+    rotation_id: "initial"
+    openbao:
+      mount: "homelab"
+      path: "gitea/runner"
   oidc:
     enabled: true
     name: "keycloak"
