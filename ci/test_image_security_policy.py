@@ -148,6 +148,18 @@ class ImageSecurityPolicyTests(unittest.TestCase):
                 self.assertEqual(source["currentValue"], inventory["currentValue"])
                 self.assertEqual(source["currentDigest"], inventory["currentDigest"])
 
+    def test_crowdsec_web_ui_defaults_and_ci_fixtures_match_inventory(self) -> None:
+        repository = "ghcr.io/theduffman85/crowdsec-web-ui"
+        expected = POLICY.inventory_image_for_repository(POLICY.inventory(), repository)
+        for source_path in (
+            "ansible/group_vars/all.yml",
+            "stacks/crowdsec-web-ui/compose.yaml.j2",
+            "ci/playbooks/crowdsec-contracts.yml",
+            "ci/playbooks/render-validation-artifacts.yml",
+        ):
+            with self.subTest(source_path=source_path):
+                self.assertIn(expected, (REPO_ROOT / source_path).read_text(encoding="utf-8"))
+
     def test_fixable_critical_vulnerability_is_blocked(self) -> None:
         self.assertEqual(
             POLICY.violations(report(), IMAGE, policy(), TODAY),
