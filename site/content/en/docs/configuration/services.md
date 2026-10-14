@@ -533,13 +533,24 @@ by the cluster AppRoles that need registry access.
 
 ## Gitea
 
-Gitea supports OIDC and a validation repository/issue used by restore checks.
+Gitea supports OIDC, a validation repository/issue used by restore checks, and
+an optional personal access token for Cloudbase GARM. GARM requires the
+`write:repository` and `write:organization` scopes for Gitea credentials. See
+[Cloudbase GARM credential requirements](https://github.com/cloudbase/garm/blob/main/doc/credentials.md).
 
 Reference: [Gitea documentation](https://docs.gitea.com/).
 
 ```yaml
 gitea_config:
   enabled: true
+  garm_token:
+    enabled: true
+    name: "garm-token"
+    scopes: ["write:repository", "write:organization"]
+    rotation_id: "initial"
+    openbao:
+      mount: "homelab"
+      path: "gitea/runner"
   oidc:
     enabled: true
     name: "keycloak"
@@ -550,6 +561,12 @@ gitea_config:
 | --- | --- | --- |
 | `gitea_config.enabled` | `false` | Enables Gitea API and admin CLI configuration. |
 | `gitea_config.validate_certs` | `{{ not ci_mode }}` | TLS validation for Gitea API calls. |
+| `gitea_config.garm_token.enabled` | `false` | Creates and publishes a Gitea PAT for Cloudbase GARM. |
+| `gitea_config.garm_token.name` | `garm-token` | Base name for the Gitea PAT; the rotation ID is appended so replacement token names remain unique. |
+| `gitea_config.garm_token.scopes` | `write:repository`, `write:organization` | Gitea scopes required by GARM. Both are required. |
+| `gitea_config.garm_token.rotation_id` | empty | Required when enabled. Change it to create and publish a replacement PAT. |
+| `gitea_config.garm_token.openbao.mount` | `homelab` | Existing KV-v2 OpenBao mount. Declare it under `openbao_config.secret_engines`. |
+| `gitea_config.garm_token.openbao.path` | `gitea/runner` | KV-v2 path receiving the token and rotation metadata. |
 | `gitea_config.oidc.enabled` | `false` | Enables Gitea OpenID Connect auth source configuration. |
 | `gitea_config.oidc.name` | `keycloak` | Name of the Gitea auth source. |
 | `gitea_config.oidc.discovery_url` | Keycloak well-known URL | OpenID Connect discovery URL. |
@@ -557,3 +574,11 @@ gitea_config:
 | `gitea_config.validation.repo` | `admin-node-validation` | Repository used by restore validation. |
 | `gitea_config.validation.issue_title` | `Backup restore sentinel` | Issue title used by restore validation. |
 | `gitea_config_url` | `https://{{ service_domains.gitea }}` | Role default for the Gitea API base URL. |
+
+The PAT is created with the configured Gitea administrator account and stored
+at `homelab/gitea/runner` by default. Its value is in the `token` field;
+`token_id`, `rotation_id`, `scopes`, and `username` are stored as metadata.
+Convergence keeps the existing token until `rotation_id` changes. On rotation,
+the new value is persisted before the previous Gitea token is revoked. Declare
+the `homelab` KV-v2 engine in `openbao_config.secret_engines` before enabling
+this feature. Restrict access to this path to the GARM service.

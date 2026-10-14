@@ -1,0 +1,8 @@
+---
+- name: Exercise Gitea GARM token reconciliation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Include GARM token reconciliation
+      ansible.builtin.include_tasks: ../../ansible/roles/gitea_config/tasks/garm-token.yml

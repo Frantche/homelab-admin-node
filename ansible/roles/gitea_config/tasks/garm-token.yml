@@ -1,0 +1,211 @@
+---
+- name: Build GARM token reconciliation settings
+  ansible.builtin.set_fact:
+    gitea_garm_token_config: "{{ gitea_config.garm_token }}"
+    gitea_garm_token_openbao_token: >-
+      {{ openbao.root_token | default('', true)
+         if (openbao.root_token | default('', true) | length > 0)
+         else (openbao_config.root_token | default('', true)) }}
+    gitea_garm_token_mounts: >-
+      {{ openbao_config.secret_engines | default([])
+         | selectattr('type', 'equalto', 'kv-v2')
+         | map(attribute='path')
+         | map('regex_replace', '^/+|/+$', '') | list }}
+  no_log: true
+
+- name: Validate GARM token settings
+  ansible.builtin.assert:
+    that:
+      - gitea_garm_token_config.name | default('', true) is match('^[A-Za-z0-9][A-Za-z0-9_.-]*$')
+      - gitea_garm_token_config.rotation_id | default('', true) is match('^[A-Za-z0-9][A-Za-z0-9_.-]*$')
+      - (gitea_garm_token_config.name ~ '-' ~ gitea_garm_token_config.rotation_id) | length <= 255
+      - gitea_garm_token_config.scopes | default([]) | sort == ['write:organization', 'write:repository']
+      - gitea_garm_token_config.openbao.mount | default('', true) | regex_replace('^/+|/+$', '') in gitea_garm_token_mounts
+      - gitea_garm_token_config.openbao.path | default('', true) | length > 0
+      - "'..' not in gitea_garm_token_config.openbao.path.split('/')"
+      - gitea_garm_token_openbao_token | length > 0
+      - gitea_runtime.admin_user | default('', true) | length > 0
+      - gitea_runtime.admin_password | default('', true) | length > 0
+    fail_msg: >-
+      gitea_config.garm_token requires a non-empty rotation_id, the GARM
+      repository and organization write scopes, a destination in a declared
+      OpenBao KV-v2 engine, and Gitea/OpenBao credentials.
+  no_log: true
+
+- name: Normalize GARM token destination
+  ansible.builtin.set_fact:
+    gitea_garm_token_mount: "{{ gitea_garm_token_config.openbao.mount | regex_replace('^/+|/+$', '') }}"
+    gitea_garm_token_path: "{{ gitea_garm_token_config.openbao.path | regex_replace('^/+|/+$', '') }}"
+    gitea_garm_token_name: "{{ gitea_garm_token_config.name }}-{{ gitea_garm_token_config.rotation_id }}"
+  no_log: true
+
+- name: Read current GARM token from OpenBao
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url | default('https://' ~ service_domains.openbao) }}/v1/{{ gitea_garm_token_mount }}/data/{{ gitea_garm_token_path }}"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ gitea_garm_token_openbao_token }}"
+    validate_certs: "{{ openbao_config.validate_certs | default(not (ci_mode | default(false))) }}"
+    status_code: [200, 404]
+  register: gitea_garm_token_openbao_response
+  changed_when: false
+  no_log: true
+
+- name: Normalize current GARM token value
+  ansible.builtin.set_fact:
+    gitea_garm_token_current: "{{ gitea_garm_token_openbao_response.json.data.data | default({}) }}"
+    gitea_garm_token_needs_rotation: >-
+      {{ gitea_garm_token_openbao_response.status == 404
+         or (gitea_garm_token_openbao_response.json.data.data.token | default('', true) | length == 0)
+         or (gitea_garm_token_openbao_response.json.data.data.token_id | default(0) | int <= 0)
+         or (gitea_garm_token_openbao_response.json.data.data.rotation_id | default('') != gitea_garm_token_config.rotation_id)
+         or (gitea_garm_token_openbao_response.json.data.data.scopes | default([]) | sort != gitea_garm_token_config.scopes | sort) }}
+  no_log: true
+
+- name: Retry revocation of a superseded GARM token
+  ansible.builtin.uri:
+    url: "{{ gitea_config_url }}/api/v1/users/{{ gitea_runtime.admin_user | urlencode }}/tokens/{{ gitea_garm_token_current.previous_token_id }}"
+    method: DELETE
+    user: "{{ gitea_runtime.admin_user }}"
+    password: "{{ gitea_runtime.admin_password }}"
+    force_basic_auth: true
+    validate_certs: "{{ gitea_api_validate_certs }}"
+    status_code: [204, 404]
+  when:
+    - not gitea_garm_token_needs_rotation | bool
+    - gitea_garm_token_current.previous_token_id | default(0) | int > 0
+  no_log: true
+
+- name: Clear superseded GARM token marker
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url | default('https://' ~ service_domains.openbao) }}/v1/{{ gitea_garm_token_mount }}/data/{{ gitea_garm_token_path }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ gitea_garm_token_openbao_token }}"
+    body_format: json
+    body:
+      data: "{{ gitea_garm_token_current | combine({'previous_token_id': 0}) }}"
+    validate_certs: "{{ openbao_config.validate_certs | default(not (ci_mode | default(false))) }}"
+    status_code: 200
+  when:
+    - not gitea_garm_token_needs_rotation | bool
+    - gitea_garm_token_current.previous_token_id | default(0) | int > 0
+  no_log: true
+
+- name: Create and publish replacement GARM token
+  when: gitea_garm_token_needs_rotation | bool
+  block:
+    - name: List existing Gitea access tokens before creating GARM token
+      ansible.builtin.uri:
+        url: "{{ gitea_config_url }}/api/v1/users/{{ gitea_runtime.admin_user | urlencode }}/tokens"
+        method: GET
+        user: "{{ gitea_runtime.admin_user }}"
+        password: "{{ gitea_runtime.admin_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ gitea_api_validate_certs }}"
+        status_code: 200
+      register: gitea_garm_token_list
+      changed_when: false
+      no_log: true
+
+    - name: Remove abandoned GARM token from an earlier incomplete attempt
+      ansible.builtin.uri:
+        url: "{{ gitea_config_url }}/api/v1/users/{{ gitea_runtime.admin_user | urlencode }}/tokens/{{ item.id }}"
+        method: DELETE
+        user: "{{ gitea_runtime.admin_user }}"
+        password: "{{ gitea_runtime.admin_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ gitea_api_validate_certs }}"
+        status_code: [204, 404]
+      loop: "{{ gitea_garm_token_list.json | selectattr('name', 'equalto', gitea_garm_token_name) | list }}"
+      loop_control:
+        label: "{{ gitea_garm_token_name }}"
+      no_log: true
+
+    - name: Create Gitea personal access token for GARM
+      ansible.builtin.uri:
+        url: "{{ gitea_config_url }}/api/v1/users/{{ gitea_runtime.admin_user | urlencode }}/tokens"
+        method: POST
+        user: "{{ gitea_runtime.admin_user }}"
+        password: "{{ gitea_runtime.admin_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ gitea_api_validate_certs }}"
+        body_format: json
+        body:
+          name: "{{ gitea_garm_token_name }}"
+          scopes: "{{ gitea_garm_token_config.scopes }}"
+        status_code: 201
+      register: gitea_garm_token_created
+      no_log: true
+
+    - name: Validate generated GARM token response
+      ansible.builtin.assert:
+        that:
+          - gitea_garm_token_created.json.id | default(0) | int > 0
+          - (gitea_garm_token_created.json.sha1 | default(gitea_garm_token_created.json.token | default('', true), true) | length) > 0
+        fail_msg: "Gitea did not return an ID and token value for the GARM personal access token."
+      no_log: true
+
+    - name: Publish GARM token to OpenBao
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url | default('https://' ~ service_domains.openbao) }}/v1/{{ gitea_garm_token_mount }}/data/{{ gitea_garm_token_path }}"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ gitea_garm_token_openbao_token }}"
+        body_format: json
+        body:
+          data:
+            token: "{{ gitea_garm_token_created.json.sha1 | default(gitea_garm_token_created.json.token, true) }}"
+            token_id: "{{ gitea_garm_token_created.json.id }}"
+            rotation_id: "{{ gitea_garm_token_config.rotation_id }}"
+            scopes: "{{ gitea_garm_token_config.scopes }}"
+            username: "{{ gitea_runtime.admin_user }}"
+            previous_token_id: "{{ gitea_garm_token_current.token_id | default(0) }}"
+        validate_certs: "{{ openbao_config.validate_certs | default(not (ci_mode | default(false))) }}"
+        status_code: 200
+      register: gitea_garm_token_published
+      no_log: true
+
+  rescue:
+    - name: Check whether the new GARM token reached OpenBao
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url | default('https://' ~ service_domains.openbao) }}/v1/{{ gitea_garm_token_mount }}/data/{{ gitea_garm_token_path }}"
+        method: GET
+        headers:
+          X-Vault-Token: "{{ gitea_garm_token_openbao_token }}"
+        validate_certs: "{{ openbao_config.validate_certs | default(not (ci_mode | default(false))) }}"
+        status_code: [200, 404]
+      register: gitea_garm_token_after_error
+      no_log: true
+
+    - name: Revoke unpublished GARM token after OpenBao write failure
+      ansible.builtin.uri:
+        url: "{{ gitea_config_url }}/api/v1/users/{{ gitea_runtime.admin_user | urlencode }}/tokens/{{ gitea_garm_token_created.json.id }}"
+        method: DELETE
+        user: "{{ gitea_runtime.admin_user }}"
+        password: "{{ gitea_runtime.admin_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ gitea_api_validate_certs }}"
+        status_code: [204, 404]
+      when:
+        - gitea_garm_token_created is defined
+        - gitea_garm_token_after_error.json.data.data.token_id | default(0) | int != gitea_garm_token_created.json.id | default(-1) | int
+      no_log: true
+
+    - name: Fail after GARM token publication error
+      ansible.builtin.fail:
+        msg: "GARM token reconciliation failed; check Gitea and OpenBao availability, then rerun convergence."
+
+- name: Revoke previous GARM token after publishing replacement
+  ansible.builtin.uri:
+    url: "{{ gitea_config_url }}/api/v1/users/{{ gitea_runtime.admin_user | urlencode }}/tokens/{{ gitea_garm_token_current.token_id }}"
+    method: DELETE
+    user: "{{ gitea_runtime.admin_user }}"
+    password: "{{ gitea_runtime.admin_password }}"
+    force_basic_auth: true
+    validate_certs: "{{ gitea_api_validate_certs }}"
+    status_code: [204, 404]
+  when:
+    - gitea_garm_token_needs_rotation | bool
+    - gitea_garm_token_current.token_id | default(0) | int > 0
+  no_log: true

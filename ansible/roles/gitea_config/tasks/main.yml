@@ -98,6 +98,12 @@
     - gitea.rotate_admin_password | default(false) | bool
   no_log: true
 
+- name: Reconcile GARM Gitea token
+  ansible.builtin.include_tasks: garm-token.yml
+  when:
+    - not (gitea_config_test_mode | default(false))
+    - gitea_config.garm_token.enabled | default(false) | bool
+
 - name: Check Gitea OAuth source list
   ansible.builtin.command:
     argv:
