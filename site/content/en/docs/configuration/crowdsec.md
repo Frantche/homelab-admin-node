@@ -166,6 +166,11 @@ required by each consumer.
 
 ## Optional Web UI
 
+For local-only access, set crowdsec_web_ui.allowed_cidrs to the trusted LAN or
+VPN ranges and add the UI hostname to Pi-hole with the admin node's LAN address.
+Traefik enforces the CIDR allowlist on the UI route. If allowed_cidrs is empty,
+any client that can reach the node's direct HTTPS entrypoint can reach the UI.
+
 Enable the Web UI through `crowdsec_web_ui` in the private configuration
 repository. Put its LAPI password and shared OIDC client secret in
 `group_vars/secrets.sops.yaml` as `vault_crowdsec_web_ui_lapi_password` and
