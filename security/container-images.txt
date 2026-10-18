@@ -1,8 +1,8 @@
 # Runtime stack images. This file is the scan inventory and is checked against
 # every stacks/*/compose.yaml or stacks/*/compose.yaml.j2 image declaration.
-cloudflare/cloudflared:2026.10.0@sha256:1a50cc8893b3f0dd283805d2efcd3336210aced60a83d967fb2bbc8ab69b5f35
+cloudflare/cloudflared:2026.10.1@sha256:3c0502d2da137286136b44f5b1d0d0be7030cc4833db9f53cff86beadad6cefa
 crowdsecurity/crowdsec:v1.8.1@sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975
-ghcr.io/theduffman85/crowdsec-web-ui:2026.10.3@sha256:07e7347f47922301a8b672d1f7bfb5e4681302c31a1d1af9bde6ae707d439465
+ghcr.io/theduffman85/crowdsec-web-ui:2026.10.8@sha256:4f2568f068fb30abc83163825f0832a844ff0ca12f359d0a3618088776261955
 docker.gitea.com/gitea:1.27.3@sha256:d584940b7143982682ac4541509dd628506c2b568221e6af41e5a2ead1de4fe7
 goharbor/harbor-core:v2.15.4@sha256:7d2ba5304a729887cdec7cb222a82b500278423de230ae5150c386a6c332b112
 goharbor/harbor-exporter:v2.15.4@sha256:9ffede33dc519b4be035596a72f00f354754a22a3769077731f81ee7d6852f4f
@@ -14,12 +14,12 @@ goharbor/nginx-photon:v2.15.4@sha256:7eff0287d5ad0f35754e162c8481ced04bbde107153
 goharbor/redis-photon:v2.15.1@sha256:5669d4828805d9ed0bbfc18c101c6ec82d26a13cb9242b48f6348a3e3b2e4cca
 goharbor/registry-photon:v2.15.4@sha256:dc0cb388a6445c69c8a0c406679290d2991c9698833d9e6e86a23bdfaf2f83c3
 goharbor/trivy-adapter-photon:v2.15.4@sha256:813ca81b4a4ea0f44f5fa81cca2645eeb58d4b1f6c66b428df9d506174bb71d9
-keycloak/keycloak:26.8@sha256:ad1b0f0fa4bb5eff10f7a78eaafbb6d65b25431c1f824b0710836d74373a7dfb
+keycloak/keycloak:26.8@sha256:ed1cab21814c7d18ce8f0e11d5a1fa1c6923de12dd4c7625a18c5d34452a57a4
 openbao/openbao:2.7.1@sha256:a36ea8c27f0dcff5757664ad080425f96d3b6b2f33db3e76c4e2d3112fb17005
-otel/opentelemetry-collector-contrib:0.162.0@sha256:340885ab6f46822374f00c58c067396b53b8d612559842e8821585567579d9e3
-pgautoupgrade/pgautoupgrade:18-trixie@sha256:6fd9d304dca94d2a882a655e09e4d8f90f321086c759d0dfef0332cd484789e6
-python:3.14-alpine@sha256:7f2ec713f0436c59df2362d973b6a05af9e87ba78f0e94f5245c302984a7a1fd
-traefik:v3.7@sha256:5902d68e00708015736416b62faa49d23a2e1d4415649e5831d20b79ba301508
+otel/opentelemetry-collector-contrib:0.163.1@sha256:45c3ed5eb9eb71e3e6ade7fa67aed000e5f68bb22fe730a6fa66a2504077cfce
+pgautoupgrade/pgautoupgrade:18-trixie@sha256:70676d30773ec33bc9c94f516a8c0e1f3c8c9b713e79ffb307aef808d9eefd33
+python:3.15-alpine@sha256:ff95aad772d41f11f6aa513d1955843e7dac0749b34b07d467822b75303b2b03
+traefik:v3.7@sha256:10cc4f33663c9d71049b71775d0b2ac67c18f7ade489ce9d826acc292d7eb82a
 
 # Production utility images invoked outside Compose.
 alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
