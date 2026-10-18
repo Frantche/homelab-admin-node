@@ -6,7 +6,7 @@ SHELL := /usr/bin/env bash
 	dev-deps docs docs-build docs-check docs-deps docs-serve govulncheck lint \
 	python-lint python-test render scan-container-images shellcheck sops-check \
 	test-build-admin-node-cache test-container-hardening test-disaster-recovery-actions \
-	test-adguardhome-contracts test-crowdsec-contracts test-gitea-garm-token \
+	test-adguardhome-contracts test-crowdsec-contracts test-gitea-actions-runner-token test-gitea-garm-token \
 	test-docker-api-isolation test-gitea-process-backup test-go test-grafana-dashboard-import \
 	test-harbor-mirror-validation test-harbor-robot-tokens test-image-security-policy test-image-security-scanner \
 	test-make-entrypoints test-offline-images test-oidc-contracts test-openbao-approles test-openbao-internal-tls \
@@ -42,7 +42,7 @@ ci-quality: check-ci-tools test-go lint govulncheck python-test \
 	test-build-admin-node-cache test-repo-permissions test-secret-rotation \
 	test-adguardhome-contracts test-crowdsec-contracts \
 	test-system-update \
-	test-docker-api-isolation test-gitea-process-backup test-gitea-garm-token test-openbao-internal-tls \
+	test-docker-api-isolation test-gitea-process-backup test-gitea-actions-runner-token test-gitea-garm-token test-openbao-internal-tls \
 	test-harbor-robot-tokens test-openbao-approles \
 	test-restic-config test-offline-images test-image-security-scanner \
 	test-disaster-recovery-actions test-make-entrypoints validate-compose \
@@ -115,6 +115,9 @@ test-gitea-process-backup:
 
 test-gitea-garm-token:
 	@python3 ./ci/test-gitea-garm-token.py
+
+test-gitea-actions-runner-token:
+	@python3 ./ci/test-gitea-actions-runner-token.py
 
 test-harbor-mirror-validation:
 	@python3 ./ci/test_harbor_mirror_validation.py

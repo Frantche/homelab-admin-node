@@ -533,9 +533,10 @@ by the cluster AppRoles that need registry access.
 
 ## Gitea
 
-Gitea supports OIDC, a validation repository/issue used by restore checks, and
-an optional personal access token for Cloudbase GARM. GARM requires the
-`write:repository` and `write:organization` scopes for Gitea credentials. See
+Gitea supports OIDC, a validation repository/issue used by restore checks, an
+optional instance-wide Actions runner registration token, and an optional
+personal access token for Cloudbase GARM. GARM requires the `write:repository`
+and `write:organization` scopes for Gitea credentials. See
 [Cloudbase GARM credential requirements](https://github.com/cloudbase/garm/blob/main/doc/credentials.md).
 
 Reference: [Gitea documentation](https://docs.gitea.com/).
@@ -543,6 +544,11 @@ Reference: [Gitea documentation](https://docs.gitea.com/).
 ```yaml
 gitea_config:
   enabled: true
+  actions_runner_registration_token:
+    enabled: true
+    openbao:
+      mount: "homelab"
+      path: "gitea/actions/runner"
   garm_token:
     enabled: true
     name: "garm-token"
@@ -561,6 +567,9 @@ gitea_config:
 | --- | --- | --- |
 | `gitea_config.enabled` | `false` | Enables Gitea API and admin CLI configuration. |
 | `gitea_config.validate_certs` | `{{ not ci_mode }}` | TLS validation for Gitea API calls. |
+| `gitea_config.actions_runner_registration_token.enabled` | `false` | Publishes the instance-wide Gitea Actions runner registration token to OpenBao. |
+| `gitea_config.actions_runner_registration_token.openbao.mount` | `homelab` | Existing KV-v2 OpenBao mount. Declare it under `openbao_config.secret_engines`. |
+| `gitea_config.actions_runner_registration_token.openbao.path` | `gitea/actions/runner` | KV-v2 path receiving the instance registration token in its `token` field. |
 | `gitea_config.garm_token.enabled` | `false` | Creates and publishes a Gitea PAT for Cloudbase GARM. |
 | `gitea_config.garm_token.name` | `garm-token` | Base name for the Gitea PAT; the rotation ID is appended so replacement token names remain unique. |
 | `gitea_config.garm_token.scopes` | `write:repository`, `write:organization` | Gitea scopes required by GARM. Both are required. |
@@ -582,3 +591,31 @@ Convergence keeps the existing token until `rotation_id` changes. On rotation,
 the new value is persisted before the previous Gitea token is revoked. Declare
 the `homelab` KV-v2 engine in `openbao_config.secret_engines` before enabling
 this feature. Restrict access to this path to the GARM service.
+
+When enabled, convergence requests the active instance-wide Actions runner
+registration token from Gitea and stores it at
+`homelab/gitea/actions/runner` by default. The value is in the `token` field.
+Convergence uses Gitea's global
+[`POST /api/v1/admin/actions/runners/registration-token`](https://docs.gitea.com/api/1.27/operations/admin-create-runner-registration-token/)
+endpoint, so registered runners cover all repositories in the instance. The
+token can register multiple runners until it is reset in the admin UI; the next
+convergence then updates the OpenBao copy. See the [Gitea runner guide](https://docs.gitea.com/1.27/usage/actions/runner/)
+for runner setup. Read the token with:
+
+```bash
+bao kv get -mount=homelab -field=token gitea/actions/runner
+```
+
+Use that value with the runner registration command to register an
+instance-level runner:
+
+```bash
+gitea-runner register --no-interactive \
+  --instance "https://git.example.com" \
+  --token "<registration-token>" \
+  --name "<runner-name>"
+```
+
+Declare the `homelab` KV-v2 engine in `openbao_config.secret_engines` before
+enabling this feature, and grant runner provisioning systems read access to
+this path only.

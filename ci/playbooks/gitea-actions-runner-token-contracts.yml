@@ -1,0 +1,8 @@
+---
+- name: Exercise instance-wide Gitea Actions runner token reconciliation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Include instance runner token reconciliation
+      ansible.builtin.include_tasks: ../../ansible/roles/gitea_config/tasks/actions-runner-token.yml

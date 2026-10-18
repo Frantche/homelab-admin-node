@@ -228,6 +228,11 @@ harbor_config:
 gitea_config:
   enabled: false
   validate_certs: "{{ not (ci_mode | default(false)) }}"
+  actions_runner_registration_token:
+    enabled: false
+    openbao:
+      mount: "homelab"
+      path: "gitea/actions/runner"
   garm_token:
     enabled: false
     name: "garm-token"

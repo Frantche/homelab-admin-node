@@ -98,6 +98,12 @@
     - gitea.rotate_admin_password | default(false) | bool
   no_log: true
 
+- name: Reconcile instance-wide Gitea Actions runner registration token
+  ansible.builtin.include_tasks: actions-runner-token.yml
+  when:
+    - not (gitea_config_test_mode | default(false))
+    - gitea_config.actions_runner_registration_token.enabled | default(false) | bool
+
 - name: Reconcile GARM Gitea token
   ansible.builtin.include_tasks: garm-token.yml
   when:

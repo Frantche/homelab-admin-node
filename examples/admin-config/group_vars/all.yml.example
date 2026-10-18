@@ -302,6 +302,13 @@ openbao_config:
 gitea_config:
   enabled: true
   validate_certs: true
+  # Optional instance-wide Gitea Actions runner registration token.
+  # Declare the homelab KV-v2 engine under openbao_config.secret_engines.
+  actions_runner_registration_token:
+    enabled: true
+    openbao:
+      mount: "homelab"
+      path: "gitea/actions/runner"
   # Optional Cloudbase GARM credential. Declare the homelab KV-v2 engine
   # under openbao_config.secret_engines before enabling this integration.
   garm_token:

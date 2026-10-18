@@ -1,0 +1,84 @@
+---
+- name: Build instance runner token settings
+  ansible.builtin.set_fact:
+    gitea_instance_runner_token_config: "{{ gitea_config.actions_runner_registration_token }}"
+    gitea_instance_runner_openbao_token: >-
+      {{ openbao.root_token | default('', true)
+         if (openbao.root_token | default('', true) | length > 0)
+         else (openbao_config.root_token | default('', true)) }}
+    gitea_instance_runner_kv_v2_mounts: >-
+      {{ openbao_config.secret_engines | default([])
+         | selectattr('type', 'equalto', 'kv-v2')
+         | map(attribute='path')
+         | map('regex_replace', '^/+|/+$', '') | list }}
+  no_log: true
+
+- name: Validate instance runner token settings
+  ansible.builtin.assert:
+    that:
+      - gitea_instance_runner_token_config.openbao.mount | default('', true) | regex_replace('^/+|/+$', '') in gitea_instance_runner_kv_v2_mounts
+      - gitea_instance_runner_token_config.openbao.path | default('', true) | length > 0
+      - "'..' not in gitea_instance_runner_token_config.openbao.path.split('/')"
+      - gitea_instance_runner_openbao_token | length > 0
+      - gitea_runtime.admin_user | default('', true) | length > 0
+      - gitea_runtime.admin_password | default('', true) | length > 0
+    fail_msg: >-
+      gitea_config.actions_runner_registration_token requires Gitea admin
+      credentials, an OpenBao token, and a destination in a declared KV-v2 engine.
+  no_log: true
+
+- name: Normalize instance runner token destination
+  ansible.builtin.set_fact:
+    gitea_instance_runner_mount: "{{ gitea_instance_runner_token_config.openbao.mount | regex_replace('^/+|/+$', '') }}"
+    gitea_instance_runner_path: "{{ gitea_instance_runner_token_config.openbao.path | regex_replace('^/+|/+$', '') }}"
+  no_log: true
+
+- name: Read current instance runner token from OpenBao
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url | default('https://' ~ service_domains.openbao) }}/v1/{{ gitea_instance_runner_mount }}/data/{{ gitea_instance_runner_path }}"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ gitea_instance_runner_openbao_token }}"
+    validate_certs: "{{ openbao_config.validate_certs | default(not (ci_mode | default(false))) }}"
+    status_code: [200, 404]
+  register: gitea_instance_runner_openbao_response
+  changed_when: false
+  no_log: true
+
+- name: Request the active instance runner registration token from Gitea
+  ansible.builtin.uri:
+    url: "{{ gitea_config_url }}/api/v1/admin/actions/runners/registration-token"
+    method: POST
+    user: "{{ gitea_runtime.admin_user }}"
+    password: "{{ gitea_runtime.admin_password }}"
+    force_basic_auth: true
+    validate_certs: "{{ gitea_api_validate_certs }}"
+    status_code: 200
+  register: gitea_instance_runner_token_response
+  changed_when: false
+  no_log: true
+
+- name: Validate instance runner registration token response
+  ansible.builtin.assert:
+    that:
+      - gitea_instance_runner_token_response.json.token | default('', true) | length > 0
+    fail_msg: "Gitea did not return an instance-wide Actions runner registration token."
+  no_log: true
+
+- name: Publish changed instance runner token to OpenBao
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url | default('https://' ~ service_domains.openbao) }}/v1/{{ gitea_instance_runner_mount }}/data/{{ gitea_instance_runner_path }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ gitea_instance_runner_openbao_token }}"
+    body_format: json
+    body:
+      data:
+        token: "{{ gitea_instance_runner_token_response.json.token }}"
+    validate_certs: "{{ openbao_config.validate_certs | default(not (ci_mode | default(false))) }}"
+    status_code: 200
+  when: >-
+    gitea_instance_runner_openbao_response.status == 404
+    or (gitea_instance_runner_openbao_response.json.data.data.token | default('', true)
+        != gitea_instance_runner_token_response.json.token)
+  no_log: true
