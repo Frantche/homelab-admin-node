@@ -2,7 +2,7 @@
 # every stacks/*/compose.yaml or stacks/*/compose.yaml.j2 image declaration.
 cloudflare/cloudflared:2026.10.3@sha256:c3f24df7c5e68c1467afc5486c155689f247eb02246b3a124fc5f42458728672
 crowdsecurity/crowdsec:v1.8.1@sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975
-ghcr.io/theduffman85/crowdsec-web-ui:2026.10.8@sha256:4f2568f068fb30abc83163825f0832a844ff0ca12f359d0a3618088776261955
+ghcr.io/theduffman85/crowdsec-web-ui:2026.10.9@sha256:b13355f7c72eada687cabb75fcd3f253e4c86ea085b69ff648cb263b5fe5b4be
 docker.gitea.com/gitea:1.27.3@sha256:d584940b7143982682ac4541509dd628506c2b568221e6af41e5a2ead1de4fe7
 goharbor/harbor-core:v2.15.4@sha256:7d2ba5304a729887cdec7cb222a82b500278423de230ae5150c386a6c332b112
 goharbor/harbor-exporter:v2.15.4@sha256:9ffede33dc519b4be035596a72f00f354754a22a3769077731f81ee7d6852f4f
