@@ -1,6 +1,6 @@
 # Runtime stack images. This file is the scan inventory and is checked against
 # every stacks/*/compose.yaml or stacks/*/compose.yaml.j2 image declaration.
-cloudflare/cloudflared:2026.10.1@sha256:3c0502d2da137286136b44f5b1d0d0be7030cc4833db9f53cff86beadad6cefa
+cloudflare/cloudflared:2026.10.3@sha256:c3f24df7c5e68c1467afc5486c155689f247eb02246b3a124fc5f42458728672
 crowdsecurity/crowdsec:v1.8.1@sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975
 ghcr.io/theduffman85/crowdsec-web-ui:2026.10.8@sha256:4f2568f068fb30abc83163825f0832a844ff0ca12f359d0a3618088776261955
 docker.gitea.com/gitea:1.27.3@sha256:d584940b7143982682ac4541509dd628506c2b568221e6af41e5a2ead1de4fe7
@@ -16,10 +16,10 @@ goharbor/registry-photon:v2.15.4@sha256:dc0cb388a6445c69c8a0c406679290d2991c9698
 goharbor/trivy-adapter-photon:v2.15.4@sha256:813ca81b4a4ea0f44f5fa81cca2645eeb58d4b1f6c66b428df9d506174bb71d9
 keycloak/keycloak:26.8@sha256:ed1cab21814c7d18ce8f0e11d5a1fa1c6923de12dd4c7625a18c5d34452a57a4
 openbao/openbao:2.7.1@sha256:a36ea8c27f0dcff5757664ad080425f96d3b6b2f33db3e76c4e2d3112fb17005
-otel/opentelemetry-collector-contrib:0.163.1@sha256:45c3ed5eb9eb71e3e6ade7fa67aed000e5f68bb22fe730a6fa66a2504077cfce
+otel/opentelemetry-collector-contrib:0.163.2@sha256:989669581ee1f89184f3fd9dd5adfc6615ed6c9692c026aaea89e07a20dfb177
 pgautoupgrade/pgautoupgrade:18-trixie@sha256:70676d30773ec33bc9c94f516a8c0e1f3c8c9b713e79ffb307aef808d9eefd33
 python:3.15-alpine@sha256:ff95aad772d41f11f6aa513d1955843e7dac0749b34b07d467822b75303b2b03
-traefik:v3.7@sha256:10cc4f33663c9d71049b71775d0b2ac67c18f7ade489ce9d826acc292d7eb82a
+traefik:v3.7@sha256:c120e0ab66664c7e124e1cd3d3a10a35e3781c578e75892cadd4b9a90e6c7c0d
 
 # Production utility images invoked outside Compose.
 alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
