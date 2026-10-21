@@ -117,3 +117,8 @@ root caches under `/var/cache/admin-node` to fetch and verify Go 1.27 before
 rebuilding the CLI.
 Contribution conventions and the validation matrix are documented in
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+Renovate dependency PRs must pass CI before automatic merging. Native GitHub
+automerge is disabled; Renovate verifies the results on a subsequent run and
+rebases outdated branches before merging. See the
+[Renovate operations guide](site/content/en/docs/operations/renovate.md).
