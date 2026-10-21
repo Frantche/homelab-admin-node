@@ -1,6 +1,9 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "dependencyDashboard": true,
+  "ignoreTests": false,
+  "platformAutomerge": false,
+  "rebaseWhen": "behind-base-branch",
   "timezone": "Europe/Paris",
   "labels": ["dependencies", "renovate", "admin-critical", "requires-lifecycle-ci"],
   "semanticCommits": "enabled",
@@ -17,6 +20,20 @@
   "prConcurrentLimit": 3,
   "prHourlyLimit": 2,
   "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Keep CrowdSec images in Ansible, Jinja defaults, and CI fixtures aligned with the security inventory.",
+      "managerFilePatterns": [
+        "/^ansible/group_vars/all\\.yml$/",
+        "/^stacks/crowdsec(?:-web-ui)?/compose\\.yaml\\.j2$/",
+        "/^ci/playbooks/(?:crowdsec-contracts|render-validation-artifacts)\\.yml$/"
+      ],
+      "matchStrings": [
+        "(?<depName>ghcr\\.io/theduffman85/crowdsec-web-ui|crowdsecurity/crowdsec):(?<currentValue>[^\\s@'\"]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
     {
       "customType": "regex",
       "description": "Update the Gitea backup-restore-process GHCR image tag and digest in scripts, templates, and docs.",
@@ -92,7 +109,7 @@
       "automerge": true,
       "automergeType": "pr",
       "automergeStrategy": "squash",
-      "platformAutomerge": true
+      "platformAutomerge": false
     },
     {
       "description": "Isoler les mises a jour mineures de Go pour validation manuelle hebdomadaire",

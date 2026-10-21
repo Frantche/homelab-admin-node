@@ -61,6 +61,22 @@ jobs:
         working-directory: site
         run: npm ci
 
+      - name: Install Dart Sass
+        env:
+          DART_SASS_VERSION: "1.106.0"
+          DART_SASS_SHA256: 4714f7d5c734b3a76ccf4024d79df41f754b65b3d6e90de2d038b4f3e1e7a604
+        run: |
+          archive="$RUNNER_TEMP/dart-sass.tar.gz"
+          install_dir="$RUNNER_TEMP/dart-sass"
+          curl --fail --location --silent --show-error \
+            "https://github.com/sass/dart-sass/releases/download/${DART_SASS_VERSION}/dart-sass-${DART_SASS_VERSION}-linux-x64.tar.gz" \
+            --output "$archive"
+          echo "$DART_SASS_SHA256  $archive" | sha256sum --check
+          mkdir -p "$install_dir"
+          tar -xzf "$archive" --directory "$install_dir" --strip-components=1
+          "$install_dir/sass" --version
+          echo "$install_dir" >> "$GITHUB_PATH"
+
       - name: Build
         env:
           HUGO_BASEURL: "${{ steps.pages.outputs.base_url }}"

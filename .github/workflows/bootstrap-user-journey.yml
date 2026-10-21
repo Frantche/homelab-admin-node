@@ -48,6 +48,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Validate Renovate configuration
+        run: |
+          docker run --rm -v "$PWD:/work:ro" -w /work \
+            renovate/renovate:44.175.5 \
+            renovate-config-validator --strict --no-global renovate.json
+
       - name: Scan repository for secrets
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
