@@ -147,6 +147,28 @@ def validate_crowdsec_ci_config(all_vars, ci_vars) -> None:
         )
 
 
+def validate_crowdsec_web_ui_ci_config(all_vars, ci_vars) -> None:
+    expected = deepcopy(all_vars.get("crowdsec_web_ui"))
+    configured = ci_vars.get("crowdsec_web_ui")
+    if not isinstance(expected, dict) or not isinstance(configured, dict):
+        raise SystemExit(
+            "ci-bootstrap-vars.yml must preserve the CrowdSec Web UI example configuration"
+        )
+
+    allowed_cidrs = expected.get("allowed_cidrs", [])
+    if not isinstance(allowed_cidrs, list):
+        raise SystemExit("bootstrap example crowdsec_web_ui.allowed_cidrs must be a list")
+    if CI_DOCKER_CIDR not in allowed_cidrs:
+        allowed_cidrs.append(CI_DOCKER_CIDR)
+    expected["allowed_cidrs"] = allowed_cidrs
+
+    if configured != expected:
+        raise SystemExit(
+            "ci-bootstrap-vars.yml must preserve the CrowdSec Web UI example config "
+            f"and allow the CI Docker bridge range {CI_DOCKER_CIDR}"
+        )
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit("usage: validate-bootstrap-config-repo.py <yaml>... [--secrets-example <example>]")
@@ -174,6 +196,7 @@ def main() -> None:
         validate_backup_secrets_are_not_shadowed(loaded[2])
         validate_harbor_scan_matches_mirror(loaded[1], loaded[2])
         validate_crowdsec_ci_config(loaded[1], loaded[2])
+        validate_crowdsec_web_ui_ci_config(loaded[1], loaded[2])
 
 
 if __name__ == "__main__":

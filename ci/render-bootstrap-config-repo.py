@@ -65,6 +65,16 @@ def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
     crowdsec_lapi["allowed_cidrs"] = allowed_cidrs
     crowdsec["lapi"] = crowdsec_lapi
 
+    crowdsec_web_ui = all_vars.get("crowdsec_web_ui")
+    if not isinstance(crowdsec_web_ui, dict):
+        raise SystemExit("bootstrap example configuration must define crowdsec_web_ui")
+    ui_allowed_cidrs = crowdsec_web_ui.get("allowed_cidrs", [])
+    if not isinstance(ui_allowed_cidrs, list):
+        raise SystemExit("bootstrap example crowdsec_web_ui.allowed_cidrs must be a list")
+    if CI_DOCKER_CIDR not in ui_allowed_cidrs:
+        ui_allowed_cidrs.append(CI_DOCKER_CIDR)
+    crowdsec_web_ui["allowed_cidrs"] = ui_allowed_cidrs
+
     data = {
         "ci_mode": True,
         "admin_ci_disable_auto_converge": True,
@@ -77,6 +87,7 @@ def write_ci_vars(group_vars: Path, admin_repo_url: str) -> None:
         "harbor_validation_scan_repository": "library/busybox",
         "harbor_validation_scan_reference": "sha256:1cfa4e2b09e127b9c4ed43578d3f3c18e7d44ea47b9ea98475c0cbe9086525f8",
         "crowdsec": crowdsec,
+        "crowdsec_web_ui": crowdsec_web_ui,
         "acme_email": "ci@example.com",
         "traefik": {
             "dashboard_enabled": True,
