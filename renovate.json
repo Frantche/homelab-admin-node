@@ -94,11 +94,10 @@
   ],
   "packageRules": [
     {
-      "description": "Regrouper toutes les mises a jour majeures pour validation manuelle hebdomadaire",
+      "description": "Creer chaque mise a jour majeure dans une PR separee sans approbation du Dependency Dashboard",
       "matchUpdateTypes": ["major"],
-      "groupName": "weekly major dependency updates",
-      "groupSlug": "weekly-major-dependencies",
-      "dependencyDashboardApproval": true,
+      "groupName": null,
+      "dependencyDashboardApproval": false,
       "automerge": false
     },
     {
