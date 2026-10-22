@@ -1,7 +1,7 @@
 services:
 {% if observability.mock_backend_enabled | default(false) | bool %}
   otel-mock-backend:
-    image: python:3.15-alpine@sha256:ff95aad772d41f11f6aa513d1955843e7dac0749b34b07d467822b75303b2b03
+    image: python:3.15-alpine@sha256:c480059ce7dd8fc98f30e2a56cc3b54e559c3b3b66cc498a92f641237a47f288
     container_name: otel-mock-backend
     restart: "no"
     read_only: true
