@@ -40,7 +40,7 @@ concurrency:
 
 jobs:
   quality:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
       - name: Checkout
@@ -62,7 +62,7 @@ jobs:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
 
@@ -82,7 +82,7 @@ jobs:
 
   oidc-contracts:
     needs: quality
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
       - name: Checkout
@@ -106,7 +106,7 @@ jobs:
        inputs.scope == 'bootstrap' ||
        inputs.scope == 'all')
     needs: [quality, oidc-contracts]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
 
     env:
@@ -566,7 +566,7 @@ jobs:
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'release-candidate'))
     needs: [quality, oidc-contracts]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -702,7 +702,7 @@ jobs:
       inputs.promote == true &&
       github.ref_name == github.event.repository.default_branch
     needs: [main-to-candidate-disaster-recovery]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       actions: read
       contents: write
