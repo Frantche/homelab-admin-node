@@ -1,8 +1,8 @@
 # Runtime stack images. This file is the scan inventory and is checked against
 # every stacks/*/compose.yaml or stacks/*/compose.yaml.j2 image declaration.
-cloudflare/cloudflared:2026.10.3@sha256:c3f24df7c5e68c1467afc5486c155689f247eb02246b3a124fc5f42458728672
+cloudflare/cloudflared:2026.10.4@sha256:4c72c1af2984a66a255efd20fc4ec73fe0f7267384b55315ad953b354b3361b4
 crowdsecurity/crowdsec:v1.8.1@sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975
-ghcr.io/theduffman85/crowdsec-web-ui:2026.10.9@sha256:b13355f7c72eada687cabb75fcd3f253e4c86ea085b69ff648cb263b5fe5b4be
+ghcr.io/theduffman85/crowdsec-web-ui:2026.10.10@sha256:2ddba68dd0bf4bdfc4536903e7ace81038315206b3ea91131414d1d1031d1fa3
 docker.gitea.com/gitea:28.2.0@sha256:d154aee25ff14e9545e3e32ccbcf0c1bfd5654d12fb513f52d242e9202687d32
 goharbor/harbor-core:v2.15.4@sha256:7d2ba5304a729887cdec7cb222a82b500278423de230ae5150c386a6c332b112
 goharbor/harbor-exporter:v2.15.4@sha256:9ffede33dc519b4be035596a72f00f354754a22a3769077731f81ee7d6852f4f
@@ -14,14 +14,14 @@ goharbor/nginx-photon:v2.15.4@sha256:7eff0287d5ad0f35754e162c8481ced04bbde107153
 goharbor/redis-photon:v2.15.1@sha256:5669d4828805d9ed0bbfc18c101c6ec82d26a13cb9242b48f6348a3e3b2e4cca
 goharbor/registry-photon:v2.15.4@sha256:dc0cb388a6445c69c8a0c406679290d2991c9698833d9e6e86a23bdfaf2f83c3
 goharbor/trivy-adapter-photon:v2.15.4@sha256:813ca81b4a4ea0f44f5fa81cca2645eeb58d4b1f6c66b428df9d506174bb71d9
-keycloak/keycloak:26.8@sha256:ed1cab21814c7d18ce8f0e11d5a1fa1c6923de12dd4c7625a18c5d34452a57a4
+keycloak/keycloak:26.8@sha256:3e1ac632e743660017b1e6bb4c3ffc800fd02c82cdd0db858cd03456a98a8dfc
 openbao/openbao:2.7.1@sha256:a36ea8c27f0dcff5757664ad080425f96d3b6b2f33db3e76c4e2d3112fb17005
 otel/opentelemetry-collector-contrib:0.163.2@sha256:989669581ee1f89184f3fd9dd5adfc6615ed6c9692c026aaea89e07a20dfb177
-pgautoupgrade/pgautoupgrade:18-trixie@sha256:70676d30773ec33bc9c94f516a8c0e1f3c8c9b713e79ffb307aef808d9eefd33
+pgautoupgrade/pgautoupgrade:18-trixie@sha256:6ccea5e6a0ea25911a47c92f27c597c51f3621196a7c2ca55c14c9b0436d1ebf
 python:3.15-alpine@sha256:c480059ce7dd8fc98f30e2a56cc3b54e559c3b3b66cc498a92f641237a47f288
 traefik:v3.7@sha256:abb2b9c1b132b5b0be40d09c85bf8d3dab2a59fa0eb3aa955ab8be5efbb73de6
 
 # Production utility images invoked outside Compose.
-alpine:3.24@sha256:71e9b7bae160ba167fa17414401b94cbcdaf3c32feeab9298bd794a2a0614c35
-ghcr.io/frantche/gitea-backup-restore-process:0.3.53@sha256:9382a85bf58516cd29b3547abff2f1cac6fdc3afd28a7403560eb5a5b62544df
+alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+ghcr.io/frantche/gitea-backup-restore-process:0.3.57@sha256:7b327053daa4b40dc98700eb8cde67c6345f1563587011e2de62a9df19cb3815
 goharbor/prepare:v2.15.4@sha256:79b5614d0d02b5d2c6c9b7b9755f5caaea882797353bfcb6421f77e6d69cc317

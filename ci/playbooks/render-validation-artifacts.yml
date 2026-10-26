@@ -53,7 +53,7 @@
         update_interval_seconds: 60
     crowdsec_web_ui:
       enabled: true
-      image: "ghcr.io/theduffman85/crowdsec-web-ui:2026.10.9@sha256:b13355f7c72eada687cabb75fcd3f253e4c86ea085b69ff648cb263b5fe5b4be"
+      image: "ghcr.io/theduffman85/crowdsec-web-ui:2026.10.10@sha256:2ddba68dd0bf4bdfc4536903e7ace81038315206b3ea91131414d1d1031d1fa3"
       hostname: crowdsec-ui.example.com
       uid: 1000
       lapi:
