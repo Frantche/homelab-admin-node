@@ -29,4 +29,5 @@
       }}
 
 - name: Configure Pi-hole records
-  ansible.builtin.include_tasks: "{{ 'api_v6.yml' if pihole_api_version_effective == 'v6' else 'api_v5.yml' }}"
+  ansible.builtin.include_tasks:
+    file: "{{ 'api_v6.yml' if pihole_api_version_effective == 'v6' else 'api_v5.yml' }}"
