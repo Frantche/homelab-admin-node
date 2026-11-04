@@ -45,7 +45,7 @@
         enabled: true
         collections:
           - crowdsecurity/traefik
-      image: "crowdsecurity/crowdsec:v1.8.1@sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975"
+      image: "crowdsecurity/crowdsec:v1.8.2@sha256:2191029f82fce28971706f146cd0cde20a5d39dc9a0ccef7dfffc503d74bc707"
       lapi:
         allowed_cidrs: ["192.168.1.0/24"]
       traefik_bouncer:
@@ -53,7 +53,7 @@
         update_interval_seconds: 60
     crowdsec_web_ui:
       enabled: true
-      image: "ghcr.io/theduffman85/crowdsec-web-ui:2026.10.10@sha256:2ddba68dd0bf4bdfc4536903e7ace81038315206b3ea91131414d1d1031d1fa3"
+      image: "ghcr.io/theduffman85/crowdsec-web-ui:2026.11.3@sha256:a97302010c295205538b94b5249deb609b3b03abf424ff89f818281f20333036"
       hostname: crowdsec-ui.example.com
       uid: 1000
       lapi:

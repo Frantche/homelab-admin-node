@@ -1,6 +1,6 @@
 services:
   crowdsec-web-ui:
-    image: "{{ crowdsec_web_ui.image | default('ghcr.io/theduffman85/crowdsec-web-ui:2026.10.10@sha256:2ddba68dd0bf4bdfc4536903e7ace81038315206b3ea91131414d1d1031d1fa3') }}"
+    image: "{{ crowdsec_web_ui.image | default('ghcr.io/theduffman85/crowdsec-web-ui:2026.11.3@sha256:a97302010c295205538b94b5249deb609b3b03abf424ff89f818281f20333036') }}"
     container_name: crowdsec-web-ui
     user: node
     group_add:
