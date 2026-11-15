@@ -1,5 +1,5 @@
 module github.com/Frantche/homelab-admin-node/site
 
-go 1.27.3
+go 1.27.4
 
 require github.com/docsy/docsy/theme v0.18.1
