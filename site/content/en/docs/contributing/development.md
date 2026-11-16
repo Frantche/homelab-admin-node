@@ -43,4 +43,6 @@ npm install
 ```
 
 Renovate runs these commands automatically when it updates the Docsy Go module
-and commits the refreshed workspace metadata with the dependency update.
+and commits the refreshed workspace metadata with the dependency update. It
+installs the current Hugo Extended release on demand through `mise`, so the
+Renovate task does not pin a separate Hugo version.

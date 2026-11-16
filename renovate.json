@@ -102,13 +102,12 @@
       },
       "postUpgradeTasks": {
         "commands": [
-          "hugo mod tidy",
-          "hugo mod npm pack",
-          "npm install --ignore-scripts"
+          "mise exec hugo-extended@latest -- hugo mod tidy && mise exec hugo-extended@latest -- hugo mod npm pack && npm install --ignore-scripts"
         ],
         "workingDirTemplate": "site",
         "executionMode": "branch",
         "installTools": {
+          "mise": {},
           "golang": {},
           "node": {}
         },
