@@ -94,6 +94,35 @@
   ],
   "packageRules": [
     {
+      "description": "Regenerate the Hugo npm workspace after Docsy module updates",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["github.com/docsy/docsy/theme"],
+      "constraints": {
+        "node": "26"
+      },
+      "postUpgradeTasks": {
+        "commands": [
+          "hugo mod tidy",
+          "hugo mod npm pack",
+          "npm install --ignore-scripts"
+        ],
+        "workingDirTemplate": "site",
+        "executionMode": "branch",
+        "installTools": {
+          "golang": {},
+          "node": {}
+        },
+        "fileFilters": [
+          "site/go.mod",
+          "site/go.sum",
+          "site/package.json",
+          "site/package-lock.json",
+          "site/packages/hugoautogen/package.json",
+          "site/packages/hugoautogen/hugo_packagemeta.json"
+        ]
+      }
+    },
+    {
       "description": "Creer chaque mise a jour majeure dans une PR separee sans approbation du Dependency Dashboard",
       "matchUpdateTypes": ["major"],
       "groupName": null,
