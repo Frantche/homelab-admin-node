@@ -224,4 +224,5 @@
         that:
           - "'crowdsec_web_ui | default({})).hostname' in traefik_role_tasks"
           - "'subjectAltName=' in traefik_role_tasks"
+          - "'authorityKeyIdentifier=keyid,issuer' in traefik_role_tasks"
           - "'traefik_local_tls_expected_dns_names' in traefik_role_tasks"

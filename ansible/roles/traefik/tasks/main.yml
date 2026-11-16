@@ -307,6 +307,7 @@
     basicConstraints=critical,CA:FALSE
     keyUsage=critical,digitalSignature,keyEncipherment
     extendedKeyUsage=serverAuth
+    authorityKeyIdentifier=keyid,issuer
     subjectAltName={{ (traefik_local_tls_expected_dns_names | map('regex_replace', '^(.*)$', 'DNS:\1') | list + ['IP:127.0.0.1', 'IP:' ~ admin_node_lan_ip]) | join(',') }}
     EOF
     openssl x509 -req -days 825 -in "$work_dir/server.csr" -CA "$work_dir/ca.pem" -CAkey "$work_dir/ca-key.pem" -CAcreateserial -out "$work_dir/cert.pem" -extfile "$work_dir/server.ext" -extensions server_cert
