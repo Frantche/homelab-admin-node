@@ -69,7 +69,7 @@
     crowdsec_web_ui_oidc_client_id: "crowdsec-web-ui"
     crowdsec_web_ui:
       enabled: true
-      image: "ghcr.io/theduffman85/crowdsec-web-ui:2026.11.3@sha256:a97302010c295205538b94b5249deb609b3b03abf424ff89f818281f20333036"
+      image: "ghcr.io/theduffman85/crowdsec-web-ui:2026.11.12@sha256:9e101d654b740ca052b59a7d735a3d1af3ab55ba4e95ea074c49927b6d7aa863"
       hostname: "crowdsec-ui.example.com"
       uid: 1000
       lapi:
