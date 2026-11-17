@@ -330,6 +330,58 @@
   when: keycloak_realm_management_missing_scope_roles | length > 0
   no_log: true
 
+- name: Find Keycloak Admin API client scope
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/client-scopes?search=kc-admin-api"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_realm_management_admin_api_scope_lookup
+  changed_when: false
+  no_log: true
+
+- name: Select Keycloak Admin API client scope when available
+  ansible.builtin.set_fact:
+    keycloak_realm_management_admin_api_scope: >-
+      {{
+        keycloak_realm_management_admin_api_scope_lookup.json
+        | selectattr('name', 'equalto', 'kc-admin-api')
+        | list
+        | first
+        | default({})
+      }}
+  no_log: true
+
+- name: Read Keycloak realm management default client scopes
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/clients/{{ keycloak_realm_management_client_uuid }}/default-client-scopes"
+    method: GET
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: 200
+  register: keycloak_realm_management_default_client_scopes
+  changed_when: false
+  when: keycloak_realm_management_admin_api_scope | length > 0
+  no_log: true
+
+- name: Add Keycloak Admin API client scope as a default scope
+  ansible.builtin.uri:
+    url: "{{ keycloak_config_url }}/admin/realms/master/clients/{{ keycloak_realm_management_client_uuid }}/default-client-scopes/{{ keycloak_realm_management_admin_api_scope.id }}"
+    method: PUT
+    headers:
+      Authorization: "{{ keycloak_runtime_auth_header }}"
+    validate_certs: "{{ keycloak_config_validate_certs }}"
+    status_code: [200, 204]
+  when:
+    - (keycloak_realm_management_admin_api_scope.id | default('') | length) > 0
+    - >-
+      (keycloak_realm_management_admin_api_scope.id | default('')) not in
+      (keycloak_realm_management_default_client_scopes.json | default([]) | map(attribute='id') | list)
+  no_log: true
+
 - name: Validate Keycloak realm management client credentials
   ansible.builtin.uri:
     url: "{{ keycloak_config_url }}/realms/master/protocol/openid-connect/token"

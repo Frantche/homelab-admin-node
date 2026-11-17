@@ -266,6 +266,11 @@ refresh the target Kubernetes Secret more frequently than the two-day overlap.
 Copy the OpenBao `credentials` property to the Kubernetes Secret key referenced
 by `ProviderConfig.spec.credentials.secretRef.key`.
 
+When Keycloak provides the `kc-admin-api` client scope, convergence assigns it as
+a default scope on this client so its `client_credentials` token can call the
+Admin REST API. Older Keycloak versions without that built-in scope continue
+without the assignment.
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `keycloak_config.realm_management.enabled` | `false` | Creates the Crossplane service-account client in `master` and enables managed rotation. |
