@@ -44,7 +44,7 @@ services:
       - keycloak-db
 
   keycloak:
-    image: keycloak/keycloak:26.8@sha256:4da21f9a53bcbac1026a0d654b740a81e98e5de4c45457076acc74b4d94b1551
+    image: keycloak/keycloak:26.8@sha256:75b5c435a83b530caba5923922f93d47b2e3f8b4ad9e79200581122996653e55
     container_name: keycloak
     restart: "no"
     user: "1000:0"
