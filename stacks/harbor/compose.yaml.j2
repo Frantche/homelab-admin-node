@@ -10,7 +10,7 @@ services:
     <<: *harbor-hardening
     image: goharbor/harbor-log:v2.16.0@sha256:477cc300a06976ccbc757247f9973fd7d888ab02dcf43dbc112f64d76a9693bf
     container_name: harbor-log
-    restart: "no"
+    restart: unless-stopped
     cap_drop:
       - ALL
     cap_add:
@@ -36,7 +36,7 @@ services:
     <<: *harbor-hardening
     image: pgautoupgrade/pgautoupgrade:18-trixie@sha256:47db8b7b99656cb397b4d0f2d68edd5b3e2041cf7410faab46593b1aebece151
     container_name: harbor-db
-    restart: "no"
+    restart: unless-stopped
     cap_drop:
       - ALL
     cap_add:
@@ -80,7 +80,7 @@ services:
     <<: *harbor-hardening
     image: goharbor/redis-photon:v2.15.1@sha256:5669d4828805d9ed0bbfc18c101c6ec82d26a13cb9242b48f6348a3e3b2e4cca
     container_name: harbor-redis
-    restart: "no"
+    restart: unless-stopped
     cap_drop:
       - ALL
     cap_add:
@@ -109,7 +109,7 @@ services:
     <<: *harbor-hardening
     image: goharbor/registry-photon:v2.16.0@sha256:c9c4f8a9376c7ae24f32e9212e56064f524cd8f0a23755618f2df99767b0ac3e
     container_name: harbor-registry
-    restart: "no"
+    restart: unless-stopped
     cap_drop:
       - ALL
     cap_add:
@@ -144,7 +144,7 @@ services:
     <<: *harbor-hardening
     image: goharbor/harbor-registryctl:v2.16.0@sha256:f2b22ddb6d65e91c676d9bf5e28ecd50ef22d5430d9941eb51a57f6e33c0d3bc
     container_name: harbor-registryctl
-    restart: "no"
+    restart: unless-stopped
     cap_drop:
       - ALL
     cap_add:
@@ -182,7 +182,7 @@ services:
     <<: *harbor-hardening
     image: goharbor/harbor-core:v2.16.0@sha256:9174a38ef7de02a6b2aa228906465e0e46426ba6f3e6c900cd6090ceaec1c3e7
     container_name: harbor-core
-    restart: "no"
+    restart: unless-stopped
     cap_drop:
       - ALL
     cap_add:
@@ -274,7 +274,7 @@ services:
     <<: *harbor-hardening
     image: goharbor/harbor-portal:v2.16.0@sha256:60411e3b273d9b27aa8e95871c7f8f3e6b4de512e72e19f40fca910e60518c3c
     container_name: harbor-portal
-    restart: "no"
+    restart: unless-stopped
     cap_drop:
       - ALL
     cap_add:
@@ -306,7 +306,7 @@ services:
     <<: *harbor-hardening
     image: goharbor/harbor-jobservice:v2.16.0@sha256:0f55399b8b8316f30976a5474c4cecb3641ee988496e68f3c218ecc7e1324ab4
     container_name: harbor-jobservice
-    restart: "no"
+    restart: unless-stopped
     cap_drop:
       - ALL
     cap_add:
@@ -358,7 +358,7 @@ services:
     <<: *harbor-hardening
     image: goharbor/trivy-adapter-photon:v2.16.0@sha256:36ab1b63ba2ac230e7f9f5d2725fe999a27b1fc270b7b5ae1419fd8f46b0b969
     container_name: harbor-trivy
-    restart: "no"
+    restart: unless-stopped
     cap_drop:
       - ALL
     environment:
@@ -412,7 +412,7 @@ services:
     <<: *harbor-hardening
     image: goharbor/harbor-exporter:v2.16.0@sha256:0e002533db7a31dcd5895cebfaf3086f15da9550524a3be02f466ddeb8c94d18
     container_name: harbor-exporter
-    restart: "no"
+    restart: unless-stopped
     cap_drop:
       - ALL
     environment:
@@ -465,7 +465,7 @@ services:
     <<: *harbor-hardening
     image: goharbor/nginx-photon:v2.16.0@sha256:fca067519474080be2085308b4f05502c6f0a6186dc8ab164f3ef2f93ba9164b
     container_name: harbor-nginx
-    restart: "no"
+    restart: unless-stopped
     cap_drop:
       - ALL
     cap_add:
