@@ -1,1 +1,1 @@
--r ansible/requirements-python.txt
+-r ../ansible/requirements-python.txt
