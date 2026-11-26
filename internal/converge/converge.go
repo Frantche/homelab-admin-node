@@ -70,8 +70,18 @@ func Run(ctx context.Context, opts Options) error {
 	if _, err := os.Stat(opts.InventoryPath); err != nil {
 		return fmt.Errorf("inventory not found: %s", opts.InventoryPath)
 	}
-	args := append([]string{"-i", opts.InventoryPath, opts.PlaybookPath}, opts.ExtraArgs...)
-	if err := run(ctx, "", "ansible-playbook", args...); err != nil {
+	runtimeDir := os.Getenv("ADMIN_NODE_ANSIBLE_RUNTIME_DIR")
+	if runtimeDir == "" {
+		runtimeDir = "/var/lib/admin-node/ansible-runtime"
+	}
+	collectionsPath := filepath.Join(runtimeDir, "collections")
+	pythonPath := filepath.Join(runtimeDir, "venv", "bin", "python")
+	if err := runWithEnv(ctx, opts.RepoDir, []string{"ADMIN_NODE_ANSIBLE_RUNTIME_DIR=" + runtimeDir}, "scripts/sync-ansible-runtime.sh"); err != nil {
+		return fmt.Errorf("synchronize Ansible runtime dependencies: %w", err)
+	}
+	args := append([]string{"-i", opts.InventoryPath, opts.PlaybookPath, "--extra-vars", "ansible_python_interpreter=" + pythonPath}, opts.ExtraArgs...)
+	ansiblePlaybook := filepath.Join(runtimeDir, "venv", "bin", "ansible-playbook")
+	if err := runWithEnv(ctx, "", []string{"ANSIBLE_COLLECTIONS_PATH=" + collectionsPath}, ansiblePlaybook, args...); err != nil {
 		return err
 	}
 	fmt.Println("[admin-converge] completed")
@@ -172,11 +182,46 @@ func samePath(a, b string) bool {
 }
 
 func run(ctx context.Context, dir, name string, args ...string) error {
+	return runWithEnv(ctx, dir, nil, name, args...)
+}
+
+func runWithEnv(ctx context.Context, dir string, extraEnv []string, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	if extraEnv != nil {
+		cmd.Env = environmentWithOverrides(os.Environ(), extraEnv)
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func environmentWithOverrides(environment, overrides []string) []string {
+	values := make(map[string]string, len(overrides))
+	for _, entry := range overrides {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok {
+			values[key] = entry
+		}
+	}
+	merged := make([]string, 0, len(environment)+len(values))
+	for _, entry := range environment {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok {
+			merged = append(merged, entry)
+			continue
+		}
+		if override, exists := values[key]; exists {
+			merged = append(merged, override)
+			delete(values, key)
+			continue
+		}
+		merged = append(merged, entry)
+	}
+	for _, entry := range values {
+		merged = append(merged, entry)
+	}
+	return merged
 }
 
 func commandOutput(ctx context.Context, dir, name string, args ...string) (string, error) {

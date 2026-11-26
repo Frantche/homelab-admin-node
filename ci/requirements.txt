@@ -1,2 +1,1 @@
-ansible-core==2.21.2
-PyYAML==6.0.3
+-r ansible/requirements-python.txt

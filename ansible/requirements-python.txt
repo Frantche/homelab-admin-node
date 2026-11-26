@@ -1,0 +1,4 @@
+# Keep the controller runtime pinned so each convergence restores known-good versions.
+ansible-core==2.21.2
+PyYAML==6.0.3
+requests==2.34.2
