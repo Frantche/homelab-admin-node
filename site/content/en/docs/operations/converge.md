@@ -9,9 +9,20 @@ It:
 
 1. Updates `/opt/homelab-admin-node` with `git pull --ff-only` unless disabled.
 2. Reads the inventory from the private config repo.
-3. Runs `ansible-playbook` against `ansible/site.yml`.
-4. Builds `bin/admin-node` when Go sources changed.
-5. Applies roles according to `/etc/admin-node/mode`.
+3. Reconciles the isolated Python controller environment and installs the
+   pinned collections from `ansible/requirements.yml`.
+4. Runs that environment's `ansible-playbook` against `ansible/site.yml`.
+5. Builds `bin/admin-node` when Go sources changed.
+6. Applies roles according to `/etc/admin-node/mode`.
+
+The controller uses a Python virtual environment in
+`/var/lib/admin-node/ansible-runtime`. Each convergence reapplies the pinned
+Python packages in `ansible/requirements-python.txt` and force-installs the
+pinned collections, preventing older or newer system-wide Ansible content from
+silently taking precedence. Ansible module execution also uses this virtual
+environment's Python interpreter, so its required Python packages stay aligned
+with the controller. The first run and later dependency changes require access
+to PyPI and Ansible Galaxy; a failed sync stops before the playbook runs.
 
 The project requires Go 1.27. Convergence explicitly enables Go's managed
 toolchain selection, so an existing node whose Arch `go` package is still on

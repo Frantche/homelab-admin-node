@@ -29,6 +29,21 @@ func TestGitRootForPathFindsInventoryRepository(t *testing.T) {
 	}
 }
 
+func TestEnvironmentWithOverridesReplacesExistingValues(t *testing.T) {
+	got := environmentWithOverrides(
+		[]string{"PATH=/usr/bin", "ANSIBLE_COLLECTIONS_PATH=/usr/share/ansible/collections"},
+		[]string{"ANSIBLE_COLLECTIONS_PATH=/var/lib/admin-node/ansible-runtime/collections", "ADMIN_NODE_ANSIBLE_RUNTIME_DIR=/var/lib/admin-node/ansible-runtime"},
+	)
+	want := []string{
+		"PATH=/usr/bin",
+		"ANSIBLE_COLLECTIONS_PATH=/var/lib/admin-node/ansible-runtime/collections",
+		"ADMIN_NODE_ANSIBLE_RUNTIME_DIR=/var/lib/admin-node/ansible-runtime",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("environmentWithOverrides() = %q, want %q", got, want)
+	}
+}
+
 func TestUpdateGitRepositoryPullsWhenUpstreamHasNewCommit(t *testing.T) {
 	ctx := context.Background()
 	origin := filepath.Join(t.TempDir(), "origin.git")
